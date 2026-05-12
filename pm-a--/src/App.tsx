@@ -32,14 +32,21 @@ type Task = {
   endDate: string;
   completion: number;
   subtasks: SubTask[];
+  groupId: string;
 };
 type Column = { id: string; title: string; tasks: Task[] };
+type Group = {
+  id: string;
+  name: string;
+  color: string;
+};
 type Project = {
   id: string;
   name: string;
   description: string;
   color: string;
   columns: Column[];
+  groups: Group[];
 };
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
@@ -63,32 +70,42 @@ const initialColumns: Column[] = [
   {
     id: "todo", title: "待處理",
     tasks: [
-      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
-      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
+      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "inprogress", title: "進行中",
     tasks: [
-      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
-      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
+      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "review", title: "審查中",
     tasks: [
-      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
+      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "done", title: "已完成",
     tasks: [
-      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
+      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
 ];
 
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#06b6d4"];
+
+const DEFAULT_GROUPS: Group[] = [
+  { id: "g1", name: "專管組", color: "#6366f1" },
+  { id: "g2", name: "美術組", color: "#f59e0b" },
+  { id: "g3", name: "設計組", color: "#8b5cf6" },
+  { id: "g4", name: "硬體組", color: "#10b981" },
+  { id: "g5", name: "軟體組", color: "#06b6d4" },
+  { id: "g6", name: "維運組", color: "#f43f5e" },
+  { id: "g7", name: "費曼圖", color: "#facc15" },
+];
 
 const initialProjects: Project[] = [
   {
@@ -96,6 +113,7 @@ const initialProjects: Project[] = [
     name: "專案管理軟體開發",
     description: "PM Dashboard 系統開發專案",
     color: "#6366f1",
+    groups: DEFAULT_GROUPS,
     columns: initialColumns,
   },
 ];
@@ -914,7 +932,14 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>(() => {
     try {
       const saved = localStorage.getItem("pm-projects");
-      return saved ? JSON.parse(saved) : initialProjects;
+      if (saved) {
+        const parsed: Project[] = JSON.parse(saved);
+        return parsed.map((p) => ({
+          ...p,
+          groups: p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS,
+        }));
+      }
+      return initialProjects;
     } catch {
       return initialProjects;
     }
@@ -942,6 +967,10 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem("pm-active-project", activeProjectId);
+    setFilterGroups([]);
+    setFilterPriorities([]);
+    setFilterAssignees([]);
+    setSearchText("");
   }, [activeProjectId]);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -955,6 +984,7 @@ export default function App() {
     const newProject: Project = {
       id: "p" + Date.now(),
       name, description, color,
+      groups: DEFAULT_GROUPS,
       columns: [
         { id: "todo",       title: "待處理", tasks: [] },
         { id: "inprogress", title: "進行中", tasks: [] },
@@ -974,8 +1004,9 @@ export default function App() {
   };
 
   const [searchText, setSearchText] = useState("");
-  const [filterPriority, setFilterPriority] = useState<Priority | "all">("all");
-  const [filterAssignee, setFilterAssignee] = useState<string>("all");
+  const [filterPriorities, setFilterPriorities] = useState<string[]>([]);
+  const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
+  const [filterGroups, setFilterGroups] = useState<string[]>([]);
 
   const allAssignees = Array.from(new Set(
     columns.flatMap((c) => c.tasks.map((t) => t.assignee)).filter(Boolean)
@@ -987,9 +1018,10 @@ export default function App() {
       const matchSearch = searchText === "" ||
         task.title.toLowerCase().includes(searchText.toLowerCase()) ||
         task.assignee.toLowerCase().includes(searchText.toLowerCase());
-      const matchPriority = filterPriority === "all" || task.priority === filterPriority;
-      const matchAssignee = filterAssignee === "all" || task.assignee === filterAssignee;
-      return matchSearch && matchPriority && matchAssignee;
+      const matchPriority = filterPriorities.length === 0 || filterPriorities.includes(task.priority);
+      const matchAssignee = filterAssignees.length === 0 || filterAssignees.includes(task.assignee);
+      const matchGroup = filterGroups.length === 0 || filterGroups.includes(task.groupId);
+      return matchSearch && matchPriority && matchAssignee && matchGroup;
     })
   }));
 
@@ -1052,7 +1084,7 @@ export default function App() {
 
   const handleAddTask = (colId: string, title: string) => {
     setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] }] } : col
+      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" }] } : col
     ));
   };
 
@@ -1184,37 +1216,90 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
-            <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-              <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#475569" }} />
-              <input
-                className="field-input"
-                placeholder="搜尋任務或指派人..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                style={{ paddingLeft: 32, fontSize: 13 }}
-              />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+            {/* 第一行：搜尋 + 清除 */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+                <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#475569" }} />
+                <input
+                  className="field-input"
+                  placeholder="搜尋任務或指派人..."
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  style={{ paddingLeft: 32, fontSize: 13 }}
+                />
+              </div>
+              {(searchText || filterPriorities.length > 0 || filterAssignees.length > 0 || filterGroups.length > 0) && (
+                <button onClick={() => { setSearchText(""); setFilterPriorities([]); setFilterAssignees([]); setFilterGroups([]); }}
+                  style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 8, color: "#ef4444", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>
+                  清除篩選
+                </button>
+              )}
             </div>
 
-            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as Priority | "all")}
-              style={{ background: "#1e2638", border: "1px solid #ffffff12", borderRadius: 8, color: "#e2e8f0", fontSize: 13, padding: "8px 12px", cursor: "pointer", outline: "none" }}>
-              <option value="all">所有優先級</option>
-              <option value="high">高優先</option>
-              <option value="medium">中優先</option>
-              <option value="low">低優先</option>
-            </select>
+            {/* 第二行：優先級切換 */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {(["high", "medium", "low"] as Priority[]).map((p) => {
+                const active = filterPriorities.includes(p);
+                const cfg = PRIORITY_CONFIG[p];
+                return (
+                  <button key={p}
+                    onClick={() => setFilterPriorities(active ? filterPriorities.filter((x) => x !== p) : [...filterPriorities, p])}
+                    style={{
+                      background: active ? cfg.color + "22" : "transparent",
+                      border: `1px solid ${active ? cfg.color : "#ffffff15"}`,
+                      color: active ? cfg.color : "#64748b",
+                      borderRadius: 8, padding: "6px 12px",
+                      fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
+                    }}>
+                    {cfg.label}優先
+                  </button>
+                );
+              })}
+            </div>
 
-            <select value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}
-              style={{ background: "#1e2638", border: "1px solid #ffffff12", borderRadius: 8, color: "#e2e8f0", fontSize: 13, padding: "8px 12px", cursor: "pointer", outline: "none" }}>
-              <option value="all">所有成員</option>
-              {allAssignees.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
+            {/* 第三行：指派人切換 */}
+            {allAssignees.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {allAssignees.map((a) => {
+                  const active = filterAssignees.includes(a);
+                  return (
+                    <button key={a}
+                      onClick={() => setFilterAssignees(active ? filterAssignees.filter((x) => x !== a) : [...filterAssignees, a])}
+                      style={{
+                        background: active ? "#6366f122" : "transparent",
+                        border: `1px solid ${active ? "#6366f1" : "#ffffff15"}`,
+                        color: active ? "#6366f1" : "#64748b",
+                        borderRadius: 8, padding: "6px 12px",
+                        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
+                      }}>
+                      {a}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            {(searchText || filterPriority !== "all" || filterAssignee !== "all") && (
-              <button onClick={() => { setSearchText(""); setFilterPriority("all"); setFilterAssignee("all"); }}
-                style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 8, color: "#ef4444", fontSize: 12, padding: "8px 12px", cursor: "pointer" }}>
-                清除篩選
-              </button>
+            {/* 第四行：組別切換 */}
+            {activeProject?.groups?.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {activeProject.groups.map((g) => {
+                  const active = filterGroups.includes(g.id);
+                  return (
+                    <button key={g.id}
+                      onClick={() => setFilterGroups(active ? filterGroups.filter((x) => x !== g.id) : [...filterGroups, g.id])}
+                      style={{
+                        background: active ? g.color + "22" : "transparent",
+                        border: `1px solid ${active ? g.color : "#ffffff15"}`,
+                        color: active ? g.color : "#64748b",
+                        borderRadius: 8, padding: "6px 12px",
+                        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
+                      }}>
+                      {g.name}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
 
