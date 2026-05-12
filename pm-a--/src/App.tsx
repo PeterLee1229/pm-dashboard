@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactElement } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import {
   DndContext, type DragEndEvent, type DragOverEvent, DragOverlay, type DragStartEvent,
   PointerSensor, useSensor, useSensors,
@@ -383,6 +384,147 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggle
   );
 }
 
+// ── Dashboard View ───────────────────────────────────────────────────
+function DashboardView({ columns }: { columns: Column[] }) {
+  const allTasks = columns.flatMap((c) => c.tasks);
+  const allSubtasks = allTasks.flatMap((t) => t.subtasks);
+
+  const columnData = columns.map((c) => ({ name: c.title, 數量: c.tasks.length }));
+
+  const priorityCount = { high: 0, medium: 0, low: 0 };
+  allTasks.forEach((t) => { priorityCount[t.priority]++; });
+  const priorityData = [
+    { name: "高優先", value: priorityCount.high, color: "#f87171" },
+    { name: "中優先", value: priorityCount.medium, color: "#facc15" },
+    { name: "低優先", value: priorityCount.low, color: "#4ade80" },
+  ].filter((d) => d.value > 0);
+
+  const assigneeMap: Record<string, number> = {};
+  [...allTasks, ...allSubtasks].forEach((t) => {
+    if (t.assignee) assigneeMap[t.assignee] = (assigneeMap[t.assignee] || 0) + 1;
+  });
+  const assigneeData = Object.entries(assigneeMap).map(([name, 任務數]) => ({ name, 任務數 }));
+
+  const hoursMap: Record<string, number> = {};
+  allTasks.forEach((t) => {
+    if (t.assignee && t.trackedSeconds > 0) {
+      hoursMap[t.assignee] = (hoursMap[t.assignee] || 0) + t.trackedSeconds;
+    }
+  });
+  const hoursData = Object.entries(hoursMap).map(([name, secs]) => ({
+    name, 工時: Math.round(secs / 360) / 10
+  }));
+
+  const totalCompletion = allTasks.length > 0
+    ? Math.round(allTasks.reduce((sum, t) => sum + getCompletion(t), 0) / allTasks.length)
+    : 0;
+
+  const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
+
+  const TOOLTIP_STYLE = {
+    background: "#1a2030", border: "1px solid #ffffff15",
+    borderRadius: 8, color: "#e2e8f0", fontSize: 12
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+        {[
+          { label: "總任務數", value: allTasks.length, color: "#6366f1" },
+          { label: "已完成", value: doneTasks, color: "#10b981" },
+          { label: "整體完成度", value: `${totalCompletion}%`, color: "#f59e0b" },
+          { label: "子工項數", value: allSubtasks.length, color: "#8b5cf6" },
+        ].map((card) => (
+          <div key={card.label} style={{
+            background: "#161b27", borderRadius: 12, padding: "20px 24px",
+            border: `1px solid ${card.color}22`
+          }}>
+            <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{card.label}</p>
+            <p style={{ fontSize: 28, fontWeight: 700, color: card.color }}>{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各階段任務數</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={columnData} barSize={32}>
+              <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
+              <Bar dataKey="數量" radius={[6, 6, 0, 0]}>
+                {columnData.map((_, i) => (
+                  <Cell key={i} fill={["#6366f1", "#f59e0b", "#8b5cf6", "#10b981"][i % 4]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>優先級分布</p>
+          {priorityData.length === 0 ? (
+            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 13 }}>尚無資料</div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+              <ResponsiveContainer width="60%" height={200}>
+                <PieChart>
+                  <Pie data={priorityData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={3}>
+                    {priorityData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {priorityData.map((d) => (
+                  <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 99, background: d.color }} />
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>{d.name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各成員任務數</p>
+          {assigneeData.length === 0 ? (
+            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 13 }}>尚無資料</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={assigneeData} barSize={32} layout="vertical">
+                <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
+                <Bar dataKey="任務數" fill="#6366f1" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各成員累計工時（小時）</p>
+          {hoursData.length === 0 ? (
+            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 13 }}>尚無計時紀錄</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={hoursData} barSize={32} layout="vertical">
+                <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
+                <Bar dataKey="工時" fill="#10b981" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Gantt View ───────────────────────────────────────────────────────
 function GanttView({ columns, onEditTask }: {
   columns: Column[];
@@ -593,7 +735,7 @@ export default function App() {
   const [columns, setColumns] = useState<Column[]>(initialColumns);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"kanban" | "gantt">("kanban");
+  const [view, setView] = useState<"kanban" | "gantt" | "dashboard">("kanban");
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const findColumn = (taskId: string) => columns.find((c) => c.tasks.some((t) => t.id === taskId));
@@ -778,6 +920,12 @@ export default function App() {
               color: view === "gantt" ? "#6366f1" : "#64748b",
               borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
             }}>甘特圖</button>
+            <button onClick={() => setView("dashboard")} style={{
+              background: view === "dashboard" ? "#6366f122" : "transparent",
+              border: `1px solid ${view === "dashboard" ? "#6366f1" : "#ffffff15"}`,
+              color: view === "dashboard" ? "#6366f1" : "#64748b",
+              borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
+            }}>儀表板</button>
           </div>
           <div className="progress-wrap">
             <span className="progress-label">進度</span>
@@ -797,8 +945,10 @@ export default function App() {
             </div>
             <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
           </DndContext>
-        ) : (
+        ) : view === "gantt" ? (
           <GanttView columns={columns} onEditTask={setEditingTask} />
+        ) : (
+          <DashboardView columns={columns} />
         )}
       </div>
 
