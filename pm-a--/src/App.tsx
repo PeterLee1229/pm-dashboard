@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useState, useEffect, type ReactElement } from "react";
 import {
   DndContext, type DragEndEvent, type DragOverEvent, DragOverlay, type DragStartEvent,
   PointerSensor, useSensor, useSensors,
@@ -7,7 +7,7 @@ import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag } from "lucide-react";
+import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar } from "lucide-react";
 
 type Priority = "low" | "medium" | "high";
 type Task = {
@@ -16,6 +16,10 @@ type Task = {
   description: string;
   priority: Priority;
   assignee: string;
+  trackedSeconds: number;
+  isRunning: boolean;
+  startDate: string;
+  endDate: string;
 };
 type Column = { id: string; title: string; tasks: Task[] };
 
@@ -40,30 +44,37 @@ const initialColumns: Column[] = [
   {
     id: "todo", title: "待處理",
     tasks: [
-      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter" },
-      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy" },
+      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
+      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
     ],
   },
   {
     id: "inprogress", title: "進行中",
     tasks: [
-      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John" },
-      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter" },
+      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
+      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
     ],
   },
   {
     id: "review", title: "審查中",
     tasks: [
-      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy" },
+      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
     ],
   },
   {
     id: "done", title: "已完成",
     tasks: [
-      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter" },
+      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
     ],
   },
 ];
+
+function formatTime(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
 
 // ── Task Edit Modal ──────────────────────────────────────────────────
 function TaskModal({ task, onSave, onClose }: {
@@ -123,6 +134,23 @@ function TaskModal({ task, onSave, onClose }: {
               onChange={(e) => setForm({ ...form, assignee: e.target.value })}
               placeholder="輸入指派人姓名..." />
           </div>
+
+          <div className="field">
+            <label className="field-label"><Calendar size={13} /> 開始日期</label>
+            <input type="date" className="field-input" value={form.startDate}
+              onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label className="field-label"><Calendar size={13} /> 結束日期</label>
+            <input type="date" className="field-input" value={form.endDate}
+              onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+          </div>
+
+          <div className="field">
+            <label className="field-label"><Timer size={13} /> 累計工時</label>
+            <div className="field-time">{formatTime(task.trackedSeconds)}</div>
+          </div>
         </div>
 
         <div className="modal-footer">
@@ -135,8 +163,8 @@ function TaskModal({ task, onSave, onClose }: {
 }
 
 // ── Task Card ────────────────────────────────────────────────────────
-function TaskCard({ task, isDragging = false, onClick }: {
-  task: Task; isDragging?: boolean; onClick?: () => void;
+function TaskCard({ task, isDragging = false, onClick, onToggleTimer }: {
+  task: Task; isDragging?: boolean; onClick?: () => void; onToggleTimer?: (taskId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } =
     useSortable({ id: task.id });
@@ -158,17 +186,27 @@ function TaskCard({ task, isDragging = false, onClick }: {
       {task.description && <p className="task-desc">{task.description}</p>}
       <div className="task-footer">
         <span className="assignee">{task.assignee}</span>
+        <div className="timer-wrap">
+          <span className={`timer-display${task.isRunning ? " running" : ""}`}>
+            <Timer size={11} />
+            {formatTime(task.trackedSeconds)}
+          </span>
+          <button className="timer-btn" onClick={(e) => { e.stopPropagation(); onToggleTimer?.(task.id); }}>
+            {task.isRunning ? <Pause size={12} /> : <Play size={12} />}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 // ── Column ───────────────────────────────────────────────────────────
-function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask }: {
+function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggleTimer }: {
   column: Column;
   onAddTask: (colId: string, title: string) => void;
   onDeleteTask: (colId: string, taskId: string) => void;
   onEditTask: (task: Task) => void;
+  onToggleTimer: (taskId: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -194,7 +232,7 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask }: {
         <div className="task-list">
           {column.tasks.map((task) => (
             <div key={task.id} style={{ position: "relative" }}>
-              <TaskCard task={task} onClick={() => onEditTask(task)} />
+              <TaskCard task={task} onClick={() => onEditTask(task)} onToggleTimer={onToggleTimer} />
               <button className="delete-task" onClick={(e) => { e.stopPropagation(); onDeleteTask(column.id, task.id); }}>
                 <X size={11} />
               </button>
@@ -226,6 +264,23 @@ export default function App() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const findColumn = (taskId: string) => columns.find((c) => c.tasks.some((t) => t.id === taskId));
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setColumns((cols) => cols.map((col) => ({
+        ...col,
+        tasks: col.tasks.map((t) => t.isRunning ? { ...t, trackedSeconds: t.trackedSeconds + 1 } : t),
+      })));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleToggleTimer = (taskId: string) => {
+    setColumns((cols) => cols.map((col) => ({
+      ...col,
+      tasks: col.tasks.map((t) => t.id === taskId ? { ...t, isRunning: !t.isRunning } : t),
+    })));
+  };
 
   const handleDragStart = (e: DragStartEvent) => {
     const task = findColumn(e.active.id as string)?.tasks.find((t) => t.id === e.active.id);
@@ -266,7 +321,7 @@ export default function App() {
 
   const handleAddTask = (colId: string, title: string) => {
     setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我" }] } : col
+      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" }] } : col
     ));
   };
 
@@ -311,7 +366,7 @@ export default function App() {
         .add-btn { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 6px; display: flex; align-items: center; transition: background .15s; }
         .add-btn:hover { background: #ffffff10; }
 
-        .task-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+        .task-list { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; max-height: 60vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #ffffff15 transparent; }
 
         .task-card { background: #1e2638; border-radius: 8px; padding: 12px; border: 1px solid #ffffff08; transition: border-color .15s, box-shadow .15s; cursor: pointer; }
         .task-card:hover { border-color: #6366f144; box-shadow: 0 4px 16px #0008; }
@@ -323,8 +378,14 @@ export default function App() {
         .drag-handle:active { cursor: grabbing; }
         .task-title { font-size: 13px; font-weight: 600; color: #e2e8f0; margin-bottom: 5px; line-height: 1.4; }
         .task-desc  { font-size: 11px; color: #64748b; line-height: 1.5; margin-bottom: 10px; }
-        .task-footer { display: flex; align-items: center; justify-content: flex-end; }
+        .task-footer { display: flex; align-items: center; justify-content: space-between; }
         .assignee { font-size: 11px; color: #94a3b8; background: #ffffff08; padding: 2px 8px; border-radius: 99px; }
+
+        .timer-wrap { display: flex; align-items: center; gap: 4px; }
+        .timer-display { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #475569; font-variant-numeric: tabular-nums; }
+        .timer-display.running { color: #10b981; }
+        .timer-btn { background: none; border: none; cursor: pointer; color: #475569; padding: 2px; display: flex; align-items: center; border-radius: 4px; transition: color .15s, background .15s; }
+        .timer-btn:hover { color: #e2e8f0; background: #ffffff10; }
 
         .delete-task { position: absolute; top: 8px; right: 8px; background: #ef444422; border: none; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 3px; display: none; align-items: center; }
         div:hover > .delete-task { display: flex; }
@@ -346,12 +407,14 @@ export default function App() {
         .modal-close { background: none; border: none; color: #64748b; cursor: pointer; padding: 4px; border-radius: 6px; display: flex; transition: color .15s; }
         .modal-close:hover { color: #e2e8f0; }
 
-        .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+        .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 18px; max-height: 65vh; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #ffffff15 transparent; }
         .field { display: flex; flex-direction: column; gap: 7px; }
         .field-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
         .field-input { background: #0f1117; border: 1px solid #ffffff12; border-radius: 8px; padding: 10px 12px; color: #e2e8f0; font-size: 13px; outline: none; font-family: inherit; resize: none; transition: border-color .15s; width: 100%; }
         .field-input:focus { border-color: #6366f1; }
+        .field-input[type="date"] { color-scheme: dark; }
         .field-textarea { line-height: 1.6; }
+        .field-time { background: #0f1117; border: 1px solid #ffffff08; border-radius: 8px; padding: 10px 12px; color: #94a3b8; font-size: 13px; font-variant-numeric: tabular-nums; }
 
         .priority-group { display: flex; gap: 8px; }
         .priority-option { flex: 1; border-radius: 8px; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
@@ -381,7 +444,7 @@ export default function App() {
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
           <div className="board">
             {columns.map((col) => (
-              <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} />
+              <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
             ))}
           </div>
           <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
