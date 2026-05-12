@@ -8,7 +8,7 @@ import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar, BarChart2 } from "lucide-react";
+import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar, BarChart2, Search } from "lucide-react";
 
 type Priority = "low" | "medium" | "high";
 type SubTask = {
@@ -492,29 +492,14 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
       display: "flex", flexDirection: "column", gap: 4,
       position: "fixed", top: 0, left: 0, zIndex: 50, overflowY: "auto"
     }}>
+      {/* Logo */}
       <div style={{ padding: "0 8px 20px" }}>
         <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>專案管理</p>
         <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>PM Dashboard</p>
       </div>
 
-      {items.map((item) => {
-        const active = view === item.id;
-        return (
-          <button key={item.id} onClick={() => setView(item.id)} style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 12px", borderRadius: 8, border: "none",
-            background: active ? "#6366f122" : "transparent",
-            color: active ? "#6366f1" : "#64748b",
-            fontSize: 13, fontWeight: active ? 600 : 400,
-            cursor: "pointer", textAlign: "left", transition: "all .15s",
-            borderLeft: active ? "3px solid #6366f1" : "3px solid transparent"
-          }}>
-            {item.icon}{item.label}
-          </button>
-        );
-      })}
-
-      <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #ffffff08" }}>
+      {/* 專案列表 */}
+      <div style={{ paddingBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px 10px" }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>專案</span>
           <button onClick={onAddProject} style={{
@@ -553,6 +538,27 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
           );
         })}
       </div>
+
+      {/* 分隔線 */}
+      <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
+
+      {/* 視圖切換 */}
+      {items.map((item) => {
+        const active = view === item.id;
+        return (
+          <button key={item.id} onClick={() => setView(item.id)} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px", borderRadius: 8, border: "none",
+            background: active ? "#6366f122" : "transparent",
+            color: active ? "#6366f1" : "#64748b",
+            fontSize: 13, fontWeight: active ? 600 : 400,
+            cursor: "pointer", textAlign: "left", transition: "all .15s",
+            borderLeft: active ? "3px solid #6366f1" : "3px solid transparent"
+          }}>
+            {item.icon}{item.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -967,6 +973,26 @@ export default function App() {
     }
   };
 
+  const [searchText, setSearchText] = useState("");
+  const [filterPriority, setFilterPriority] = useState<Priority | "all">("all");
+  const [filterAssignee, setFilterAssignee] = useState<string>("all");
+
+  const allAssignees = Array.from(new Set(
+    columns.flatMap((c) => c.tasks.map((t) => t.assignee)).filter(Boolean)
+  ));
+
+  const filteredColumns = columns.map((col) => ({
+    ...col,
+    tasks: col.tasks.filter((task) => {
+      const matchSearch = searchText === "" ||
+        task.title.toLowerCase().includes(searchText.toLowerCase()) ||
+        task.assignee.toLowerCase().includes(searchText.toLowerCase());
+      const matchPriority = filterPriority === "all" || task.priority === filterPriority;
+      const matchAssignee = filterAssignee === "all" || task.assignee === filterAssignee;
+      return matchSearch && matchPriority && matchAssignee;
+    })
+  }));
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const findColumn = (taskId: string) => columns.find((c) => c.tasks.some((t) => t.id === taskId));
 
@@ -1158,17 +1184,51 @@ export default function App() {
             </div>
           </div>
 
+          <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
+              <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#475569" }} />
+              <input
+                className="field-input"
+                placeholder="搜尋任務或指派人..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                style={{ paddingLeft: 32, fontSize: 13 }}
+              />
+            </div>
+
+            <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as Priority | "all")}
+              style={{ background: "#1e2638", border: "1px solid #ffffff12", borderRadius: 8, color: "#e2e8f0", fontSize: 13, padding: "8px 12px", cursor: "pointer", outline: "none" }}>
+              <option value="all">所有優先級</option>
+              <option value="high">高優先</option>
+              <option value="medium">中優先</option>
+              <option value="low">低優先</option>
+            </select>
+
+            <select value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}
+              style={{ background: "#1e2638", border: "1px solid #ffffff12", borderRadius: 8, color: "#e2e8f0", fontSize: 13, padding: "8px 12px", cursor: "pointer", outline: "none" }}>
+              <option value="all">所有成員</option>
+              {allAssignees.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+
+            {(searchText || filterPriority !== "all" || filterAssignee !== "all") && (
+              <button onClick={() => { setSearchText(""); setFilterPriority("all"); setFilterAssignee("all"); }}
+                style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 8, color: "#ef4444", fontSize: 12, padding: "8px 12px", cursor: "pointer" }}>
+                清除篩選
+              </button>
+            )}
+          </div>
+
           {view === "kanban" ? (
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
               <div className="board">
-                {columns.map((col) => (
+                {filteredColumns.map((col) => (
                   <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
                 ))}
               </div>
               <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
             </DndContext>
           ) : view === "gantt" ? (
-            <GanttView columns={columns} onEditTask={setEditingTask} />
+            <GanttView columns={filteredColumns} onEditTask={setEditingTask} />
           ) : (
             <DashboardView columns={columns} />
           )}
