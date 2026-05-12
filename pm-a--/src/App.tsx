@@ -80,6 +80,20 @@ const initialColumns: Column[] = [
   },
 ];
 
+function getEffectiveStartDate(task: Task): string {
+  if (task.subtasks.length === 0) return task.startDate;
+  const dates = task.subtasks.filter((s) => s.startDate).map((s) => s.startDate);
+  if (dates.length === 0) return task.startDate;
+  return dates.sort()[0];
+}
+
+function getEffectiveEndDate(task: Task): string {
+  if (task.subtasks.length === 0) return task.endDate;
+  const dates = task.subtasks.filter((s) => s.endDate).map((s) => s.endDate);
+  if (dates.length === 0) return task.endDate;
+  return dates.sort().reverse()[0];
+}
+
 function getCompletion(task: Task): number {
   if (task.subtasks.length === 0) return task.completion;
   const avg = task.subtasks.reduce((sum, s) => sum + s.completion, 0) / task.subtasks.length;
@@ -369,11 +383,217 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggle
   );
 }
 
+// ── Gantt View ───────────────────────────────────────────────────────
+function GanttView({ columns, onEditTask }: {
+  columns: Column[];
+  onEditTask: (task: Task) => void;
+}) {
+  const allTasks = columns.flatMap((col) => col.tasks);
+  const tasksWithDates = allTasks.filter((t) =>
+    getEffectiveStartDate(t) && getEffectiveEndDate(t)
+  );
+
+  if (tasksWithDates.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, color: "#475569", gap: 8 }}>
+        <p style={{ fontSize: 15 }}>尚無設定日期的任務</p>
+        <p style={{ fontSize: 13 }}>請先在任務編輯視窗設定開始與結束日期</p>
+      </div>
+    );
+  }
+
+  const allDates = tasksWithDates.flatMap((t) => [
+    new Date(getEffectiveStartDate(t)),
+    new Date(getEffectiveEndDate(t))
+  ]);
+  const minDate = new Date(Math.min(...allDates.map((d) => d.getTime())));
+  const maxDate = new Date(Math.max(...allDates.map((d) => d.getTime())));
+  minDate.setDate(minDate.getDate() - 2);
+  maxDate.setDate(maxDate.getDate() + 2);
+
+  const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000);
+  const dayWidth = Math.max(32, Math.min(60, 800 / totalDays));
+  const rowHeight = 44;
+  const labelWidth = 180;
+
+  const days: Date[] = [];
+  for (let i = 0; i <= totalDays; i++) {
+    const d = new Date(minDate);
+    d.setDate(minDate.getDate() + i);
+    days.push(d);
+  }
+
+  const months: { label: string; span: number }[] = [];
+  days.forEach((d) => {
+    const label = `${d.getFullYear()}/${d.getMonth() + 1}`;
+    if (months.length === 0 || months[months.length - 1].label !== label) {
+      months.push({ label, span: 1 });
+    } else {
+      months[months.length - 1].span++;
+    }
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  function dayOffset(date: Date) {
+    return Math.floor((date.getTime() - minDate.getTime()) / 86400000);
+  }
+
+  const COL_COLORS_LIST = ["#6366f1", "#f59e0b", "#8b5cf6", "#10b981"];
+
+  return (
+    <div style={{ overflowX: "auto", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", position: "relative" }}>
+      <div style={{ minWidth: labelWidth + days.length * dayWidth }}>
+
+        {/* 月份列 */}
+        <div style={{ display: "flex", borderBottom: "1px solid #ffffff08" }}>
+          <div style={{ minWidth: labelWidth, background: "#1a2030" }} />
+          {months.map((m, i) => (
+            <div key={i} style={{
+              minWidth: m.span * dayWidth, padding: "8px 0",
+              textAlign: "center", fontSize: 11, fontWeight: 600,
+              color: "#94a3b8", background: "#1a2030",
+              borderLeft: "1px solid #ffffff08"
+            }}>{m.label}</div>
+          ))}
+        </div>
+
+        {/* 日期列 */}
+        <div style={{ display: "flex", borderBottom: "1px solid #ffffff10" }}>
+          <div style={{ minWidth: labelWidth, background: "#1a2030", padding: "6px 14px", fontSize: 11, color: "#475569" }}>任務名稱</div>
+          {days.map((d, i) => {
+            const isToday = d.getTime() === today.getTime();
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            return (
+              <div key={i} style={{
+                minWidth: dayWidth, textAlign: "center",
+                padding: "6px 0", fontSize: 10,
+                color: isToday ? "#6366f1" : isWeekend ? "#475569" : "#64748b",
+                fontWeight: isToday ? 700 : 400,
+                background: isToday ? "#6366f111" : "#1a2030",
+                borderLeft: "1px solid #ffffff06"
+              }}>{d.getDate()}</div>
+            );
+          })}
+        </div>
+
+        {/* 任務列 */}
+        {tasksWithDates.map((task, taskIdx) => {
+          const start = new Date(getEffectiveStartDate(task));
+          const end = new Date(getEffectiveEndDate(task));
+          const offsetX = dayOffset(start);
+          const width = Math.max(1, dayOffset(end) - offsetX + 1);
+          const completion = getCompletion(task);
+          const colColor = COL_COLORS_LIST[taskIdx % COL_COLORS_LIST.length];
+
+          return (
+            <div key={task.id}>
+              <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", position: "relative", height: rowHeight }}>
+                <div style={{
+                  minWidth: labelWidth, padding: "0 14px",
+                  fontSize: 12, fontWeight: 600, color: "#cbd5e1",
+                  cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                }} onClick={() => onEditTask(task)}>{task.title}</div>
+
+                {days.map((d, i) => {
+                  const isToday = d.getTime() === today.getTime();
+                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                  return (
+                    <div key={i} style={{
+                      minWidth: dayWidth, height: "100%",
+                      background: isToday ? "#6366f108" : isWeekend ? "#ffffff03" : "transparent",
+                      borderLeft: "1px solid #ffffff04"
+                    }} />
+                  );
+                })}
+
+                <div style={{
+                  position: "absolute", left: labelWidth + offsetX * dayWidth,
+                  width: width * dayWidth - 4, height: 24,
+                  borderRadius: 6, background: colColor + "33",
+                  border: `1px solid ${colColor}66`,
+                  cursor: "pointer", overflow: "hidden"
+                }} onClick={() => onEditTask(task)}>
+                  <div style={{
+                    position: "absolute", top: 0, left: 0,
+                    height: "100%", width: `${completion}%`,
+                    background: colColor + "66", borderRadius: 6,
+                    transition: "width .3s"
+                  }} />
+                  <div style={{
+                    position: "absolute", inset: 0, display: "flex",
+                    alignItems: "center", paddingLeft: 8,
+                    fontSize: 10, fontWeight: 600, color: "#e2e8f0",
+                    whiteSpace: "nowrap", overflow: "hidden"
+                  }}>{completion}%</div>
+                </div>
+              </div>
+
+              {task.subtasks
+                .filter((s) => s.startDate && s.endDate)
+                .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+                .map((sub) => {
+                const sStart = new Date(sub.startDate);
+                const sEnd = new Date(sub.endDate);
+                const sOffsetX = dayOffset(sStart);
+                const sWidth = Math.max(1, dayOffset(sEnd) - sOffsetX + 1);
+
+                return (
+                  <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", position: "relative", height: 36, background: "#ffffff02" }}>
+                    <div style={{
+                      minWidth: labelWidth, padding: "0 14px 0 28px",
+                      fontSize: 11, color: "#64748b",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                    }}>↳ {sub.title}</div>
+
+                    {days.map((_, i) => (
+                      <div key={i} style={{ minWidth: dayWidth, height: "100%", borderLeft: "1px solid #ffffff03" }} />
+                    ))}
+
+                    <div style={{
+                      position: "absolute", left: labelWidth + sOffsetX * dayWidth,
+                      width: sWidth * dayWidth - 4, height: 18,
+                      borderRadius: 4, background: "#10b98122",
+                      border: "1px solid #10b98144", overflow: "hidden"
+                    }}>
+                      <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${sub.completion}%`, background: "#10b98155", borderRadius: 4 }} />
+                      <div style={{
+                        position: "absolute", inset: 0, display: "flex",
+                        alignItems: "center", paddingLeft: 6,
+                        fontSize: 9, color: "#94a3b8"
+                      }}>{sub.completion}%</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+
+        {/* 今日線 */}
+        {(() => {
+          const todayOffset = dayOffset(today);
+          if (todayOffset < 0 || todayOffset > totalDays) return null;
+          return (
+            <div style={{
+              position: "absolute", top: 0, bottom: 0,
+              left: labelWidth + todayOffset * dayWidth + dayWidth / 2,
+              width: 2, background: "#6366f1", opacity: 0.6, pointerEvents: "none"
+            }} />
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
   const [columns, setColumns] = useState<Column[]>(initialColumns);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [view, setView] = useState<"kanban" | "gantt">("kanban");
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const findColumn = (taskId: string) => columns.find((c) => c.tasks.some((t) => t.id === taskId));
@@ -545,6 +765,20 @@ export default function App() {
             <h1>專案管理看板</h1>
             <p>共 {totalTasks} 項任務 · {doneTasks} 項已完成</p>
           </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setView("kanban")} style={{
+              background: view === "kanban" ? "#6366f122" : "transparent",
+              border: `1px solid ${view === "kanban" ? "#6366f1" : "#ffffff15"}`,
+              color: view === "kanban" ? "#6366f1" : "#64748b",
+              borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
+            }}>看板</button>
+            <button onClick={() => setView("gantt")} style={{
+              background: view === "gantt" ? "#6366f122" : "transparent",
+              border: `1px solid ${view === "gantt" ? "#6366f1" : "#ffffff15"}`,
+              color: view === "gantt" ? "#6366f1" : "#64748b",
+              borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
+            }}>甘特圖</button>
+          </div>
           <div className="progress-wrap">
             <span className="progress-label">進度</span>
             <div className="progress-bar">
@@ -554,14 +788,18 @@ export default function App() {
           </div>
         </div>
 
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-          <div className="board">
-            {columns.map((col) => (
-              <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
-            ))}
-          </div>
-          <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
-        </DndContext>
+        {view === "kanban" ? (
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+            <div className="board">
+              {columns.map((col) => (
+                <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
+              ))}
+            </div>
+            <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
+          </DndContext>
+        ) : (
+          <GanttView columns={columns} onEditTask={setEditingTask} />
+        )}
       </div>
 
       {editingTask && (
