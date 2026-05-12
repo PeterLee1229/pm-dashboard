@@ -39,6 +39,7 @@ type Group = {
   id: string;
   name: string;
   color: string;
+  members: string[];
 };
 type Project = {
   id: string;
@@ -98,13 +99,13 @@ const initialColumns: Column[] = [
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#06b6d4"];
 
 const DEFAULT_GROUPS: Group[] = [
-  { id: "g1", name: "專管組", color: "#6366f1" },
-  { id: "g2", name: "美術組", color: "#f59e0b" },
-  { id: "g3", name: "設計組", color: "#8b5cf6" },
-  { id: "g4", name: "硬體組", color: "#10b981" },
-  { id: "g5", name: "軟體組", color: "#06b6d4" },
-  { id: "g6", name: "維運組", color: "#f43f5e" },
-  { id: "g7", name: "費曼圖", color: "#facc15" },
+  { id: "g1", name: "專管組", color: "#6366f1", members: ["Peter"] },
+  { id: "g2", name: "美術組", color: "#f59e0b", members: [] },
+  { id: "g3", name: "設計組", color: "#8b5cf6", members: [] },
+  { id: "g4", name: "硬體組", color: "#10b981", members: [] },
+  { id: "g5", name: "軟體組", color: "#06b6d4", members: [] },
+  { id: "g6", name: "維運組", color: "#f43f5e", members: [] },
+  { id: "g7", name: "費曼圖", color: "#facc15", members: [] },
 ];
 
 const initialProjects: Project[] = [
@@ -146,8 +147,9 @@ function formatTime(seconds: number) {
 }
 
 // ── Task Edit Modal ──────────────────────────────────────────────────
-function TaskModal({ task, onSave, onClose }: {
+function TaskModal({ task, groups, onSave, onClose }: {
   task: Task;
+  groups: Group[];
   onSave: (updated: Task) => void;
   onClose: () => void;
 }) {
@@ -198,10 +200,34 @@ function TaskModal({ task, onSave, onClose }: {
           </div>
 
           <div className="field">
+            <label className="field-label"><User size={13} /> 所屬組別</label>
+            <select className="field-input" value={form.groupId}
+              onChange={(e) => setForm({ ...form, groupId: e.target.value, assignee: "" })}>
+              <option value="">未分組</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+
+          <div className="field">
             <label className="field-label"><User size={13} /> 指派人</label>
-            <input className="field-input" value={form.assignee}
-              onChange={(e) => setForm({ ...form, assignee: e.target.value })}
-              placeholder="輸入指派人姓名..." />
+            {(() => {
+              const selectedGroup = groups.find((g) => g.id === form.groupId);
+              const availableMembers = selectedGroup?.members || [];
+              if (form.groupId && availableMembers.length > 0) {
+                return (
+                  <select className="field-input" value={form.assignee}
+                    onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
+                    <option value="">請選擇指派人</option>
+                    {availableMembers.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                );
+              }
+              return (
+                <input className="field-input" value={form.assignee}
+                  onChange={(e) => setForm({ ...form, assignee: e.target.value })}
+                  placeholder={form.groupId ? "該組別尚無成員，請先到「管理組別」新增" : "請先選擇組別，或直接輸入姓名"} />
+              );
+            })()}
           </div>
 
           <div className="field">
@@ -487,8 +513,145 @@ function ProjectModal({ onSave, onClose, existing }: {
   );
 }
 
+// ── Member Input ─────────────────────────────────────────────────────
+function MemberInput({ onAdd, color }: { onAdd: (name: string) => void; color: string }) {
+  const [value, setValue] = useState("");
+  const handleAdd = () => { if (value.trim()) { onAdd(value.trim()); setValue(""); } };
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      <input value={value} onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+        placeholder="輸入成員姓名..."
+        style={{ flex: 1, background: "#161b27", border: "1px solid #ffffff10", borderRadius: 6, padding: "5px 10px", color: "#e2e8f0", fontSize: 12, outline: "none" }} />
+      <button onClick={handleAdd}
+        style={{ background: color + "22", border: `1px solid ${color}44`, borderRadius: 6, color, fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>
+        加入
+      </button>
+    </div>
+  );
+}
+
+// ── Group Modal ───────────────────────────────────────────────────────
+function GroupModal({ groups, onSave, onClose }: {
+  groups: Group[];
+  onSave: (groups: Group[]) => void;
+  onClose: () => void;
+}) {
+  const [editGroups, setEditGroups] = useState<Group[]>(
+    groups.map((g) => ({ ...g, members: g.members || [] }))
+  );
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(PROJECT_COLORS[0]);
+
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    setEditGroups([...editGroups, { id: "g" + Date.now(), name: newName.trim(), color: newColor, members: [] }]);
+    setNewName("");
+  };
+
+  const handleDelete = (id: string) => {
+    setEditGroups(editGroups.filter((g) => g.id !== id));
+  };
+
+  const handleRename = (id: string, name: string) => {
+    setEditGroups(editGroups.map((g) => g.id === id ? { ...g, name } : g));
+  };
+
+  const handleColorChange = (id: string, color: string) => {
+    setEditGroups(editGroups.map((g) => g.id === id ? { ...g, color } : g));
+  };
+
+  const handleAddMember = (groupId: string, member: string) => {
+    if (!member.trim()) return;
+    setEditGroups(editGroups.map((g) =>
+      g.id === groupId && !g.members.includes(member.trim())
+        ? { ...g, members: [...g.members, member.trim()] }
+        : g
+    ));
+  };
+
+  const handleRemoveMember = (groupId: string, member: string) => {
+    setEditGroups(editGroups.map((g) =>
+      g.id === groupId ? { ...g, members: g.members.filter((m) => m !== member) } : g
+    ));
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">管理組別與成員</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: "65vh", overflowY: "auto" }}>
+          {editGroups.map((g) => (
+            <div key={g.id} style={{ background: "#0f1117", borderRadius: 10, padding: 14, border: "1px solid #ffffff08" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ position: "relative" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 99, background: g.color, cursor: "pointer" }} />
+                  <select value={g.color} onChange={(e) => handleColorChange(g.id, e.target.value)}
+                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%" }}>
+                    {PROJECT_COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <input value={g.name} onChange={(e) => handleRename(g.id, e.target.value)}
+                  style={{ flex: 1, background: "transparent", border: "none", color: "#e2e8f0", fontSize: 14, fontWeight: 600, outline: "none" }} />
+                <button onClick={() => handleDelete(g.id)}
+                  style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+                  <X size={14} />
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {g.members.map((m) => (
+                  <span key={m} style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    background: g.color + "18", color: g.color,
+                    border: `1px solid ${g.color}33`,
+                    borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: 500
+                  }}>
+                    {m}
+                    <button onClick={() => handleRemoveMember(g.id, m)}
+                      style={{ background: "none", border: "none", color: g.color, cursor: "pointer", padding: 0, display: "flex", marginLeft: 2 }}>
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                {g.members.length === 0 && (
+                  <span style={{ fontSize: 11, color: "#475569" }}>尚無成員</span>
+                )}
+              </div>
+              <MemberInput onAdd={(name) => handleAddMember(g.id, name)} color={g.color} />
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
+            <div style={{ position: "relative" }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: newColor, cursor: "pointer" }} />
+              <select value={newColor} onChange={(e) => setNewColor(e.target.value)}
+                style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%" }}>
+                {PROJECT_COLORS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <input className="field-input" placeholder="新組別名稱..." value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+              style={{ flex: 1 }} />
+            <button onClick={handleAdd}
+              style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#6366f1", fontSize: 12, padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
+              新增
+            </button>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-save" onClick={() => { onSave(editGroups); onClose(); }}>儲存變更</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject }: {
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups }: {
   view: "kanban" | "gantt" | "dashboard";
   setView: (v: "kanban" | "gantt" | "dashboard") => void;
   projects: Project[];
@@ -496,6 +659,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   setActiveProjectId: (id: string) => void;
   onAddProject: () => void;
   onDeleteProject: (id: string) => void;
+  onManageGroups: () => void;
 }) {
   const items = [
     { id: "kanban",    label: "看板",   icon: <Circle size={16} /> },
@@ -577,6 +741,19 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
           </button>
         );
       })}
+
+      {/* 管理組別 */}
+      <div style={{ marginTop: "auto", paddingTop: 16, borderTop: "1px solid #ffffff08" }}>
+        <button onClick={onManageGroups} style={{
+          display: "flex", alignItems: "center", gap: 10,
+          width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+          background: "transparent", color: "#64748b",
+          fontSize: 13, cursor: "pointer", textAlign: "left", transition: "all .15s",
+          borderLeft: "3px solid transparent"
+        }}>
+          <User size={16} />管理組別與成員
+        </button>
+      </div>
     </div>
   );
 }
@@ -936,7 +1113,10 @@ export default function App() {
         const parsed: Project[] = JSON.parse(saved);
         return parsed.map((p) => ({
           ...p,
-          groups: p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS,
+          groups: (p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS).map((g: Group) => ({
+            ...g,
+            members: g.members || [],
+          })),
         }));
       }
       return initialProjects;
@@ -979,6 +1159,13 @@ export default function App() {
   const [showProjectModal, setShowProjectModal] = useState(false);
 
   const handleAddProject = () => setShowProjectModal(true);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+
+  const handleSaveGroups = (groups: Group[]) => {
+    setProjects((prev) => prev.map((p) =>
+      p.id === activeProjectId ? { ...p, groups } : p
+    ));
+  };
 
   const handleSaveProject = (name: string, description: string, color: string) => {
     const newProject: Project = {
@@ -1198,6 +1385,7 @@ export default function App() {
         setActiveProjectId={setActiveProjectId}
         onAddProject={handleAddProject}
         onDeleteProject={handleDeleteProject}
+        onManageGroups={() => setShowGroupModal(true)}
       />
 
       <div style={{ marginLeft: 200 }}>
@@ -1321,13 +1509,21 @@ export default function App() {
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
+        <TaskModal task={editingTask} groups={activeProject?.groups || []} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
       )}
 
       {showProjectModal && (
         <ProjectModal
           onSave={handleSaveProject}
           onClose={() => setShowProjectModal(false)}
+        />
+      )}
+
+      {showGroupModal && (
+        <GroupModal
+          groups={activeProject?.groups || []}
+          onSave={handleSaveGroups}
+          onClose={() => setShowGroupModal(false)}
         />
       )}
     </>
