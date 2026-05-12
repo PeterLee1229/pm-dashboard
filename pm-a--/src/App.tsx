@@ -759,7 +759,9 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
 }
 
 // ── Dashboard View ───────────────────────────────────────────────────
-function DashboardView({ columns }: { columns: Column[] }) {
+function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[] }) {
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+
   const allTasks = columns.flatMap((c) => c.tasks);
   const allSubtasks = allTasks.flatMap((t) => t.subtasks);
 
@@ -773,11 +775,14 @@ function DashboardView({ columns }: { columns: Column[] }) {
     { name: "低優先", value: priorityCount.low, color: "#4ade80" },
   ].filter((d) => d.value > 0);
 
-  const assigneeMap: Record<string, number> = {};
-  [...allTasks, ...allSubtasks].forEach((t) => {
-    if (t.assignee) assigneeMap[t.assignee] = (assigneeMap[t.assignee] || 0) + 1;
-  });
-  const assigneeData = Object.entries(assigneeMap).map(([name, 任務數]) => ({ name, 任務數 }));
+  const groupTaskData: { id: string; name: string; 任務數: number; color: string }[] = groups.map((g) => {
+    const count = allTasks.filter((t) => t.groupId === g.id).length;
+    return { id: g.id, name: g.name, 任務數: count, color: g.color };
+  }).filter((d) => d.任務數 > 0);
+  const ungroupedCount = allTasks.filter((t) => !t.groupId).length;
+  if (ungroupedCount > 0) {
+    groupTaskData.push({ id: "none", name: "未分組", 任務數: ungroupedCount, color: "#475569" });
+  }
 
   const hoursMap: Record<string, number> = {};
   allTasks.forEach((t) => {
@@ -864,19 +869,26 @@ function DashboardView({ columns }: { columns: Column[] }) {
         </div>
 
         <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各成員任務數</p>
-          {assigneeData.length === 0 ? (
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各組別任務數</p>
+          {groupTaskData.length === 0 ? (
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 13 }}>尚無資料</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={assigneeData} barSize={32} layout="vertical">
+              <BarChart data={groupTaskData} barSize={32} layout="vertical">
                 <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
-                <Bar dataKey="任務數" fill="#6366f1" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="任務數" radius={[0, 6, 6, 0]} cursor="pointer"
+                  onClick={(data: { id?: string }) => {
+                    const group = groups.find((g) => g.id === data.id);
+                    if (group) setSelectedGroup(group);
+                  }}>
+                  {groupTaskData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
+          <p style={{ fontSize: 11, color: "#475569", marginTop: 8 }}>點擊組別查看成員工項與工時</p>
         </div>
 
         <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
@@ -895,19 +907,103 @@ function DashboardView({ columns }: { columns: Column[] }) {
           )}
         </div>
       </div>
+
+      {selectedGroup && (() => {
+        const groupTasks = allTasks.filter((t) => t.groupId === selectedGroup.id);
+        const groupSubtasks = groupTasks.flatMap((t) => t.subtasks);
+
+        const memberStats: Record<string, { tasks: string[]; hours: number }> = {};
+
+        groupTasks.forEach((t) => {
+          if (t.assignee) {
+            if (!memberStats[t.assignee]) memberStats[t.assignee] = { tasks: [], hours: 0 };
+            memberStats[t.assignee].tasks.push(t.title);
+            memberStats[t.assignee].hours += t.trackedSeconds || 0;
+          }
+        });
+
+        groupSubtasks.forEach((s) => {
+          if (s.assignee) {
+            if (!memberStats[s.assignee]) memberStats[s.assignee] = { tasks: [], hours: 0 };
+            memberStats[s.assignee].tasks.push(s.title);
+          }
+        });
+
+        selectedGroup.members.forEach((m) => {
+          if (!memberStats[m]) memberStats[m] = { tasks: [], hours: 0 };
+        });
+
+        const memberList = Object.entries(memberStats).sort((a, b) => a[0].localeCompare(b[0]));
+
+        return (
+          <div className="modal-overlay" onClick={() => setSelectedGroup(null)}>
+            <div className="modal" style={{ width: 600 }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 99, background: selectedGroup.color }} />
+                  <span className="modal-label">{selectedGroup.name} — 成員工項與工時</span>
+                </div>
+                <button className="modal-close" onClick={() => setSelectedGroup(null)}><X size={16} /></button>
+              </div>
+              <div className="modal-body" style={{ maxHeight: "65vh", overflowY: "auto" }}>
+                {memberList.length === 0 ? (
+                  <p style={{ fontSize: 13, color: "#475569", textAlign: "center", padding: 20 }}>該組別尚無成員</p>
+                ) : (
+                  memberList.map(([name, stats]) => (
+                    <div key={name} style={{
+                      background: "#0f1117", borderRadius: 10, padding: 14,
+                      border: "1px solid #ffffff08"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{name}</span>
+                        <span style={{
+                          fontSize: 11, padding: "3px 10px", borderRadius: 99,
+                          background: "#10b98122", color: "#10b981",
+                          border: "1px solid #10b98133"
+                        }}>
+                          工時：{stats.hours > 0 ? `${Math.round(stats.hours / 360) / 10} 小時` : "0 小時"}
+                        </span>
+                      </div>
+                      {stats.tasks.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {stats.tasks.map((taskName, i) => (
+                            <div key={i} style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              fontSize: 12, color: "#94a3b8"
+                            }}>
+                              <div style={{ width: 4, height: 4, borderRadius: 99, background: selectedGroup.color, flexShrink: 0 }} />
+                              {taskName}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: 12, color: "#475569" }}>尚無指派工項</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="btn-save" style={{ flex: 1 }} onClick={() => setSelectedGroup(null)}>關閉</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
 // ── Gantt View ───────────────────────────────────────────────────────
-function GanttView({ columns, onEditTask }: {
+function GanttView({ columns, groups, onEditTask }: {
   columns: Column[];
+  groups: Group[];
   onEditTask: (task: Task) => void;
 }) {
   const allTasks = columns.flatMap((col) => col.tasks);
-  const tasksWithDates = allTasks.filter((t) =>
-    getEffectiveStartDate(t) && getEffectiveEndDate(t)
-  );
+  const tasksWithDates = allTasks
+    .filter((t) => getEffectiveStartDate(t) && getEffectiveEndDate(t))
+    .sort((a, b) => new Date(getEffectiveStartDate(a)).getTime() - new Date(getEffectiveStartDate(b)).getTime());
 
   if (tasksWithDates.length === 0) {
     return (
@@ -930,7 +1026,9 @@ function GanttView({ columns, onEditTask }: {
   const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000);
   const dayWidth = Math.max(32, Math.min(60, 800 / totalDays));
   const rowHeight = 44;
+  const groupWidth = 80;
   const labelWidth = 180;
+  const frozenWidth = groupWidth + labelWidth;
 
   const days: Date[] = [];
   for (let i = 0; i <= totalDays; i++) {
@@ -956,149 +1054,191 @@ function GanttView({ columns, onEditTask }: {
     return Math.floor((date.getTime() - minDate.getTime()) / 86400000);
   }
 
-  const COL_COLORS_LIST = ["#6366f1", "#f59e0b", "#8b5cf6", "#10b981"];
-
   return (
-    <div style={{ overflowX: "auto", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", position: "relative" }}>
-      <div style={{ minWidth: labelWidth + days.length * dayWidth }}>
+    <div style={{ display: "flex", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
 
-        {/* 月份列 */}
-        <div style={{ display: "flex", borderBottom: "1px solid #ffffff08" }}>
-          <div style={{ minWidth: labelWidth, background: "#1a2030" }} />
-          {months.map((m, i) => (
-            <div key={i} style={{
-              minWidth: m.span * dayWidth, padding: "8px 0",
-              textAlign: "center", fontSize: 11, fontWeight: 600,
-              color: "#94a3b8", background: "#1a2030",
-              borderLeft: "1px solid #ffffff08"
-            }}>{m.label}</div>
-          ))}
+      {/* 凍結左側面板 */}
+      <div style={{ minWidth: frozenWidth, flexShrink: 0, zIndex: 1, borderRight: "1px solid #ffffff12" }}>
+        {/* 月份列佔位 */}
+        <div style={{ height: 37, background: "#1a2030", borderBottom: "1px solid #ffffff08", display: "flex", alignItems: "center", paddingLeft: 14 }}>
+          <span style={{ fontSize: 11, color: "#475569" }}>組別 / 任務名稱</span>
         </div>
-
-        {/* 日期列 */}
-        <div style={{ display: "flex", borderBottom: "1px solid #ffffff10" }}>
-          <div style={{ minWidth: labelWidth, background: "#1a2030", padding: "6px 14px", fontSize: 11, color: "#475569" }}>任務名稱</div>
-          {days.map((d, i) => {
-            const isToday = d.getTime() === today.getTime();
-            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-            return (
-              <div key={i} style={{
-                minWidth: dayWidth, textAlign: "center",
-                padding: "6px 0", fontSize: 10,
-                color: isToday ? "#6366f1" : isWeekend ? "#475569" : "#64748b",
-                fontWeight: isToday ? 700 : 400,
-                background: isToday ? "#6366f111" : "#1a2030",
-                borderLeft: "1px solid #ffffff06"
-              }}>{d.getDate()}</div>
-            );
-          })}
-        </div>
+        {/* 日期列佔位 */}
+        <div style={{ height: 33, background: "#1a2030", borderBottom: "1px solid #ffffff10" }} />
 
         {/* 任務列 */}
-        {tasksWithDates.map((task, taskIdx) => {
-          const start = new Date(getEffectiveStartDate(task));
-          const end = new Date(getEffectiveEndDate(task));
-          const offsetX = dayOffset(start);
-          const width = Math.max(1, dayOffset(end) - offsetX + 1);
-          const completion = getCompletion(task);
-          const colColor = COL_COLORS_LIST[taskIdx % COL_COLORS_LIST.length];
-
+        {tasksWithDates.map((task) => {
+          const group = groups.find((g) => g.id === task.groupId);
           return (
             <div key={task.id}>
-              <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", position: "relative", height: rowHeight }}>
+              <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", height: rowHeight }}>
+                {/* 組別徽章 */}
+                <div style={{ minWidth: groupWidth, padding: "0 6px", display: "flex", justifyContent: "center" }}>
+                  {group && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, padding: "2px 6px",
+                      borderRadius: 4, background: group.color + "22",
+                      border: `1px solid ${group.color}55`, color: group.color,
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      maxWidth: groupWidth - 12
+                    }}>{group.name}</span>
+                  )}
+                </div>
+                {/* 任務名稱 */}
                 <div style={{
                   minWidth: labelWidth, padding: "0 14px",
                   fontSize: 12, fontWeight: 600, color: "#cbd5e1",
                   cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
                 }} onClick={() => onEditTask(task)}>{task.title}</div>
-
-                {days.map((d, i) => {
-                  const isToday = d.getTime() === today.getTime();
-                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                  return (
-                    <div key={i} style={{
-                      minWidth: dayWidth, height: "100%",
-                      background: isToday ? "#6366f108" : isWeekend ? "#ffffff03" : "transparent",
-                      borderLeft: "1px solid #ffffff04"
-                    }} />
-                  );
-                })}
-
-                <div style={{
-                  position: "absolute", left: labelWidth + offsetX * dayWidth,
-                  width: width * dayWidth - 4, height: 24,
-                  borderRadius: 6, background: colColor + "33",
-                  border: `1px solid ${colColor}66`,
-                  cursor: "pointer", overflow: "hidden"
-                }} onClick={() => onEditTask(task)}>
-                  <div style={{
-                    position: "absolute", top: 0, left: 0,
-                    height: "100%", width: `${completion}%`,
-                    background: colColor + "66", borderRadius: 6,
-                    transition: "width .3s"
-                  }} />
-                  <div style={{
-                    position: "absolute", inset: 0, display: "flex",
-                    alignItems: "center", paddingLeft: 8,
-                    fontSize: 10, fontWeight: 600, color: "#e2e8f0",
-                    whiteSpace: "nowrap", overflow: "hidden"
-                  }}>{completion}%</div>
-                </div>
               </div>
 
               {task.subtasks
                 .filter((s) => s.startDate && s.endDate)
                 .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-                .map((sub) => {
-                const sStart = new Date(sub.startDate);
-                const sEnd = new Date(sub.endDate);
-                const sOffsetX = dayOffset(sStart);
-                const sWidth = Math.max(1, dayOffset(sEnd) - sOffsetX + 1);
-
-                return (
-                  <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", position: "relative", height: 36, background: "#ffffff02" }}>
+                .map((sub) => (
+                  <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", height: 36, background: "#ffffff02" }}>
+                    <div style={{ minWidth: groupWidth }} />
                     <div style={{
                       minWidth: labelWidth, padding: "0 14px 0 28px",
                       fontSize: 11, color: "#64748b",
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
                     }}>↳ {sub.title}</div>
-
-                    {days.map((_, i) => (
-                      <div key={i} style={{ minWidth: dayWidth, height: "100%", borderLeft: "1px solid #ffffff03" }} />
-                    ))}
-
-                    <div style={{
-                      position: "absolute", left: labelWidth + sOffsetX * dayWidth,
-                      width: sWidth * dayWidth - 4, height: 18,
-                      borderRadius: 4, background: "#10b98122",
-                      border: "1px solid #10b98144", overflow: "hidden"
-                    }}>
-                      <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${sub.completion}%`, background: "#10b98155", borderRadius: 4 }} />
-                      <div style={{
-                        position: "absolute", inset: 0, display: "flex",
-                        alignItems: "center", paddingLeft: 6,
-                        fontSize: 9, color: "#94a3b8"
-                      }}>{sub.completion}%</div>
-                    </div>
                   </div>
-                );
-              })}
+                ))}
             </div>
           );
         })}
+      </div>
 
-        {/* 今日線 */}
-        {(() => {
-          const todayOffset = dayOffset(today);
-          if (todayOffset < 0 || todayOffset > totalDays) return null;
-          return (
-            <div style={{
-              position: "absolute", top: 0, bottom: 0,
-              left: labelWidth + todayOffset * dayWidth + dayWidth / 2,
-              width: 2, background: "#6366f1", opacity: 0.6, pointerEvents: "none"
-            }} />
-          );
-        })()}
+      {/* 可捲動右側面板 */}
+      <div style={{ overflowX: "auto", position: "relative", flex: 1 }}>
+        <div style={{ minWidth: days.length * dayWidth }}>
+
+          {/* 月份列 */}
+          <div style={{ display: "flex", borderBottom: "1px solid #ffffff08" }}>
+            {months.map((m, i) => (
+              <div key={i} style={{
+                minWidth: m.span * dayWidth, padding: "8px 0",
+                textAlign: "center", fontSize: 11, fontWeight: 600,
+                color: "#94a3b8", background: "#1a2030",
+                borderLeft: i > 0 ? "1px solid #ffffff08" : "none"
+              }}>{m.label}</div>
+            ))}
+          </div>
+
+          {/* 日期列 */}
+          <div style={{ display: "flex", borderBottom: "1px solid #ffffff10" }}>
+            {days.map((d, i) => {
+              const isToday = d.getTime() === today.getTime();
+              const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+              return (
+                <div key={i} style={{
+                  minWidth: dayWidth, textAlign: "center",
+                  padding: "6px 0", fontSize: 10,
+                  color: isToday ? "#6366f1" : isWeekend ? "#475569" : "#64748b",
+                  fontWeight: isToday ? 700 : 400,
+                  background: isToday ? "#6366f111" : "#1a2030",
+                  borderLeft: "1px solid #ffffff06"
+                }}>{d.getDate()}</div>
+              );
+            })}
+          </div>
+
+          {/* 任務列 */}
+          {tasksWithDates.map((task) => {
+            const start = new Date(getEffectiveStartDate(task));
+            const end = new Date(getEffectiveEndDate(task));
+            const offsetX = dayOffset(start);
+            const width = Math.max(1, dayOffset(end) - offsetX + 1);
+            const completion = getCompletion(task);
+            const group = groups.find((g) => g.id === task.groupId);
+            const barColor = group?.color || "#6366f1";
+
+            return (
+              <div key={task.id}>
+                <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", position: "relative", height: rowHeight }}>
+                  {days.map((d, i) => {
+                    const isToday = d.getTime() === today.getTime();
+                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                    return (
+                      <div key={i} style={{
+                        minWidth: dayWidth, height: "100%",
+                        background: isToday ? "#6366f108" : isWeekend ? "#ffffff03" : "transparent",
+                        borderLeft: "1px solid #ffffff04"
+                      }} />
+                    );
+                  })}
+
+                  <div style={{
+                    position: "absolute", left: offsetX * dayWidth,
+                    width: width * dayWidth - 4, height: 24,
+                    borderRadius: 6, background: barColor + "33",
+                    border: `1px solid ${barColor}66`,
+                    cursor: "pointer", overflow: "hidden"
+                  }} onClick={() => onEditTask(task)}>
+                    <div style={{
+                      position: "absolute", top: 0, left: 0,
+                      height: "100%", width: `${completion}%`,
+                      background: barColor + "66", borderRadius: 6,
+                      transition: "width .3s"
+                    }} />
+                    <div style={{
+                      position: "absolute", inset: 0, display: "flex",
+                      alignItems: "center", paddingLeft: 8,
+                      fontSize: 10, fontWeight: 600, color: "#e2e8f0",
+                      whiteSpace: "nowrap", overflow: "hidden"
+                    }}>{completion}%</div>
+                  </div>
+                </div>
+
+                {task.subtasks
+                  .filter((s) => s.startDate && s.endDate)
+                  .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+                  .map((sub) => {
+                    const sStart = new Date(sub.startDate);
+                    const sEnd = new Date(sub.endDate);
+                    const sOffsetX = dayOffset(sStart);
+                    const sWidth = Math.max(1, dayOffset(sEnd) - sOffsetX + 1);
+
+                    return (
+                      <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", position: "relative", height: 36, background: "#ffffff02" }}>
+                        {days.map((_, i) => (
+                          <div key={i} style={{ minWidth: dayWidth, height: "100%", borderLeft: "1px solid #ffffff03" }} />
+                        ))}
+
+                        <div style={{
+                          position: "absolute", left: sOffsetX * dayWidth,
+                          width: sWidth * dayWidth - 4, height: 18,
+                          borderRadius: 4, background: "#10b98122",
+                          border: "1px solid #10b98144", overflow: "hidden"
+                        }}>
+                          <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${sub.completion}%`, background: "#10b98155", borderRadius: 4 }} />
+                          <div style={{
+                            position: "absolute", inset: 0, display: "flex",
+                            alignItems: "center", paddingLeft: 6,
+                            fontSize: 9, color: "#94a3b8"
+                          }}>{sub.completion}%</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            );
+          })}
+
+          {/* 今日線 */}
+          {(() => {
+            const todayOffset = dayOffset(today);
+            if (todayOffset < 0 || todayOffset > totalDays) return null;
+            return (
+              <div style={{
+                position: "absolute", top: 0, bottom: 0,
+                left: todayOffset * dayWidth + dayWidth / 2,
+                width: 2, background: "#6366f1", opacity: 0.6, pointerEvents: "none"
+              }} />
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
@@ -1195,9 +1335,6 @@ export default function App() {
   const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
   const [filterGroups, setFilterGroups] = useState<string[]>([]);
 
-  const allAssignees = Array.from(new Set(
-    columns.flatMap((c) => c.tasks.map((t) => t.assignee)).filter(Boolean)
-  ));
 
   const filteredColumns = columns.map((col) => ({
     ...col,
@@ -1425,7 +1562,40 @@ export default function App() {
               )}
             </div>
 
-            {/* 第二行：優先級切換 */}
+            {/* 第二行：組別多選 */}
+            {activeProject?.groups?.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {activeProject.groups.map((g) => {
+                  const active = filterGroups.includes(g.id);
+                  return (
+                    <button key={g.id}
+                      onClick={() => {
+                        if (active) {
+                          const newGroups = filterGroups.filter((x) => x !== g.id);
+                          setFilterGroups(newGroups);
+                          const remainingMembers = activeProject.groups
+                            .filter((gr) => newGroups.includes(gr.id))
+                            .flatMap((gr) => gr.members || []);
+                          setFilterAssignees(filterAssignees.filter((a) => remainingMembers.includes(a)));
+                        } else {
+                          setFilterGroups([...filterGroups, g.id]);
+                        }
+                      }}
+                      style={{
+                        background: active ? g.color + "22" : "transparent",
+                        border: `1px solid ${active ? g.color : "#ffffff15"}`,
+                        color: active ? g.color : "#64748b",
+                        borderRadius: 8, padding: "6px 12px",
+                        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
+                      }}>
+                      {g.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 第三行：優先級多選 */}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {(["high", "medium", "low"] as Priority[]).map((p) => {
                 const active = filterPriorities.includes(p);
@@ -1446,49 +1616,34 @@ export default function App() {
               })}
             </div>
 
-            {/* 第三行：指派人切換 */}
-            {allAssignees.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {allAssignees.map((a) => {
-                  const active = filterAssignees.includes(a);
-                  return (
-                    <button key={a}
-                      onClick={() => setFilterAssignees(active ? filterAssignees.filter((x) => x !== a) : [...filterAssignees, a])}
-                      style={{
-                        background: active ? "#6366f122" : "transparent",
-                        border: `1px solid ${active ? "#6366f1" : "#ffffff15"}`,
-                        color: active ? "#6366f1" : "#64748b",
-                        borderRadius: 8, padding: "6px 12px",
-                        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
-                      }}>
-                      {a}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 第四行：組別切換 */}
-            {activeProject?.groups?.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {activeProject.groups.map((g) => {
-                  const active = filterGroups.includes(g.id);
-                  return (
-                    <button key={g.id}
-                      onClick={() => setFilterGroups(active ? filterGroups.filter((x) => x !== g.id) : [...filterGroups, g.id])}
-                      style={{
-                        background: active ? g.color + "22" : "transparent",
-                        border: `1px solid ${active ? g.color : "#ffffff15"}`,
-                        color: active ? g.color : "#64748b",
-                        borderRadius: 8, padding: "6px 12px",
-                        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
-                      }}>
-                      {g.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {/* 第四行：人員篩選 - 依選中組別動態顯示 */}
+            {filterGroups.length > 0 && (() => {
+              const selectedGroups = activeProject.groups.filter((g) => filterGroups.includes(g.id));
+              const availableMembers = Array.from(new Set(selectedGroups.flatMap((g) => g.members || [])));
+              if (availableMembers.length === 0) return null;
+              return (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {availableMembers.map((m) => {
+                    const active = filterAssignees.includes(m);
+                    return (
+                      <button key={m}
+                        onClick={() => setFilterAssignees(active
+                          ? filterAssignees.filter((x) => x !== m)
+                          : [...filterAssignees, m]
+                        )}
+                        style={{
+                          background: active ? "#6366f122" : "transparent",
+                          border: `1px solid ${active ? "#6366f1" : "#ffffff15"}`,
+                          color: active ? "#6366f1" : "#64748b",
+                          borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer"
+                        }}>
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {view === "kanban" ? (
@@ -1501,9 +1656,9 @@ export default function App() {
               <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
             </DndContext>
           ) : view === "gantt" ? (
-            <GanttView columns={filteredColumns} onEditTask={setEditingTask} />
+            <GanttView columns={filteredColumns} groups={activeProject?.groups || []} onEditTask={setEditingTask} />
           ) : (
-            <DashboardView columns={columns} />
+            <DashboardView columns={columns} groups={activeProject?.groups || []} />
           )}
         </div>
       </div>
