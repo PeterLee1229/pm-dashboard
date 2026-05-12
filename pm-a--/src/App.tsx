@@ -34,6 +34,13 @@ type Task = {
   subtasks: SubTask[];
 };
 type Column = { id: string; title: string; tasks: Task[] };
+type Project = {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  columns: Column[];
+};
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
   low:    { label: "低",  color: "#4ade80" },
@@ -78,6 +85,18 @@ const initialColumns: Column[] = [
     tasks: [
       { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
     ],
+  },
+];
+
+const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#06b6d4"];
+
+const initialProjects: Project[] = [
+  {
+    id: "p1",
+    name: "專案管理軟體開發",
+    description: "PM Dashboard 系統開發專案",
+    color: "#6366f1",
+    columns: initialColumns,
   },
 ];
 
@@ -396,10 +415,69 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggle
   );
 }
 
+// ── Project Modal ─────────────────────────────────────────────────────
+function ProjectModal({ onSave, onClose, existing }: {
+  onSave: (name: string, description: string, color: string) => void;
+  onClose: () => void;
+  existing?: { name: string; description: string; color: string };
+}) {
+  const [name, setName] = useState(existing?.name || "");
+  const [description, setDescription] = useState(existing?.description || "");
+  const [color, setColor] = useState(existing?.color || PROJECT_COLORS[0]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">{existing ? "編輯專案" : "新增專案"}</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 專案名稱</label>
+            <input className="field-input" value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="輸入專案名稱..." />
+          </div>
+          <div className="field">
+            <label className="field-label"><AlignLeft size={13} /> 描述</label>
+            <textarea className="field-input field-textarea" value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="輸入專案描述..." rows={3} />
+          </div>
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 專案顏色</label>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {PROJECT_COLORS.map((c) => (
+                <div key={c} onClick={() => setColor(c)} style={{
+                  width: 28, height: 28, borderRadius: 99, background: c,
+                  cursor: "pointer", border: color === c ? "3px solid #fff" : "3px solid transparent",
+                  transition: "border .15s"
+                }} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-save" onClick={() => { if (name.trim()) { onSave(name.trim(), description, color); onClose(); } }}>
+            {existing ? "儲存變更" : "建立專案"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView }: {
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject }: {
   view: "kanban" | "gantt" | "dashboard";
   setView: (v: "kanban" | "gantt" | "dashboard") => void;
+  projects: Project[];
+  activeProjectId: string;
+  setActiveProjectId: (id: string) => void;
+  onAddProject: () => void;
+  onDeleteProject: (id: string) => void;
 }) {
   const items = [
     { id: "kanban",    label: "看板",   icon: <Circle size={16} /> },
@@ -412,9 +490,9 @@ function Sidebar({ view, setView }: {
       width: 200, minHeight: "100vh", background: "#111827",
       borderRight: "1px solid #ffffff08", padding: "24px 12px",
       display: "flex", flexDirection: "column", gap: 4,
-      position: "fixed", top: 0, left: 0, zIndex: 50
+      position: "fixed", top: 0, left: 0, zIndex: 50, overflowY: "auto"
     }}>
-      <div style={{ padding: "0 8px 24px" }}>
+      <div style={{ padding: "0 8px 20px" }}>
         <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>專案管理</p>
         <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>PM Dashboard</p>
       </div>
@@ -431,11 +509,50 @@ function Sidebar({ view, setView }: {
             cursor: "pointer", textAlign: "left", transition: "all .15s",
             borderLeft: active ? "3px solid #6366f1" : "3px solid transparent"
           }}>
-            {item.icon}
-            {item.label}
+            {item.icon}{item.label}
           </button>
         );
       })}
+
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #ffffff08" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px 10px" }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>專案</span>
+          <button onClick={onAddProject} style={{
+            background: "none", border: "none", color: "#475569", cursor: "pointer",
+            padding: 2, display: "flex", borderRadius: 4, transition: "color .15s"
+          }}><Plus size={14} /></button>
+        </div>
+
+        {projects.map((p) => {
+          const active = p.id === activeProjectId;
+          return (
+            <div key={p.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
+              <button onClick={() => setActiveProjectId(p.id)} style={{
+                flex: 1, display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 12px", borderRadius: 8, border: "none",
+                background: active ? p.color + "18" : "transparent",
+                color: active ? p.color : "#64748b",
+                fontSize: 12, fontWeight: active ? 600 : 400,
+                cursor: "pointer", textAlign: "left", transition: "all .15s",
+                borderLeft: active ? `3px solid ${p.color}` : "3px solid transparent",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+              }}>
+                <div style={{ width: 8, height: 8, borderRadius: 99, background: p.color, flexShrink: 0 }} />
+                {p.name}
+              </button>
+              {projects.length > 1 && (
+                <button onClick={() => onDeleteProject(p.id)} style={{
+                  position: "absolute", right: 6,
+                  background: "none", border: "none", color: "#ef4444",
+                  cursor: "pointer", padding: 2, display: "none", borderRadius: 4
+                }} className="delete-project">
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -788,21 +905,67 @@ function GanttView({ columns, onEditTask }: {
 
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
-  const [columns, setColumns] = useState<Column[]>(() => {
+  const [projects, setProjects] = useState<Project[]>(() => {
     try {
-      const saved = localStorage.getItem("pm-columns");
-      return saved ? JSON.parse(saved) : initialColumns;
+      const saved = localStorage.getItem("pm-projects");
+      return saved ? JSON.parse(saved) : initialProjects;
     } catch {
-      return initialColumns;
+      return initialProjects;
     }
   });
 
+  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
+    return localStorage.getItem("pm-active-project") || "p1";
+  });
+
+  const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0];
+  const columns = activeProject?.columns || [];
+
+  const setColumns = (updater: Column[] | ((prev: Column[]) => Column[])) => {
+    setProjects((prev) => prev.map((p) => {
+      if (p.id === activeProjectId) {
+        return { ...p, columns: typeof updater === "function" ? updater(p.columns) : updater };
+      }
+      return p;
+    }));
+  };
+
   useEffect(() => {
-    localStorage.setItem("pm-columns", JSON.stringify(columns));
-  }, [columns]);
+    localStorage.setItem("pm-projects", JSON.stringify(projects));
+  }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem("pm-active-project", activeProjectId);
+  }, [activeProjectId]);
+
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [view, setView] = useState<"kanban" | "gantt" | "dashboard">("kanban");
+  const [showProjectModal, setShowProjectModal] = useState(false);
+
+  const handleAddProject = () => setShowProjectModal(true);
+
+  const handleSaveProject = (name: string, description: string, color: string) => {
+    const newProject: Project = {
+      id: "p" + Date.now(),
+      name, description, color,
+      columns: [
+        { id: "todo",       title: "待處理", tasks: [] },
+        { id: "inprogress", title: "進行中", tasks: [] },
+        { id: "review",     title: "審查中", tasks: [] },
+        { id: "done",       title: "已完成", tasks: [] },
+      ],
+    };
+    setProjects((prev) => [...prev, newProject]);
+    setActiveProjectId(newProject.id);
+  };
+
+  const handleDeleteProject = (id: string) => {
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    if (activeProjectId === id) {
+      setActiveProjectId(projects.find((p) => p.id !== id)?.id || "");
+    }
+  };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const findColumn = (taskId: string) => columns.find((c) => c.tasks.some((t) => t.id === taskId));
@@ -931,6 +1094,7 @@ export default function App() {
 
         .delete-task { position: absolute; top: 8px; right: 8px; background: #ef444422; border: none; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 3px; display: none; align-items: center; }
         div:hover > .delete-task { display: flex; }
+        div:hover > .delete-project { display: flex !important; }
 
         .add-form { padding: 0 10px 10px; }
         .add-input { width: 100%; background: #0f1117; border: 1px solid #6366f144; border-radius: 8px; padding: 9px 12px; color: #e2e8f0; font-size: 13px; outline: none; }
@@ -968,13 +1132,21 @@ export default function App() {
         .btn-save:hover { background: #4f46e5; }
       `}</style>
 
-      <Sidebar view={view} setView={setView} />
+      <Sidebar
+        view={view}
+        setView={setView}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        setActiveProjectId={setActiveProjectId}
+        onAddProject={handleAddProject}
+        onDeleteProject={handleDeleteProject}
+      />
 
       <div style={{ marginLeft: 200 }}>
         <div className="app">
           <div className="topbar">
             <div className="topbar-left">
-              <h1>專案管理看板</h1>
+              <h1>{activeProject?.name || "專案管理"}</h1>
               <p>共 {totalTasks} 項任務 · {doneTasks} 項已完成</p>
             </div>
             <div className="progress-wrap">
@@ -1005,6 +1177,13 @@ export default function App() {
 
       {editingTask && (
         <TaskModal task={editingTask} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
+      )}
+
+      {showProjectModal && (
+        <ProjectModal
+          onSave={handleSaveProject}
+          onClose={() => setShowProjectModal(false)}
+        />
       )}
     </>
   );
