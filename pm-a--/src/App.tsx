@@ -788,7 +788,18 @@ function GanttView({ columns, onEditTask }: {
 
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
-  const [columns, setColumns] = useState<Column[]>(initialColumns);
+  const [columns, setColumns] = useState<Column[]>(() => {
+    try {
+      const saved = localStorage.getItem("pm-columns");
+      return saved ? JSON.parse(saved) : initialColumns;
+    } catch {
+      return initialColumns;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("pm-columns", JSON.stringify(columns));
+  }, [columns]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [view, setView] = useState<"kanban" | "gantt" | "dashboard">("kanban");
