@@ -8,7 +8,7 @@ import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar } from "lucide-react";
+import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar, BarChart2 } from "lucide-react";
 
 type Priority = "low" | "medium" | "high";
 type SubTask = {
@@ -169,14 +169,26 @@ function TaskModal({ task, onSave, onClose }: {
 
           <div className="field">
             <label className="field-label"><Calendar size={13} /> 開始日期</label>
-            <input type="date" className="field-input" value={form.startDate}
-              onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+            <input
+              type="date"
+              className="field-input"
+              value={form.subtasks.length > 0 ? getEffectiveStartDate(form) : form.startDate}
+              disabled={form.subtasks.length > 0}
+              onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              style={{ colorScheme: "dark", opacity: form.subtasks.length > 0 ? 0.4 : 1, cursor: form.subtasks.length > 0 ? "not-allowed" : "auto" }}
+            />
           </div>
 
           <div className="field">
             <label className="field-label"><Calendar size={13} /> 結束日期</label>
-            <input type="date" className="field-input" value={form.endDate}
-              onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+            <input
+              type="date"
+              className="field-input"
+              value={form.subtasks.length > 0 ? getEffectiveEndDate(form) : form.endDate}
+              disabled={form.subtasks.length > 0}
+              onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+              style={{ colorScheme: "dark", opacity: form.subtasks.length > 0 ? 0.4 : 1, cursor: form.subtasks.length > 0 ? "not-allowed" : "auto" }}
+            />
           </div>
 
           <div className="field">
@@ -380,6 +392,50 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggle
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────
+function Sidebar({ view, setView }: {
+  view: "kanban" | "gantt" | "dashboard";
+  setView: (v: "kanban" | "gantt" | "dashboard") => void;
+}) {
+  const items = [
+    { id: "kanban",    label: "看板",   icon: <Circle size={16} /> },
+    { id: "gantt",     label: "甘特圖", icon: <Clock size={16} /> },
+    { id: "dashboard", label: "儀表板", icon: <BarChart2 size={16} /> },
+  ] as const;
+
+  return (
+    <div style={{
+      width: 200, minHeight: "100vh", background: "#111827",
+      borderRight: "1px solid #ffffff08", padding: "24px 12px",
+      display: "flex", flexDirection: "column", gap: 4,
+      position: "fixed", top: 0, left: 0, zIndex: 50
+    }}>
+      <div style={{ padding: "0 8px 24px" }}>
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>專案管理</p>
+        <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>PM Dashboard</p>
+      </div>
+
+      {items.map((item) => {
+        const active = view === item.id;
+        return (
+          <button key={item.id} onClick={() => setView(item.id)} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px", borderRadius: 8, border: "none",
+            background: active ? "#6366f122" : "transparent",
+            color: active ? "#6366f1" : "#64748b",
+            fontSize: 13, fontWeight: active ? 600 : 400,
+            cursor: "pointer", textAlign: "left", transition: "all .15s",
+            borderLeft: active ? "3px solid #6366f1" : "3px solid transparent"
+          }}>
+            {item.icon}
+            {item.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -901,55 +957,39 @@ export default function App() {
         .btn-save:hover { background: #4f46e5; }
       `}</style>
 
-      <div className="app">
-        <div className="topbar">
-          <div className="topbar-left">
-            <h1>專案管理看板</h1>
-            <p>共 {totalTasks} 項任務 · {doneTasks} 項已完成</p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setView("kanban")} style={{
-              background: view === "kanban" ? "#6366f122" : "transparent",
-              border: `1px solid ${view === "kanban" ? "#6366f1" : "#ffffff15"}`,
-              color: view === "kanban" ? "#6366f1" : "#64748b",
-              borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
-            }}>看板</button>
-            <button onClick={() => setView("gantt")} style={{
-              background: view === "gantt" ? "#6366f122" : "transparent",
-              border: `1px solid ${view === "gantt" ? "#6366f1" : "#ffffff15"}`,
-              color: view === "gantt" ? "#6366f1" : "#64748b",
-              borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
-            }}>甘特圖</button>
-            <button onClick={() => setView("dashboard")} style={{
-              background: view === "dashboard" ? "#6366f122" : "transparent",
-              border: `1px solid ${view === "dashboard" ? "#6366f1" : "#ffffff15"}`,
-              color: view === "dashboard" ? "#6366f1" : "#64748b",
-              borderRadius: 8, padding: "6px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer"
-            }}>儀表板</button>
-          </div>
-          <div className="progress-wrap">
-            <span className="progress-label">進度</span>
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
-            </div>
-            <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
-          </div>
-        </div>
+      <Sidebar view={view} setView={setView} />
 
-        {view === "kanban" ? (
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-            <div className="board">
-              {columns.map((col) => (
-                <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
-              ))}
+      <div style={{ marginLeft: 200 }}>
+        <div className="app">
+          <div className="topbar">
+            <div className="topbar-left">
+              <h1>專案管理看板</h1>
+              <p>共 {totalTasks} 項任務 · {doneTasks} 項已完成</p>
             </div>
-            <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
-          </DndContext>
-        ) : view === "gantt" ? (
-          <GanttView columns={columns} onEditTask={setEditingTask} />
-        ) : (
-          <DashboardView columns={columns} />
-        )}
+            <div className="progress-wrap">
+              <span className="progress-label">進度</span>
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
+              </div>
+              <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
+            </div>
+          </div>
+
+          {view === "kanban" ? (
+            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+              <div className="board">
+                {columns.map((col) => (
+                  <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
+                ))}
+              </div>
+              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
+            </DndContext>
+          ) : view === "gantt" ? (
+            <GanttView columns={columns} onEditTask={setEditingTask} />
+          ) : (
+            <DashboardView columns={columns} />
+          )}
+        </div>
       </div>
 
       {editingTask && (
