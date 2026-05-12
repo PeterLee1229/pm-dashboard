@@ -10,6 +10,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar } from "lucide-react";
 
 type Priority = "low" | "medium" | "high";
+type SubTask = {
+  id: string;
+  title: string;
+  description: string;
+  assignee: string;
+  startDate: string;
+  endDate: string;
+  completion: number;
+};
 type Task = {
   id: string;
   title: string;
@@ -20,6 +29,8 @@ type Task = {
   isRunning: boolean;
   startDate: string;
   endDate: string;
+  completion: number;
+  subtasks: SubTask[];
 };
 type Column = { id: string; title: string; tasks: Task[] };
 
@@ -44,30 +55,36 @@ const initialColumns: Column[] = [
   {
     id: "todo", title: "待處理",
     tasks: [
-      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
-      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
+      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
+      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
     ],
   },
   {
     id: "inprogress", title: "進行中",
     tasks: [
-      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
-      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
+      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
+      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
     ],
   },
   {
     id: "review", title: "審查中",
     tasks: [
-      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
+      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
     ],
   },
   {
     id: "done", title: "已完成",
     tasks: [
-      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" },
+      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] },
     ],
   },
 ];
+
+function getCompletion(task: Task): number {
+  if (task.subtasks.length === 0) return task.completion;
+  const avg = task.subtasks.reduce((sum, s) => sum + s.completion, 0) / task.subtasks.length;
+  return Math.round(avg);
+}
 
 function formatTime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -148,6 +165,88 @@ function TaskModal({ task, onSave, onClose }: {
           </div>
 
           <div className="field">
+            <label className="field-label"><CheckCircle2 size={13} /> 完成度</label>
+            {form.subtasks.length === 0 ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <input type="range" min={0} max={100} value={form.completion}
+                  onChange={(e) => setForm({ ...form, completion: Number(e.target.value) })}
+                  style={{ flex: 1, accentColor: "#6366f1" }} />
+                <span style={{ fontSize: 13, color: "#e2e8f0", minWidth: 36 }}>{form.completion}%</span>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ flex: 1, height: 6, background: "#ffffff10", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${getCompletion(form)}%`, background: "#6366f1", borderRadius: 99 }} />
+                </div>
+                <span style={{ fontSize: 13, color: "#94a3b8", minWidth: 36 }}>{getCompletion(form)}%（自動）</span>
+              </div>
+            )}
+          </div>
+
+          <div className="field">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <label className="field-label" style={{ margin: 0 }}><AlignLeft size={13} /> 子工項</label>
+              <button onClick={() => {
+                const newSub: SubTask = {
+                  id: "s" + Date.now(), title: "新子工項", description: "",
+                  assignee: "", startDate: "", endDate: "", completion: 0
+                };
+                setForm({ ...form, subtasks: [...form.subtasks, newSub] });
+              }} style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 6, color: "#6366f1", fontSize: 12, padding: "3px 10px", cursor: "pointer" }}>
+                + 新增子工項
+              </button>
+            </div>
+
+            {form.subtasks.length === 0 && (
+              <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: "12px 0" }}>尚無子工項</p>
+            )}
+
+            {form.subtasks.map((sub, idx) => (
+              <div key={sub.id} style={{ background: "#0f1117", border: "1px solid #ffffff10", borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <input value={sub.title} onChange={(e) => {
+                    const updated = [...form.subtasks];
+                    updated[idx] = { ...sub, title: e.target.value };
+                    setForm({ ...form, subtasks: updated });
+                  }} style={{ background: "transparent", border: "none", color: "#e2e8f0", fontSize: 13, fontWeight: 600, outline: "none", flex: 1 }} />
+                  <button onClick={() => setForm({ ...form, subtasks: form.subtasks.filter((_, i) => i !== idx) })}
+                    style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2 }}>
+                    <X size={13} />
+                  </button>
+                </div>
+
+                <input placeholder="指派人" value={sub.assignee} onChange={(e) => {
+                  const updated = [...form.subtasks];
+                  updated[idx] = { ...sub, assignee: e.target.value };
+                  setForm({ ...form, subtasks: updated });
+                }} className="field-input" style={{ marginBottom: 6, fontSize: 12 }} />
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <input type="date" value={sub.startDate} onChange={(e) => {
+                    const updated = [...form.subtasks];
+                    updated[idx] = { ...sub, startDate: e.target.value };
+                    setForm({ ...form, subtasks: updated });
+                  }} className="field-input" style={{ flex: 1, fontSize: 12, colorScheme: "dark" }} />
+                  <input type="date" value={sub.endDate} onChange={(e) => {
+                    const updated = [...form.subtasks];
+                    updated[idx] = { ...sub, endDate: e.target.value };
+                    setForm({ ...form, subtasks: updated });
+                  }} className="field-input" style={{ flex: 1, fontSize: 12, colorScheme: "dark" }} />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="range" min={0} max={100} value={sub.completion} onChange={(e) => {
+                    const updated = [...form.subtasks];
+                    updated[idx] = { ...sub, completion: Number(e.target.value) };
+                    setForm({ ...form, subtasks: updated });
+                  }} style={{ flex: 1, accentColor: "#10b981" }} />
+                  <span style={{ fontSize: 12, color: "#94a3b8", minWidth: 36 }}>{sub.completion}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="field">
             <label className="field-label"><Timer size={13} /> 累計工時</label>
             <div className="field-time">{formatTime(task.trackedSeconds)}</div>
           </div>
@@ -184,6 +283,20 @@ function TaskCard({ task, isDragging = false, onClick, onToggleTimer }: {
       </div>
       <p className="task-title">{task.title}</p>
       {task.description && <p className="task-desc">{task.description}</p>}
+      <div style={{ margin: "8px 0 6px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <span style={{ fontSize: 10, color: "#64748b" }}>完成度</span>
+          <span style={{ fontSize: 10, color: "#94a3b8" }}>{getCompletion(task)}%</span>
+        </div>
+        <div style={{ height: 4, background: "#ffffff10", borderRadius: 99, overflow: "hidden" }}>
+          <div style={{
+            height: "100%", borderRadius: 99,
+            width: `${getCompletion(task)}%`,
+            background: getCompletion(task) === 100 ? "#10b981" : "#6366f1",
+            transition: "width .3s"
+          }} />
+        </div>
+      </div>
       <div className="task-footer">
         <span className="assignee">{task.assignee}</span>
         <div className="timer-wrap">
@@ -321,7 +434,7 @@ export default function App() {
 
   const handleAddTask = (colId: string, title: string) => {
     setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "" }] } : col
+      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [] }] } : col
     ));
   };
 
