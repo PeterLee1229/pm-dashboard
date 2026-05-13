@@ -71,6 +71,22 @@ type MeetingSeries = {
   records: MeetingRecord[];
 };
 
+type RiskLevel = "high" | "mid-high" | "medium" | "mid-low" | "low";
+type RiskStatus = "monitoring" | "occurred" | "resolved";
+
+type Risk = {
+  id: string;
+  title: string;
+  description: string;
+  probability: RiskLevel;
+  impact: RiskLevel;
+  countermeasure: string;
+  ownerId: string;
+  ownerGroupId: string;
+  status: RiskStatus;
+  createdDate: string;
+};
+
 type Project = {
   id: string;
   name: string;
@@ -79,6 +95,7 @@ type Project = {
   columns: Column[];
   groups: Group[];
   meetings: MeetingSeries[];
+  risks: Risk[];
 };
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
@@ -96,6 +113,20 @@ const COLUMN_ICONS: Record<string, ReactElement> = {
 
 const COLUMN_COLORS: Record<string, string> = {
   todo: "#6366f1", inprogress: "#f59e0b", review: "#8b5cf6", done: "#10b981",
+};
+
+const RISK_LEVELS: { id: RiskLevel; label: string; color: string; value: number }[] = [
+  { id: "high",     label: "高",   color: "#ef4444", value: 5 },
+  { id: "mid-high", label: "中高", color: "#f97316", value: 4 },
+  { id: "medium",   label: "中",   color: "#facc15", value: 3 },
+  { id: "mid-low",  label: "中低", color: "#6366f1", value: 2 },
+  { id: "low",      label: "低",   color: "#4ade80", value: 1 },
+];
+
+const RISK_STATUS_CONFIG: Record<RiskStatus, { label: string; color: string }> = {
+  monitoring: { label: "監控中", color: "#f59e0b" },
+  occurred:   { label: "已發生", color: "#ef4444" },
+  resolved:   { label: "已解除", color: "#10b981" },
 };
 
 const initialColumns: Column[] = [
@@ -148,6 +179,7 @@ const initialProjects: Project[] = [
     groups: DEFAULT_GROUPS,
     columns: initialColumns,
     meetings: [],
+    risks: [],
   },
 ];
 
@@ -1815,6 +1847,7 @@ export default function App() {
       name, description, color,
       groups: DEFAULT_GROUPS,
       meetings: [],
+      risks: [],
       columns: [
         { id: "todo",       title: "待處理", tasks: [] },
         { id: "inprogress", title: "進行中", tasks: [] },
