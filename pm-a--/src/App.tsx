@@ -1,4 +1,9 @@
 import { useState, useEffect, type ReactElement } from "react";
+import {
+  exportTaskListCSV, exportTaskListPDF,
+  exportTimeReportCSV, exportTimeReportPDF,
+  exportGanttPNG
+} from "./exportUtils";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import {
   DndContext, type DragEndEvent, type DragOverEvent, DragOverlay, type DragStartEvent,
@@ -1529,7 +1534,7 @@ function GanttView({ columns, groups, onEditTask }: {
   }
 
   return (
-    <div style={{ display: "flex", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
+    <div id="gantt-container" style={{ display: "flex", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
 
       {/* 凍結左側面板 */}
       <div style={{ minWidth: frozenWidth, flexShrink: 0, zIndex: 1, borderRight: "1px solid #ffffff12" }}>
@@ -1787,6 +1792,7 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const handleAddProject = () => setShowProjectModal(true);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -1908,6 +1914,97 @@ export default function App() {
     })));
   };
 
+  const prepareTaskExportData = () => {
+    const allTasks = columns.flatMap((c) => c.tasks);
+    return allTasks.map((task) => {
+      const group = activeProject.groups.find((g) => g.id === task.groupId);
+      const assignee = findMemberById(activeProject.groups, task.assignee);
+      return {
+        title: task.title,
+        group: group?.name || "未分組",
+        assignee: assignee ? memberDisplay(assignee) : task.assignee || "未指派",
+        priority: PRIORITY_CONFIG[task.priority].label + "優先",
+        startDate: getEffectiveStartDate(task),
+        endDate: getEffectiveEndDate(task),
+        completion: getCompletion(task),
+        subtasks: task.subtasks.map((sub) => {
+          const subGroup = activeProject.groups.find((g) => g.id === sub.groupId);
+          const subAssignee = findMemberById(activeProject.groups, sub.assignee);
+          return {
+            title: sub.title,
+            group: subGroup?.name || "未分組",
+            assignee: subAssignee ? memberDisplay(subAssignee) : sub.assignee || "未指派",
+            startDate: sub.startDate,
+            endDate: sub.endDate,
+            completion: sub.completion,
+          };
+        }),
+      };
+    });
+  };
+
+  const prepareTimeReportData = () => {
+    const allTasks = columns.flatMap((c) => c.tasks);
+    const memberMap: Record<string, {
+      name: string; memberId: string; group: string;
+      totalHours: number; logs: { task: string; date: string; hours: number }[];
+    }> = {};
+
+    allTasks.forEach((t) => {
+      if (t.subtasks.length === 0 && t.assignee) {
+        const member = findMemberById(activeProject.groups, t.assignee);
+        const group = activeProject.groups.find((g) => g.id === t.groupId);
+        if (!memberMap[t.assignee]) {
+          memberMap[t.assignee] = {
+            name: member?.name || t.assignee,
+            memberId: member?.id || t.assignee,
+            group: group?.name || "未分組",
+            totalHours: 0, logs: []
+          };
+        }
+        (t.timeLogs || []).forEach((log) => {
+          memberMap[t.assignee].logs.push({ task: t.title, date: log.date, hours: log.hours });
+          memberMap[t.assignee].totalHours += log.hours;
+        });
+      }
+    });
+
+    allTasks.forEach((t) => {
+      t.subtasks.forEach((s) => {
+        if (s.assignee) {
+          const member = findMemberById(activeProject.groups, s.assignee);
+          const group = activeProject.groups.find((g) => g.id === s.groupId);
+          if (!memberMap[s.assignee]) {
+            memberMap[s.assignee] = {
+              name: member?.name || s.assignee,
+              memberId: member?.id || s.assignee,
+              group: group?.name || "未分組",
+              totalHours: 0, logs: []
+            };
+          }
+          (s.timeLogs || []).forEach((log) => {
+            memberMap[s.assignee].logs.push({ task: `${t.title} → ${s.title}`, date: log.date, hours: log.hours });
+            memberMap[s.assignee].totalHours += log.hours;
+          });
+        }
+      });
+    });
+
+    return Object.values(memberMap).map((m) => ({
+      ...m,
+      totalHours: Math.round(m.totalHours * 10) / 10,
+      logs: m.logs.sort((a, b) => b.date.localeCompare(a.date)),
+    }));
+  };
+
+  useEffect(() => {
+    const handleClick = () => setShowExportMenu(false);
+    if (showExportMenu) {
+      setTimeout(() => document.addEventListener("click", handleClick), 0);
+      return () => document.removeEventListener("click", handleClick);
+    }
+  }, [showExportMenu]);
+
   const totalTasks = columns.reduce((s, c) => s + c.tasks.length, 0);
   const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
 
@@ -2022,6 +2119,66 @@ export default function App() {
                 <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
               </div>
               <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
+
+              <div style={{ position: "relative" }}>
+                <button onClick={() => setShowExportMenu((prev) => !prev)}
+                  style={{
+                    background: "#6366f122", border: "1px solid #6366f144",
+                    borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
+                    padding: "6px 16px", cursor: "pointer"
+                  }}>
+                  匯出 ▾
+                </button>
+
+                {showExportMenu && (
+                  <div style={{
+                    position: "absolute", top: "100%", right: 0, marginTop: 6,
+                    background: "#1a2030", border: "1px solid #ffffff12", borderRadius: 10,
+                    padding: 6, zIndex: 100, minWidth: 200,
+                    boxShadow: "0 12px 32px #000a"
+                  }}>
+                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>任務清單</p>
+                    <button onClick={() => { exportTaskListCSV(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                      📄 CSV 格式
+                    </button>
+                    <button onClick={() => { exportTaskListPDF(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                      📑 PDF 格式
+                    </button>
+
+                    <div style={{ height: 1, background: "#ffffff08", margin: "4px 0" }} />
+
+                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>工時報表</p>
+                    <button onClick={() => { exportTimeReportCSV(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                      📄 CSV 格式
+                    </button>
+                    <button onClick={() => { exportTimeReportPDF(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                      📑 PDF 格式
+                    </button>
+
+                    <div style={{ height: 1, background: "#ffffff08", margin: "4px 0" }} />
+
+                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>甘特圖</p>
+                    <button onClick={() => { exportGanttPNG("gantt-container", activeProject.name); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                      🖼️ PNG 圖片
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
