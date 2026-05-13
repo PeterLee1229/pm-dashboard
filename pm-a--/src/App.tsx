@@ -11,6 +11,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Timer, Calendar, BarChart2, Search } from "lucide-react";
 
 type Priority = "low" | "medium" | "high";
+type TimeLog = {
+  id: string;
+  date: string;
+  hours: number;
+};
 type SubTask = {
   id: string;
   title: string;
@@ -20,7 +25,7 @@ type SubTask = {
   startDate: string;
   endDate: string;
   completion: number;
-  trackedHours: number;
+  timeLogs: TimeLog[];
 };
 type Task = {
   id: string;
@@ -28,7 +33,7 @@ type Task = {
   description: string;
   priority: Priority;
   assignee: string;
-  trackedHours: number;
+  timeLogs: TimeLog[];
   startDate: string;
   endDate: string;
   completion: number;
@@ -72,27 +77,27 @@ const initialColumns: Column[] = [
   {
     id: "todo", title: "待處理",
     tasks: [
-      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "inprogress", title: "進行中",
     tasks: [
-      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "review", title: "審查中",
     tasks: [
-      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "done", title: "已完成",
     tasks: [
-      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
 ];
@@ -119,6 +124,10 @@ const initialProjects: Project[] = [
     columns: initialColumns,
   },
 ];
+
+function getTotalHours(logs: TimeLog[]): number {
+  return Math.round(logs.reduce((sum, l) => sum + l.hours, 0) * 10) / 10;
+}
 
 function getEffectiveStartDate(task: Task): string {
   if (task.subtasks.length === 0) return task.startDate;
@@ -280,7 +289,7 @@ function TaskModal({ task, groups, onSave, onClose }: {
                 const newSub: SubTask = {
                   id: "s" + Date.now(), title: "新子工項", description: "",
                   assignee: "", groupId: "", startDate: "", endDate: "",
-                  completion: 0, trackedHours: 0
+                  completion: 0, timeLogs: []
                 };
                 setForm({ ...form, subtasks: [...form.subtasks, newSub] });
               }} style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 6, color: "#6366f1", fontSize: 12, padding: "3px 10px", cursor: "pointer" }}>
@@ -371,26 +380,16 @@ function TaskModal({ task, groups, onSave, onClose }: {
                   }} style={{ flex: 1, accentColor: "#10b981" }} />
                   <span style={{ fontSize: 12, color: "#94a3b8", minWidth: 36 }}>{sub.completion}%</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                  <label style={{ fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>本日執行工時</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    value={sub.trackedHours || 0}
-                    onChange={(e) => {
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>工時日誌</label>
+                  <TimeLogEditor
+                    logs={sub.timeLogs || []}
+                    onChange={(logs) => {
                       const updated = [...form.subtasks];
-                      updated[idx] = { ...sub, trackedHours: parseFloat(e.target.value) || 0 };
+                      updated[idx] = { ...sub, timeLogs: logs };
                       setForm({ ...form, subtasks: updated });
                     }}
-                    style={{
-                      flex: 1, background: "#161b27", border: "1px solid #ffffff10",
-                      borderRadius: 6, padding: "5px 10px", color: "#e2e8f0",
-                      fontSize: 12, outline: "none"
-                    }}
-                    placeholder="小時"
                   />
-                  <span style={{ fontSize: 11, color: "#475569" }}>h</span>
                 </div>
               </div>
             ))}
@@ -398,15 +397,10 @@ function TaskModal({ task, groups, onSave, onClose }: {
 
           {form.subtasks.length === 0 && (
             <div className="field">
-              <label className="field-label"><Timer size={13} /> 本日執行工時</label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                className="field-input"
-                value={form.trackedHours}
-                onChange={(e) => setForm({ ...form, trackedHours: parseFloat(e.target.value) || 0 })}
-                placeholder="輸入工時，例如 2.5"
+              <label className="field-label"><Timer size={13} /> 工時日誌</label>
+              <TimeLogEditor
+                logs={form.timeLogs || []}
+                onChange={(logs) => setForm({ ...form, timeLogs: logs })}
               />
             </div>
           )}
@@ -587,6 +581,63 @@ function MemberInput({ onAdd, color }: { onAdd: (name: string) => void; color: s
         style={{ background: color + "22", border: `1px solid ${color}44`, borderRadius: 6, color, fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>
         加入
       </button>
+    </div>
+  );
+}
+
+// ── Time Log Editor ───────────────────────────────────────────────────
+function TimeLogEditor({ logs, onChange }: {
+  logs: TimeLog[];
+  onChange: (logs: TimeLog[]) => void;
+}) {
+  const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newHours, setNewHours] = useState("");
+
+  const handleAdd = () => {
+    if (!newDate || !newHours || parseFloat(newHours) <= 0) return;
+    const newLog: TimeLog = { id: "tl" + Date.now(), date: newDate, hours: parseFloat(newHours) };
+    onChange([...logs, newLog].sort((a, b) => b.date.localeCompare(a.date)));
+    setNewHours("");
+  };
+
+  const handleDelete = (id: string) => onChange(logs.filter((l) => l.id !== id));
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <input type="date" value={newDate}
+          onChange={(e) => setNewDate(e.target.value)}
+          style={{ flex: 1, background: "#161b27", border: "1px solid #ffffff10", borderRadius: 6, padding: "5px 10px", color: "#e2e8f0", fontSize: 12, outline: "none", colorScheme: "dark" }} />
+        <input type="number" step="0.5" min="0" value={newHours}
+          onChange={(e) => setNewHours(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          placeholder="工時"
+          style={{ width: 70, background: "#161b27", border: "1px solid #ffffff10", borderRadius: 6, padding: "5px 10px", color: "#e2e8f0", fontSize: 12, outline: "none" }} />
+        <span style={{ fontSize: 11, color: "#475569", alignSelf: "center" }}>h</span>
+        <button onClick={handleAdd}
+          style={{ background: "#10b98122", border: "1px solid #10b98144", borderRadius: 6, color: "#10b981", fontSize: 11, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
+          + 新增
+        </button>
+      </div>
+      {logs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {logs.map((log) => (
+            <div key={log.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#161b27", borderRadius: 6, padding: "5px 10px", border: "1px solid #ffffff06" }}>
+              <span style={{ fontSize: 11, color: "#94a3b8" }}>{log.date}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0" }}>{log.hours} h</span>
+                <button onClick={() => handleDelete(log.id)}
+                  style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+                  <X size={10} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#10b981" }}>總計：{getTotalHours(logs)} 小時</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -846,14 +897,14 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
 
   const hoursMap: Record<string, number> = {};
   allTasks.forEach((t) => {
-    if (t.subtasks.length === 0 && t.assignee && t.trackedHours > 0) {
-      hoursMap[t.assignee] = (hoursMap[t.assignee] || 0) + t.trackedHours;
+    if (t.subtasks.length === 0 && t.assignee) {
+      hoursMap[t.assignee] = (hoursMap[t.assignee] || 0) + getTotalHours(t.timeLogs || []);
     }
   });
   allTasks.forEach((t) => {
     t.subtasks.forEach((s) => {
-      if (s.assignee && (s.trackedHours || 0) > 0) {
-        hoursMap[s.assignee] = (hoursMap[s.assignee] || 0) + (s.trackedHours || 0);
+      if (s.assignee) {
+        hoursMap[s.assignee] = (hoursMap[s.assignee] || 0) + getTotalHours(s.timeLogs || []);
       }
     });
   });
@@ -984,7 +1035,7 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
           if (t.subtasks.length === 0 && t.assignee) {
             if (!memberStats[t.assignee]) memberStats[t.assignee] = { tasks: [], hours: 0 };
             memberStats[t.assignee].tasks.push(t.title);
-            memberStats[t.assignee].hours += t.trackedHours || 0;
+            memberStats[t.assignee].hours += getTotalHours(t.timeLogs || []);
           }
         });
 
@@ -993,7 +1044,7 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
             if (s.assignee) {
               if (!memberStats[s.assignee]) memberStats[s.assignee] = { tasks: [], hours: 0 };
               memberStats[s.assignee].tasks.push(`${t.title} → ${s.title}`);
-              memberStats[s.assignee].hours += s.trackedHours || 0;
+              memberStats[s.assignee].hours += getTotalHours(s.timeLogs || []);
             }
           });
         });
@@ -1319,12 +1370,25 @@ export default function App() {
     try {
       const saved = localStorage.getItem("pm-projects");
       if (saved) {
-        const parsed: Project[] = JSON.parse(saved);
-        return parsed.map((p) => ({
+        const parsed = JSON.parse(saved);
+        return parsed.map((p: any) => ({
           ...p,
-          groups: (p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS).map((g: Group) => ({
+          groups: (p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS).map((g: any) => ({
             ...g,
             members: g.members || [],
+          })),
+          columns: p.columns.map((col: any) => ({
+            ...col,
+            tasks: col.tasks.map((t: any) => ({
+              ...t,
+              timeLogs: t.timeLogs || [],
+              groupId: t.groupId || "",
+              subtasks: (t.subtasks || []).map((s: any) => ({
+                ...s,
+                timeLogs: s.timeLogs || [],
+                groupId: s.groupId || "",
+              })),
+            })),
           })),
         }));
       }
@@ -1460,7 +1524,7 @@ export default function App() {
 
   const handleAddTask = (colId: string, title: string) => {
     setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" }] } : col
+      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" }] } : col
     ));
   };
 
