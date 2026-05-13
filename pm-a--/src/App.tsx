@@ -7,7 +7,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import {
   DndContext, type DragEndEvent, type DragOverEvent, DragOverlay, type DragStartEvent,
-  PointerSensor, useSensor, useSensors,
+  PointerSensor, useSensor, useSensors, useDroppable,
 } from "@dnd-kit/core";
 import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
@@ -570,6 +570,8 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }
   const [newTitle, setNewTitle] = useState("");
   const color = COLUMN_COLORS[column.id] || "#6366f1";
   const icon = COLUMN_ICONS[column.id];
+  const canAdd = column.id === "todo" || column.id === "inprogress";
+  const { setNodeRef: setDropRef } = useDroppable({ id: column.id });
 
   const handleAdd = () => {
     if (newTitle.trim()) { onAddTask(column.id, newTitle.trim()); setNewTitle(""); setAdding(false); }
@@ -583,11 +585,13 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }
           <span className="column-title">{column.title}</span>
           <span className="task-count" style={{ background: color + "22", color }}>{column.tasks.length}</span>
         </div>
-        <button className="add-btn" onClick={() => setAdding(true)} style={{ color }}><Plus size={15} /></button>
+        {canAdd && (
+          <button className="add-btn" onClick={() => setAdding(true)} style={{ color }}><Plus size={15} /></button>
+        )}
       </div>
 
       <SortableContext items={column.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div className="task-list">
+        <div className="task-list" ref={setDropRef}>
           {column.tasks.map((task) => (
             <div key={task.id} style={{ position: "relative" }}>
               <TaskCard task={task} onClick={() => onEditTask(task)} groups={groups} />
@@ -599,7 +603,7 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }
         </div>
       </SortableContext>
 
-      {adding && (
+      {canAdd && adding && (
         <div className="add-form">
           <input autoFocus className="add-input" placeholder="輸入任務名稱..."
             value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
@@ -2573,11 +2577,13 @@ export default function App() {
     const { active, over } = e;
     if (!over) return;
     const activeCol = findColumn(active.id as string);
-    const overCol = columns.find((c) => c.id === over.id) || findColumn(over.id as string);
-    if (!activeCol || !overCol || activeCol === overCol) return;
+    let overCol = columns.find((c) => c.id === over.id);
+    if (!overCol) overCol = findColumn(over.id as string);
+    if (!activeCol || !overCol || activeCol.id === overCol.id) return;
     setColumns((cols) => cols.map((col) => {
       if (col.id === activeCol.id) return { ...col, tasks: col.tasks.filter((t) => t.id !== active.id) };
-      if (col.id === overCol.id) {
+      if (col.id === overCol!.id) {
+        if (col.tasks.some((t) => t.id === active.id)) return col;
         const task = activeCol.tasks.find((t) => t.id === active.id)!;
         return { ...col, tasks: [...col.tasks, task] };
       }
