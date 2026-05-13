@@ -41,12 +41,31 @@ type Task = {
   groupId: string;
 };
 type Column = { id: string; title: string; tasks: Task[] };
+type Member = {
+  id: string;
+  name: string;
+};
 type Group = {
   id: string;
   name: string;
   color: string;
-  members: string[];
+  members: Member[];
 };
+type MeetingRecord = {
+  id: string;
+  date: string;
+  attendees: string[];
+  summary: string;
+  externalLink: string;
+};
+
+type MeetingSeries = {
+  id: string;
+  name: string;
+  type: "regular" | "adhoc";
+  records: MeetingRecord[];
+};
+
 type Project = {
   id: string;
   name: string;
@@ -54,6 +73,7 @@ type Project = {
   color: string;
   columns: Column[];
   groups: Group[];
+  meetings: MeetingSeries[];
 };
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
@@ -105,7 +125,7 @@ const initialColumns: Column[] = [
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#06b6d4"];
 
 const DEFAULT_GROUPS: Group[] = [
-  { id: "g1", name: "專管組", color: "#6366f1", members: ["Peter"] },
+  { id: "g1", name: "專管組", color: "#6366f1", members: [{ id: "A001", name: "Peter" }] },
   { id: "g2", name: "美術組", color: "#f59e0b", members: [] },
   { id: "g3", name: "設計組", color: "#8b5cf6", members: [] },
   { id: "g4", name: "硬體組", color: "#10b981", members: [] },
@@ -122,11 +142,24 @@ const initialProjects: Project[] = [
     color: "#6366f1",
     groups: DEFAULT_GROUPS,
     columns: initialColumns,
+    meetings: [],
   },
 ];
 
 function getTotalHours(logs: TimeLog[]): number {
   return Math.round(logs.reduce((sum, l) => sum + l.hours, 0) * 10) / 10;
+}
+
+function memberDisplay(member: Member): string {
+  return `${member.name}（${member.id}）`;
+}
+
+function findMemberById(groups: Group[], memberId: string): Member | undefined {
+  for (const g of groups) {
+    const found = g.members.find((m) => m.id === memberId);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 function getEffectiveStartDate(task: Task): string {
@@ -227,14 +260,14 @@ function TaskModal({ task, groups, onSave, onClose }: {
                   <select className="field-input" value={form.assignee}
                     onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
                     <option value="">請選擇指派人</option>
-                    {availableMembers.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {availableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}（{m.id}）</option>)}
                   </select>
                 );
               }
               return (
                 <input className="field-input" value={form.assignee}
                   onChange={(e) => setForm({ ...form, assignee: e.target.value })}
-                  placeholder={form.groupId ? "該組別尚無成員，請先到「管理組別」新增" : "請先選擇組別，或直接輸入姓名"} />
+                  placeholder={form.groupId ? "該組別尚無成員" : "請先選擇組別"} />
               );
             })()}
           </div>
@@ -341,20 +374,13 @@ function TaskModal({ task, groups, onSave, onClose }: {
                         }}
                         style={{ marginBottom: 6, fontSize: 12 }}>
                         <option value="">選擇指派人</option>
-                        {subMembers.map((m) => <option key={m} value={m}>{m}</option>)}
+                        {subMembers.map((m) => <option key={m.id} value={m.id}>{m.name}（{m.id}）</option>)}
                       </select>
                     );
                   }
                   return (
                     <input placeholder={sub.groupId ? "該組別尚無成員" : "請先選擇組別"}
-                      disabled={!sub.groupId || subMembers.length === 0}
-                      value={sub.assignee}
-                      onChange={(e) => {
-                        const updated = [...form.subtasks];
-                        updated[idx] = { ...sub, assignee: e.target.value };
-                        setForm({ ...form, subtasks: updated });
-                      }}
-                      className="field-input"
+                      disabled className="field-input"
                       style={{ marginBottom: 6, fontSize: 12, opacity: 0.5 }} />
                   );
                 })()}
@@ -416,8 +442,8 @@ function TaskModal({ task, groups, onSave, onClose }: {
 }
 
 // ── Task Card ────────────────────────────────────────────────────────
-function TaskCard({ task, isDragging = false, onClick }: {
-  task: Task; isDragging?: boolean; onClick?: () => void;
+function TaskCard({ task, isDragging = false, onClick, groups = [] }: {
+  task: Task; isDragging?: boolean; onClick?: () => void; groups?: Group[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } =
     useSortable({ id: task.id });
@@ -452,18 +478,24 @@ function TaskCard({ task, isDragging = false, onClick }: {
         </div>
       </div>
       <div className="task-footer">
-        <span className="assignee">{task.assignee}</span>
+        <span className="assignee">
+          {(() => {
+            const member = findMemberById(groups, task.assignee);
+            return member ? member.name : task.assignee || "未指派";
+          })()}
+        </span>
       </div>
     </div>
   );
 }
 
 // ── Column ───────────────────────────────────────────────────────────
-function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask }: {
+function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }: {
   column: Column;
   onAddTask: (colId: string, title: string) => void;
   onDeleteTask: (colId: string, taskId: string) => void;
   onEditTask: (task: Task) => void;
+  groups: Group[];
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -489,7 +521,7 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask }: {
         <div className="task-list">
           {column.tasks.map((task) => (
             <div key={task.id} style={{ position: "relative" }}>
-              <TaskCard task={task} onClick={() => onEditTask(task)} />
+              <TaskCard task={task} onClick={() => onEditTask(task)} groups={groups} />
               <button className="delete-task" onClick={(e) => { e.stopPropagation(); onDeleteTask(column.id, task.id); }}>
                 <X size={11} />
               </button>
@@ -568,14 +600,24 @@ function ProjectModal({ onSave, onClose, existing }: {
 }
 
 // ── Member Input ─────────────────────────────────────────────────────
-function MemberInput({ onAdd, color }: { onAdd: (name: string) => void; color: string }) {
-  const [value, setValue] = useState("");
-  const handleAdd = () => { if (value.trim()) { onAdd(value.trim()); setValue(""); } };
+function MemberInput({ onAdd, color }: { onAdd: (member: Member) => void; color: string }) {
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const handleAdd = () => {
+    if (id.trim() && name.trim()) {
+      onAdd({ id: id.trim(), name: name.trim() });
+      setId(""); setName("");
+    }
+  };
   return (
     <div style={{ display: "flex", gap: 6 }}>
-      <input value={value} onChange={(e) => setValue(e.target.value)}
+      <input value={id} onChange={(e) => setId(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-        placeholder="輸入成員姓名..."
+        placeholder="員工編號"
+        style={{ width: 80, background: "#161b27", border: "1px solid #ffffff10", borderRadius: 6, padding: "5px 10px", color: "#e2e8f0", fontSize: 12, outline: "none" }} />
+      <input value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+        placeholder="姓名"
         style={{ flex: 1, background: "#161b27", border: "1px solid #ffffff10", borderRadius: 6, padding: "5px 10px", color: "#e2e8f0", fontSize: 12, outline: "none" }} />
       <button onClick={handleAdd}
         style={{ background: color + "22", border: `1px solid ${color}44`, borderRadius: 6, color, fontSize: 11, padding: "5px 10px", cursor: "pointer" }}>
@@ -672,18 +714,17 @@ function GroupModal({ groups, onSave, onClose }: {
     setEditGroups(editGroups.map((g) => g.id === id ? { ...g, color } : g));
   };
 
-  const handleAddMember = (groupId: string, member: string) => {
-    if (!member.trim()) return;
+  const handleAddMember = (groupId: string, member: Member) => {
     setEditGroups(editGroups.map((g) =>
-      g.id === groupId && !g.members.includes(member.trim())
-        ? { ...g, members: [...g.members, member.trim()] }
+      g.id === groupId && !g.members.some((m) => m.id === member.id)
+        ? { ...g, members: [...g.members, member] }
         : g
     ));
   };
 
-  const handleRemoveMember = (groupId: string, member: string) => {
+  const handleRemoveMember = (groupId: string, memberId: string) => {
     setEditGroups(editGroups.map((g) =>
-      g.id === groupId ? { ...g, members: g.members.filter((m) => m !== member) } : g
+      g.id === groupId ? { ...g, members: g.members.filter((m) => m.id !== memberId) } : g
     ));
   };
 
@@ -714,14 +755,14 @@ function GroupModal({ groups, onSave, onClose }: {
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {g.members.map((m) => (
-                  <span key={m} style={{
+                  <span key={m.id} style={{
                     display: "flex", alignItems: "center", gap: 4,
                     background: g.color + "18", color: g.color,
                     border: `1px solid ${g.color}33`,
                     borderRadius: 99, padding: "3px 10px", fontSize: 11, fontWeight: 500
                   }}>
-                    {m}
-                    <button onClick={() => handleRemoveMember(g.id, m)}
+                    {m.name}（{m.id}）
+                    <button onClick={() => handleRemoveMember(g.id, m.id)}
                       style={{ background: "none", border: "none", color: g.color, cursor: "pointer", padding: 0, display: "flex", marginLeft: 2 }}>
                       <X size={10} />
                     </button>
@@ -731,7 +772,7 @@ function GroupModal({ groups, onSave, onClose }: {
                   <span style={{ fontSize: 11, color: "#475569" }}>尚無成員</span>
                 )}
               </div>
-              <MemberInput onAdd={(name) => handleAddMember(g.id, name)} color={g.color} />
+              <MemberInput onAdd={(member) => handleAddMember(g.id, member)} color={g.color} />
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
@@ -763,8 +804,8 @@ function GroupModal({ groups, onSave, onClose }: {
 
 // ── Sidebar ──────────────────────────────────────────────────────────
 function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups }: {
-  view: "kanban" | "gantt" | "dashboard";
-  setView: (v: "kanban" | "gantt" | "dashboard") => void;
+  view: "kanban" | "gantt" | "dashboard" | "meetings";
+  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings") => void;
   projects: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
@@ -773,9 +814,10 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   onManageGroups: () => void;
 }) {
   const items = [
-    { id: "kanban",    label: "看板",   icon: <Circle size={16} /> },
-    { id: "gantt",     label: "甘特圖", icon: <Clock size={16} /> },
-    { id: "dashboard", label: "儀表板", icon: <BarChart2 size={16} /> },
+    { id: "kanban",    label: "看板",     icon: <Circle size={16} /> },
+    { id: "gantt",     label: "甘特圖",   icon: <Clock size={16} /> },
+    { id: "dashboard", label: "儀表板",   icon: <BarChart2 size={16} /> },
+    { id: "meetings",  label: "會議記錄", icon: <AlignLeft size={16} /> },
   ] as const;
 
   return (
@@ -869,6 +911,323 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   );
 }
 
+// ── Meetings View ────────────────────────────────────────────────────
+function NewRecordForm({ groups, onSave, onCancel }: {
+  groups: Group[];
+  onSave: (record: MeetingRecord) => void;
+  onCancel: () => void;
+}) {
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [attendees, setAttendees] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [summary, setSummary] = useState("");
+  const [externalLink, setExternalLink] = useState("");
+
+  const toggleAttendee = (name: string) =>
+    setAttendees((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]);
+
+  const filteredMembers: Member[] = selectedGroupIds.length === 0
+    ? []
+    : (() => {
+        const map = new Map<string, Member>();
+        groups.filter((g) => selectedGroupIds.includes(g.id))
+          .flatMap((g) => g.members || [])
+          .forEach((m) => map.set(m.id, m));
+        return Array.from(map.values());
+      })();
+
+  return (
+    <div style={{ background: "#1a2030", borderRadius: 10, padding: 16, border: "1px solid #6366f133" }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>新增會議紀錄</p>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>日期</label>
+        <input type="date" className="field-input" value={date}
+          onChange={(e) => setDate(e.target.value)} style={{ colorScheme: "dark" }} />
+      </div>
+
+      {/* 組別篩選 */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11, color: "#64748b", marginBottom: 6, display: "block" }}>選擇組別</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {groups.map((g) => {
+            const active = selectedGroupIds.includes(g.id);
+            return (
+              <button key={g.id} onClick={() => {
+                if (active) {
+                  const newIds = selectedGroupIds.filter((x) => x !== g.id);
+                  setSelectedGroupIds(newIds);
+                  const remainingIds = groups.filter((gr) => newIds.includes(gr.id))
+                    .flatMap((gr) => gr.members || []).map((m) => m.id);
+                  setAttendees(attendees.filter((a) => remainingIds.includes(a)));
+                } else {
+                  setSelectedGroupIds([...selectedGroupIds, g.id]);
+                }
+              }} style={{
+                background: active ? g.color + "22" : "transparent",
+                border: `1px solid ${active ? g.color : "#ffffff15"}`,
+                color: active ? g.color : "#64748b",
+                borderRadius: 8, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer"
+              }}>{g.name}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 出席人員 */}
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11, color: "#64748b", marginBottom: 6, display: "block" }}>出席人員</label>
+        {selectedGroupIds.length === 0 ? (
+          <p style={{ fontSize: 11, color: "#475569" }}>請先選擇組別</p>
+        ) : filteredMembers.length === 0 ? (
+          <p style={{ fontSize: 11, color: "#475569" }}>所選組別尚無成員</p>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {filteredMembers.map((m) => {
+              const active = attendees.includes(m.id);
+              const memberGroup = groups.find((g) => selectedGroupIds.includes(g.id) && g.members.some((gm) => gm.id === m.id));
+              const mColor = memberGroup?.color || "#6366f1";
+              return (
+                <button key={m.id} onClick={() => toggleAttendee(m.id)} style={{
+                  background: active ? mColor + "22" : "transparent",
+                  border: `1px solid ${active ? mColor : "#ffffff15"}`,
+                  color: active ? mColor : "#64748b",
+                  borderRadius: 99, padding: "4px 12px", fontSize: 11, cursor: "pointer"
+                }}>{memberDisplay(m)}</button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>會議摘要（結論 + 行動事項）</label>
+        <textarea className="field-input field-textarea" value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          placeholder="輸入會議重點結論與待辦事項..." rows={4} />
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>外部連結（選填）</label>
+        <input className="field-input" value={externalLink}
+          onChange={(e) => setExternalLink(e.target.value)}
+          placeholder="貼上 Google Docs / Notion 連結..." />
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn-cancel" style={{ flex: 1 }} onClick={onCancel}>取消</button>
+        <button className="btn-save" style={{ flex: 2 }} onClick={() => {
+          if (date) onSave({ id: "mr" + Date.now(), date, attendees, summary, externalLink });
+        }}>儲存紀錄</button>
+      </div>
+    </div>
+  );
+}
+
+function NewSeriesModal({ onSave, onClose }: {
+  onSave: (series: MeetingSeries) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"regular" | "adhoc">("regular");
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">新增會議系列</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 會議名稱</label>
+            <input className="field-input" value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例如：每週專案進度會議" />
+          </div>
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 會議類型</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {([["regular", "定期會議", "#6366f1"], ["adhoc", "臨時會議", "#f59e0b"]] as const).map(([val, label, color]) => (
+                <button key={val} onClick={() => setType(val)} style={{
+                  flex: 1, borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  background: type === val ? color + "22" : "transparent",
+                  border: `1px solid ${type === val ? color : "#ffffff15"}`,
+                  color: type === val ? color : "#64748b"
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-save" onClick={() => {
+            if (name.trim()) {
+              onSave({ id: "ms" + Date.now(), name: name.trim(), type, records: [] });
+              onClose();
+            }
+          }}>建立</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MeetingsView({ meetings, groups, onUpdate }: {
+  meetings: MeetingSeries[];
+  groups: Group[];
+  onUpdate: (meetings: MeetingSeries[]) => void;
+}) {
+  const [showSeriesModal, setShowSeriesModal] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  const [addingRecordId, setAddingRecordId] = useState<string | null>(null);
+
+  const toggleExpand = (id: string) =>
+    setExpandedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
+  const handleDeleteSeries = (id: string) => onUpdate(meetings.filter((m) => m.id !== id));
+
+  const handleDeleteRecord = (seriesId: string, recordId: string) =>
+    onUpdate(meetings.map((m) =>
+      m.id === seriesId ? { ...m, records: m.records.filter((r) => r.id !== recordId) } : m
+    ));
+
+  const renderSeries = (series: MeetingSeries) => {
+    const isExpanded = expandedIds.includes(series.id);
+    const typeColor = series.type === "regular" ? "#6366f1" : "#f59e0b";
+    const typeLabel = series.type === "regular" ? "定期" : "臨時";
+
+    return (
+      <div key={series.id} style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 16px", background: "#1a2030", cursor: "pointer",
+          borderBottom: isExpanded ? "1px solid #ffffff08" : "none"
+        }} onClick={() => toggleExpand(series.id)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+              background: typeColor + "22", color: typeColor, border: `1px solid ${typeColor}44`
+            }}>{typeLabel}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{series.name}</span>
+            <span style={{ fontSize: 11, color: "#475569" }}>{series.records.length} 筆紀錄</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={(e) => {
+              e.stopPropagation();
+              setAddingRecordId(series.id);
+              setExpandedIds((prev) => prev.includes(series.id) ? prev : [...prev, series.id]);
+            }} style={{ background: "#10b98122", border: "1px solid #10b98144", borderRadius: 6, color: "#10b981", fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>
+              + 新增紀錄
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); handleDeleteSeries(series.id); }}
+              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
+              <X size={14} />
+            </button>
+            <span style={{ color: "#475569", fontSize: 14, transition: "transform .2s", display: "inline-block", transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            {addingRecordId === series.id && (
+              <NewRecordForm
+                groups={groups}
+                onSave={(record) => {
+                  onUpdate(meetings.map((m) =>
+                    m.id === series.id ? { ...m, records: [record, ...m.records] } : m
+                  ));
+                  setAddingRecordId(null);
+                }}
+                onCancel={() => setAddingRecordId(null)}
+              />
+            )}
+
+            {series.records.length === 0 && addingRecordId !== series.id && (
+              <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 16 }}>尚無會議紀錄</p>
+            )}
+
+            {series.records.map((record) => (
+              <div key={record.id} style={{ background: "#0f1117", borderRadius: 10, padding: 14, border: "1px solid #ffffff08" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{record.date}</span>
+                  <button onClick={() => handleDeleteRecord(series.id, record.id)}
+                    style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+                    <X size={12} />
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                  {record.attendees.map((aId) => {
+                    const member = findMemberById(groups, aId);
+                    return (
+                      <span key={aId} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, background: "#6366f118", color: "#6366f1", border: "1px solid #6366f133" }}>
+                        {member ? member.name : aId}
+                      </span>
+                    );
+                  })}
+                </div>
+                {record.summary && (
+                  <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 8, whiteSpace: "pre-wrap" }}>{record.summary}</p>
+                )}
+                {record.externalLink && (
+                  <a href={record.externalLink} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 11, color: "#6366f1", textDecoration: "none" }}>
+                    📎 查看完整記錄 →
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const regularMeetings = meetings.filter((m) => m.type === "regular");
+  const adhocMeetings   = meetings.filter((m) => m.type === "adhoc");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={() => setShowSeriesModal(true)} style={{
+          background: "#6366f122", border: "1px solid #6366f144",
+          borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
+          padding: "8px 20px", cursor: "pointer"
+        }}>+ 新增會議系列</button>
+      </div>
+
+      {regularMeetings.length > 0 && (
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".05em" }}>定期會議</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{regularMeetings.map(renderSeries)}</div>
+        </div>
+      )}
+
+      {adhocMeetings.length > 0 && (
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".05em" }}>臨時會議</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{adhocMeetings.map(renderSeries)}</div>
+        </div>
+      )}
+
+      {meetings.length === 0 && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, color: "#475569", gap: 12 }}>
+          <p style={{ fontSize: 48 }}>📋</p>
+          <p style={{ fontSize: 15 }}>尚無會議記錄</p>
+          <p style={{ fontSize: 13 }}>點右上角「+ 新增會議系列」開始</p>
+        </div>
+      )}
+
+      {showSeriesModal && (
+        <NewSeriesModal
+          onSave={(series) => { onUpdate([...meetings, series]); setShowSeriesModal(false); }}
+          onClose={() => setShowSeriesModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Dashboard View ───────────────────────────────────────────────────
 function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[] }) {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -908,9 +1267,10 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
       }
     });
   });
-  const hoursData = Object.entries(hoursMap).map(([name, hours]) => ({
-    name, 工時: Math.round(hours * 10) / 10
-  }));
+  const hoursData = Object.entries(hoursMap).map(([memberId, hours]) => {
+    const member = findMemberById(groups, memberId);
+    return { name: member ? member.name : memberId, 工時: Math.round(hours * 10) / 10 };
+  });
 
   const totalCompletion = allTasks.length > 0
     ? Math.round(allTasks.reduce((sum, t) => sum + getCompletion(t), 0) / allTasks.length)
@@ -1050,7 +1410,7 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
         });
 
         selectedGroup.members.forEach((m) => {
-          if (!memberStats[m]) memberStats[m] = { tasks: [], hours: 0 };
+          if (!memberStats[m.id]) memberStats[m.id] = { tasks: [], hours: 0 };
         });
 
         const memberList = Object.entries(memberStats).sort((a, b) => a[0].localeCompare(b[0]));
@@ -1069,38 +1429,32 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
                 {memberList.length === 0 ? (
                   <p style={{ fontSize: 13, color: "#475569", textAlign: "center", padding: 20 }}>該組別尚無成員</p>
                 ) : (
-                  memberList.map(([name, stats]) => (
-                    <div key={name} style={{
-                      background: "#0f1117", borderRadius: 10, padding: 14,
-                      border: "1px solid #ffffff08"
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{name}</span>
-                        <span style={{
-                          fontSize: 11, padding: "3px 10px", borderRadius: 99,
-                          background: "#10b98122", color: "#10b981",
-                          border: "1px solid #10b98133"
-                        }}>
-                          工時：{stats.hours > 0 ? `${Math.round(stats.hours * 10) / 10} 小時` : "0 小時"}
-                        </span>
-                      </div>
-                      {stats.tasks.length > 0 ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {stats.tasks.map((taskName, i) => (
-                            <div key={i} style={{
-                              display: "flex", alignItems: "center", gap: 6,
-                              fontSize: 12, color: "#94a3b8"
-                            }}>
-                              <div style={{ width: 4, height: 4, borderRadius: 99, background: selectedGroup.color, flexShrink: 0 }} />
-                              {taskName}
-                            </div>
-                          ))}
+                  memberList.map(([memberId, stats]) => {
+                    const member = findMemberById([selectedGroup], memberId);
+                    const displayName = member ? memberDisplay(member) : memberId;
+                    return (
+                      <div key={memberId} style={{ background: "#0f1117", borderRadius: 10, padding: 14, border: "1px solid #ffffff08" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{displayName}</span>
+                          <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 99, background: "#10b98122", color: "#10b981", border: "1px solid #10b98133" }}>
+                            工時：{stats.hours > 0 ? `${Math.round(stats.hours * 10) / 10} 小時` : "0 小時"}
+                          </span>
                         </div>
-                      ) : (
-                        <p style={{ fontSize: 12, color: "#475569" }}>尚無指派工項</p>
-                      )}
-                    </div>
-                  ))
+                        {stats.tasks.length > 0 ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {stats.tasks.map((taskName, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                                <div style={{ width: 4, height: 4, borderRadius: 99, background: selectedGroup.color, flexShrink: 0 }} />
+                                {taskName}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: 12, color: "#475569" }}>尚無指派工項</p>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
               <div className="modal-footer">
@@ -1373,9 +1727,12 @@ export default function App() {
         const parsed = JSON.parse(saved);
         return parsed.map((p: any) => ({
           ...p,
+          meetings: p.meetings || [],
           groups: (p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS).map((g: any) => ({
             ...g,
-            members: g.members || [],
+            members: (g.members || []).map((m: any) =>
+              typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id }
+            ),
           })),
           columns: p.columns.map((col: any) => ({
             ...col,
@@ -1428,7 +1785,7 @@ export default function App() {
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"kanban" | "gantt" | "dashboard">("kanban");
+  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
 
   const handleAddProject = () => setShowProjectModal(true);
@@ -1440,11 +1797,18 @@ export default function App() {
     ));
   };
 
+  const handleUpdateMeetings = (meetings: MeetingSeries[]) => {
+    setProjects((prev) => prev.map((p) =>
+      p.id === activeProjectId ? { ...p, meetings } : p
+    ));
+  };
+
   const handleSaveProject = (name: string, description: string, color: string) => {
     const newProject: Project = {
       id: "p" + Date.now(),
       name, description, color,
       groups: DEFAULT_GROUPS,
+      meetings: [],
       columns: [
         { id: "todo",       title: "待處理", tasks: [] },
         { id: "inprogress", title: "進行中", tasks: [] },
@@ -1472,9 +1836,13 @@ export default function App() {
   const filteredColumns = columns.map((col) => ({
     ...col,
     tasks: col.tasks.filter((task) => {
+      const memberName = (() => {
+        const m = findMemberById(activeProject?.groups || [], task.assignee);
+        return m ? m.name : task.assignee;
+      })();
       const matchSearch = searchText === "" ||
         task.title.toLowerCase().includes(searchText.toLowerCase()) ||
-        task.assignee.toLowerCase().includes(searchText.toLowerCase());
+        memberName.toLowerCase().includes(searchText.toLowerCase());
       const matchPriority = filterPriorities.length === 0 || filterPriorities.includes(task.priority);
       const matchAssignee = filterAssignees.length === 0 || filterAssignees.includes(task.assignee);
       const matchGroup = filterGroups.length === 0 || filterGroups.includes(task.groupId);
@@ -1689,10 +2057,11 @@ export default function App() {
                         if (active) {
                           const newGroups = filterGroups.filter((x) => x !== g.id);
                           setFilterGroups(newGroups);
-                          const remainingMembers = activeProject.groups
+                          const remainingMemberIds = activeProject.groups
                             .filter((gr) => newGroups.includes(gr.id))
-                            .flatMap((gr) => gr.members || []);
-                          setFilterAssignees(filterAssignees.filter((a) => remainingMembers.includes(a)));
+                            .flatMap((gr) => gr.members || [])
+                            .map((m) => m.id);
+                          setFilterAssignees(filterAssignees.filter((a) => remainingMemberIds.includes(a)));
                         } else {
                           setFilterGroups([...filterGroups, g.id]);
                         }
@@ -1735,17 +2104,19 @@ export default function App() {
             {/* 第四行：人員篩選 - 依選中組別動態顯示 */}
             {filterGroups.length > 0 && (() => {
               const selectedGroups = activeProject.groups.filter((g) => filterGroups.includes(g.id));
-              const availableMembers = Array.from(new Set(selectedGroups.flatMap((g) => g.members || [])));
+              const memberMap = new Map<string, Member>();
+              selectedGroups.flatMap((g) => g.members || []).forEach((m) => memberMap.set(m.id, m));
+              const availableMembers = Array.from(memberMap.values());
               if (availableMembers.length === 0) return null;
               return (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {availableMembers.map((m) => {
-                    const active = filterAssignees.includes(m);
+                    const active = filterAssignees.includes(m.id);
                     return (
-                      <button key={m}
+                      <button key={m.id}
                         onClick={() => setFilterAssignees(active
-                          ? filterAssignees.filter((x) => x !== m)
-                          : [...filterAssignees, m]
+                          ? filterAssignees.filter((x) => x !== m.id)
+                          : [...filterAssignees, m.id]
                         )}
                         style={{
                           background: active ? "#6366f122" : "transparent",
@@ -1753,7 +2124,7 @@ export default function App() {
                           color: active ? "#6366f1" : "#64748b",
                           borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer"
                         }}>
-                        {m}
+                        {m.name}
                       </button>
                     );
                   })}
@@ -1766,15 +2137,21 @@ export default function App() {
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
               <div className="board">
                 {filteredColumns.map((col) => (
-                  <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask}  />
+                  <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={activeProject?.groups || []} />
                 ))}
               </div>
-              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
+              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={activeProject?.groups || []} />}</DragOverlay>
             </DndContext>
           ) : view === "gantt" ? (
             <GanttView columns={filteredColumns} groups={activeProject?.groups || []} onEditTask={setEditingTask} />
-          ) : (
+          ) : view === "dashboard" ? (
             <DashboardView columns={columns} groups={activeProject?.groups || []} />
+          ) : (
+            <MeetingsView
+              meetings={activeProject?.meetings || []}
+              groups={activeProject?.groups || []}
+              onUpdate={handleUpdateMeetings}
+            />
           )}
         </div>
       </div>
