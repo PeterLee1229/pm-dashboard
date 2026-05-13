@@ -3027,6 +3027,7 @@ export default function App() {
               risks={activeProject?.risks || []}
               weeklyReports={activeProject?.weeklyReports || []}
               onUpdateReports={handleUpdateWeeklyReports}
+              projectName={activeProject?.name || ""}
             />
           )}
         </div>
