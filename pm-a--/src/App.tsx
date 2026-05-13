@@ -87,6 +87,13 @@ type Risk = {
   createdDate: string;
 };
 
+type WeeklyReport = {
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  notes: string;
+};
+
 type Project = {
   id: string;
   name: string;
@@ -96,6 +103,7 @@ type Project = {
   groups: Group[];
   meetings: MeetingSeries[];
   risks: Risk[];
+  weeklyReports: WeeklyReport[];
 };
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
@@ -180,6 +188,7 @@ const initialProjects: Project[] = [
     columns: initialColumns,
     meetings: [],
     risks: [],
+    weeklyReports: [],
   },
 ];
 
@@ -217,6 +226,29 @@ function getCompletion(task: Task): number {
   if (task.subtasks.length === 0) return task.completion;
   const avg = task.subtasks.reduce((sum, s) => sum + s.completion, 0) / task.subtasks.length;
   return Math.round(avg);
+}
+
+function toROCDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const rocYear = d.getFullYear() - 1911;
+  return `${rocYear}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function getWeekRange(date: Date): { start: Date; end: Date } {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const start = new Date(d);
+  start.setDate(d.getDate() + diffToMon);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+function formatDateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
 }
 
 // ── Task Edit Modal ──────────────────────────────────────────────────
@@ -841,8 +873,8 @@ function GroupModal({ groups, onSave, onClose }: {
 
 // ── Sidebar ──────────────────────────────────────────────────────────
 function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups }: {
-  view: "kanban" | "gantt" | "dashboard" | "meetings";
-  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings") => void;
+  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly";
+  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly") => void;
   projects: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
@@ -855,6 +887,8 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
     { id: "gantt",     label: "甘特圖",   icon: <Clock size={16} /> },
     { id: "dashboard", label: "儀表板",   icon: <BarChart2 size={16} /> },
     { id: "meetings",  label: "會議記錄", icon: <AlignLeft size={16} /> },
+    { id: "risks",     label: "風險管理", icon: <AlertCircle size={16} /> },
+    { id: "weekly",    label: "週報",     icon: <CheckCircle2 size={16} /> },
   ] as const;
 
   return (
@@ -1505,6 +1539,314 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
   );
 }
 
+// ── Risk Modal ───────────────────────────────────────────────────────
+function RiskModal({ risk, groups, onSave, onClose }: {
+  risk: Risk | null;
+  groups: Group[];
+  onSave: (risk: Risk) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<Risk>(risk || {
+    id: "r" + Date.now(),
+    title: "",
+    description: "",
+    probability: "medium",
+    impact: "medium",
+    countermeasure: "",
+    ownerId: "",
+    ownerGroupId: "",
+    status: "monitoring",
+    createdDate: new Date().toISOString().split("T")[0],
+  });
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">{risk ? "編輯風險" : "新增風險"}</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: "65vh", overflowY: "auto" }}>
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 風險名稱</label>
+            <input className="field-input" value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="輸入風險名稱..." />
+          </div>
+          <div className="field">
+            <label className="field-label"><AlignLeft size={13} /> 風險描述</label>
+            <textarea className="field-input field-textarea" value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="描述風險情境..." rows={3} />
+          </div>
+          <div className="field">
+            <label className="field-label"><AlertCircle size={13} /> 發生機率</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              {RISK_LEVELS.map((l) => (
+                <button key={l.id} onClick={() => setForm({ ...form, probability: l.id })}
+                  style={{
+                    flex: 1, borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    background: form.probability === l.id ? l.color + "22" : "transparent",
+                    border: `1px solid ${form.probability === l.id ? l.color : "#ffffff15"}`,
+                    color: form.probability === l.id ? l.color : "#64748b"
+                  }}>{l.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label className="field-label"><AlertCircle size={13} /> 影響程度</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              {RISK_LEVELS.map((l) => (
+                <button key={l.id} onClick={() => setForm({ ...form, impact: l.id })}
+                  style={{
+                    flex: 1, borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    background: form.impact === l.id ? l.color + "22" : "transparent",
+                    border: `1px solid ${form.impact === l.id ? l.color : "#ffffff15"}`,
+                    color: form.impact === l.id ? l.color : "#64748b"
+                  }}>{l.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 因應對策</label>
+            <textarea className="field-input field-textarea" value={form.countermeasure}
+              onChange={(e) => setForm({ ...form, countermeasure: e.target.value })}
+              placeholder="輸入因應對策..." rows={3} />
+          </div>
+          <div className="field">
+            <label className="field-label"><User size={13} /> 負責組別</label>
+            <select className="field-input" value={form.ownerGroupId}
+              onChange={(e) => setForm({ ...form, ownerGroupId: e.target.value, ownerId: "" })}>
+              <option value="">選擇組別</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label className="field-label"><User size={13} /> 負責人</label>
+            {(() => {
+              const ownerGroup = groups.find((g) => g.id === form.ownerGroupId);
+              const members = ownerGroup?.members || [];
+              if (form.ownerGroupId && members.length > 0) {
+                return (
+                  <select className="field-input" value={form.ownerId}
+                    onChange={(e) => setForm({ ...form, ownerId: e.target.value })}>
+                    <option value="">選擇負責人</option>
+                    {members.map((m) => <option key={m.id} value={m.id}>{m.name}（{m.id}）</option>)}
+                  </select>
+                );
+              }
+              return (
+                <div className="field-input" style={{ opacity: 0.4, color: "#475569" }}>
+                  {form.ownerGroupId ? "該組別尚無成員" : "請先選擇組別"}
+                </div>
+              );
+            })()}
+          </div>
+          <div className="field">
+            <label className="field-label"><Flag size={13} /> 狀態</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {(Object.entries(RISK_STATUS_CONFIG) as [RiskStatus, { label: string; color: string }][]).map(([key, cfg]) => (
+                <button key={key} onClick={() => setForm({ ...form, status: key })}
+                  style={{
+                    flex: 1, borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    background: form.status === key ? cfg.color + "22" : "transparent",
+                    border: `1px solid ${form.status === key ? cfg.color : "#ffffff15"}`,
+                    color: form.status === key ? cfg.color : "#64748b"
+                  }}>{cfg.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-save" onClick={() => {
+            if (form.title.trim()) { onSave(form); onClose(); }
+          }}>{risk ? "儲存變更" : "建立風險"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Risk Matrix View ──────────────────────────────────────────────────
+function RiskMatrixView({ risks, groups, onUpdate }: {
+  risks: Risk[];
+  groups: Group[];
+  onUpdate: (risks: Risk[]) => void;
+}) {
+  const [showRiskModal, setShowRiskModal] = useState(false);
+  const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
+
+  const levels = RISK_LEVELS;
+
+  const getCell = (prob: RiskLevel, imp: RiskLevel) =>
+    risks.filter((r) => r.probability === prob && r.impact === imp && r.status !== "resolved");
+
+  const getCellColor = (prob: RiskLevel, imp: RiskLevel) => {
+    const pv = levels.find((l) => l.id === prob)!.value;
+    const iv = levels.find((l) => l.id === imp)!.value;
+    const score = pv * iv;
+    if (score >= 16) return "#ef444440";
+    if (score >= 10) return "#f9731640";
+    if (score >= 5)  return "#facc1530";
+    if (score >= 3)  return "#6366f120";
+    return "#4ade8015";
+  };
+
+  const handleDelete = (id: string) => {
+    onUpdate(risks.filter((r) => r.id !== id));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 12 }}>
+          {Object.entries(RISK_STATUS_CONFIG).map(([key, cfg]) => {
+            const count = risks.filter((r) => r.status === key).length;
+            return (
+              <div key={key} style={{
+                background: "#161b27", borderRadius: 8, padding: "8px 16px",
+                border: `1px solid ${cfg.color}22`, display: "flex", alignItems: "center", gap: 8
+              }}>
+                <div style={{ width: 8, height: 8, borderRadius: 99, background: cfg.color }} />
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>{cfg.label}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: cfg.color }}>{count}</span>
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={() => { setEditingRisk(null); setShowRiskModal(true); }}
+          style={{
+            background: "#6366f122", border: "1px solid #6366f144",
+            borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
+            padding: "8px 20px", cursor: "pointer"
+          }}>
+          + 新增風險
+        </button>
+      </div>
+
+      {/* 5×5 矩陣 */}
+      <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>風險矩陣（機率 × 影響）</p>
+        <div style={{ display: "flex" }}>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", paddingRight: 8, paddingTop: 28, paddingBottom: 4 }}>
+            <span style={{ fontSize: 10, color: "#64748b", writingMode: "vertical-rl", transform: "rotate(180deg)", letterSpacing: 2, textAlign: "center", height: "100%" }}>機率 →</span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", paddingLeft: 50 }}>
+              {levels.map((l) => (
+                <div key={l.id} style={{ flex: 1, textAlign: "center", fontSize: 11, fontWeight: 600, color: l.color, padding: "6px 0" }}>
+                  {l.label}
+                </div>
+              ))}
+            </div>
+            {[...levels].map((probLevel) => (
+              <div key={probLevel.id} style={{ display: "flex", alignItems: "center" }}>
+                <div style={{ width: 50, textAlign: "center", fontSize: 11, fontWeight: 600, color: probLevel.color }}>
+                  {probLevel.label}
+                </div>
+                {levels.map((impLevel) => {
+                  const cellRisks = getCell(probLevel.id, impLevel.id);
+                  return (
+                    <div key={impLevel.id} style={{
+                      flex: 1, height: 60, background: getCellColor(probLevel.id, impLevel.id),
+                      border: "1px solid #ffffff08", borderRadius: 4, margin: 2,
+                      display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center",
+                      gap: 3, padding: 3, cursor: cellRisks.length > 0 ? "pointer" : "default"
+                    }}>
+                      {cellRisks.map((r) => (
+                        <div key={r.id} onClick={() => { setEditingRisk(r); setShowRiskModal(true); }}
+                          title={r.title}
+                          style={{
+                            width: 18, height: 18, borderRadius: 4, fontSize: 8, fontWeight: 700,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            background: RISK_STATUS_CONFIG[r.status].color + "33",
+                            color: RISK_STATUS_CONFIG[r.status].color,
+                            border: `1px solid ${RISK_STATUS_CONFIG[r.status].color}66`,
+                            cursor: "pointer"
+                          }}>
+                          {r.title.charAt(0)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            <div style={{ textAlign: "center", fontSize: 10, color: "#64748b", marginTop: 6 }}>影響 →</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 風險清單 */}
+      <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>風險清單</p>
+        {risks.length === 0 ? (
+          <p style={{ fontSize: 13, color: "#475569", textAlign: "center", padding: 24 }}>尚無風險項目</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {risks.map((risk) => {
+              const owner = findMemberById(groups, risk.ownerId);
+              const statusCfg = RISK_STATUS_CONFIG[risk.status];
+              const probCfg = RISK_LEVELS.find((l) => l.id === risk.probability)!;
+              const impCfg = RISK_LEVELS.find((l) => l.id === risk.impact)!;
+              return (
+                <div key={risk.id} style={{
+                  background: "#0f1117", borderRadius: 10, padding: 14,
+                  border: "1px solid #ffffff08", cursor: "pointer"
+                }} onClick={() => { setEditingRisk(risk); setShowRiskModal(true); }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{risk.title}</span>
+                      <span style={{
+                        fontSize: 10, padding: "2px 8px", borderRadius: 99,
+                        background: statusCfg.color + "22", color: statusCfg.color,
+                        border: `1px solid ${statusCfg.color}44`
+                      }}>{statusCfg.label}</span>
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(risk.id); }}
+                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                  {risk.description && (
+                    <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 8 }}>{risk.description}</p>
+                  )}
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "#64748b" }}>機率：<span style={{ color: probCfg.color, fontWeight: 600 }}>{probCfg.label}</span></span>
+                    <span style={{ fontSize: 11, color: "#64748b" }}>影響：<span style={{ color: impCfg.color, fontWeight: 600 }}>{impCfg.label}</span></span>
+                    <span style={{ fontSize: 11, color: "#64748b" }}>負責人：<span style={{ color: "#e2e8f0" }}>{owner ? memberDisplay(owner) : "未指派"}</span></span>
+                    <span style={{ fontSize: 11, color: "#64748b" }}>建立：{risk.createdDate}</span>
+                  </div>
+                  {risk.countermeasure && (
+                    <p style={{ fontSize: 11, color: "#6366f1", marginTop: 6 }}>對策：{risk.countermeasure}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {showRiskModal && (
+        <RiskModal
+          risk={editingRisk}
+          groups={groups}
+          onSave={(risk) => {
+            if (editingRisk) {
+              onUpdate(risks.map((r) => r.id === risk.id ? risk : r));
+            } else {
+              onUpdate([...risks, risk]);
+            }
+            setShowRiskModal(false);
+          }}
+          onClose={() => setShowRiskModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Gantt View ───────────────────────────────────────────────────────
 function GanttView({ columns, groups, onEditTask }: {
   columns: Column[];
@@ -1755,6 +2097,283 @@ function GanttView({ columns, groups, onEditTask }: {
   );
 }
 
+// ── Weekly Report View ───────────────────────────────────────────────
+function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateReports }: {
+  columns: Column[];
+  groups: Group[];
+  risks: Risk[];
+  weeklyReports: WeeklyReport[];
+  onUpdateReports: (reports: WeeklyReport[]) => void;
+}) {
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  const now = new Date();
+  const targetDate = new Date(now);
+  targetDate.setDate(now.getDate() + weekOffset * 7);
+  const { start: weekStart, end: weekEnd } = getWeekRange(targetDate);
+  const weekStartStr = formatDateStr(weekStart);
+  const weekEndStr = formatDateStr(weekEnd);
+
+  const existingReport = weeklyReports.find((r) => r.weekStart === weekStartStr);
+  const [notes, setNotes] = useState(existingReport?.notes || "");
+
+  const prevWeekStartRef = useState(weekStartStr);
+  if (prevWeekStartRef[0] !== weekStartStr) {
+    prevWeekStartRef[0] = weekStartStr;
+    const found = weeklyReports.find((r) => r.weekStart === weekStartStr);
+    setNotes(found?.notes || "");
+  }
+
+  const handleSaveNotes = () => {
+    if (existingReport) {
+      onUpdateReports(weeklyReports.map((r) =>
+        r.weekStart === weekStartStr ? { ...r, notes } : r
+      ));
+    } else {
+      onUpdateReports([...weeklyReports, {
+        id: "wr" + Date.now(),
+        weekStart: weekStartStr,
+        weekEnd: weekEndStr,
+        notes,
+      }]);
+    }
+  };
+
+  const allTasks = columns.flatMap((c) => c.tasks);
+
+  const isInWeek = (dateStr: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d >= weekStart && d <= weekEnd;
+  };
+
+  const doneColumn = columns.find((c) => c.id === "done");
+  const completedTasks = allTasks.filter((t) => {
+    const comp = getCompletion(t);
+    if (comp === 100) {
+      const hasWeekLog = (t.timeLogs || []).some((l) => isInWeek(l.date));
+      const subHasWeekLog = t.subtasks.some((s) => (s.timeLogs || []).some((l) => isInWeek(l.date)));
+      return hasWeekLog || subHasWeekLog || (doneColumn?.tasks.some((dt) => dt.id === t.id) ?? false);
+    }
+    return false;
+  });
+
+  const inProgressTasks = allTasks.filter((t) => {
+    const comp = getCompletion(t);
+    if (comp >= 100) return false;
+    const hasWeekLog = (t.timeLogs || []).some((l) => isInWeek(l.date));
+    const subHasWeekLog = t.subtasks.some((s) => (s.timeLogs || []).some((l) => isInWeek(l.date)));
+    return hasWeekLog || subHasWeekLog;
+  });
+
+  const weekHoursMap: Record<string, number> = {};
+  allTasks.forEach((t) => {
+    if (t.subtasks.length === 0) {
+      (t.timeLogs || []).filter((l) => isInWeek(l.date)).forEach((l) => {
+        const member = findMemberById(groups, t.assignee);
+        const key = member ? memberDisplay(member) : t.assignee || "未指派";
+        weekHoursMap[key] = (weekHoursMap[key] || 0) + l.hours;
+      });
+    }
+    t.subtasks.forEach((s) => {
+      (s.timeLogs || []).filter((l) => isInWeek(l.date)).forEach((l) => {
+        const member = findMemberById(groups, s.assignee);
+        const key = member ? memberDisplay(member) : s.assignee || "未指派";
+        weekHoursMap[key] = (weekHoursMap[key] || 0) + l.hours;
+      });
+    });
+  });
+  const totalWeekHours = Math.round(Object.values(weekHoursMap).reduce((s, h) => s + h, 0) * 10) / 10;
+
+  const activeRisks = risks.filter((r) => r.status !== "resolved");
+
+  const nextWeekStart = new Date(weekEnd);
+  nextWeekStart.setDate(nextWeekStart.getDate() + 1);
+  const nextWeekEnd = new Date(nextWeekStart);
+  nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+
+  const isInNextWeek = (dateStr: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d >= nextWeekStart && d <= nextWeekEnd;
+  };
+
+  const nextWeekTasks = allTasks.filter((t) => {
+    const comp = getCompletion(t);
+    if (comp >= 100) return false;
+    const effectiveStart = getEffectiveStartDate(t);
+    const effectiveEnd = getEffectiveEndDate(t);
+    if (isInNextWeek(effectiveStart) || isInNextWeek(effectiveEnd)) return true;
+    if (effectiveStart && effectiveEnd) {
+      const s = new Date(effectiveStart);
+      const e = new Date(effectiveEnd);
+      if (s <= nextWeekEnd && e >= nextWeekStart) return true;
+    }
+    return false;
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* 週次選擇 */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 20,
+        background: "#161b27", borderRadius: 12, padding: "14px 20px", border: "1px solid #ffffff08"
+      }}>
+        <button onClick={() => setWeekOffset(weekOffset - 1)}
+          style={{ background: "#ffffff10", border: "none", borderRadius: 8, color: "#e2e8f0", fontSize: 18, padding: "4px 14px", cursor: "pointer" }}>
+          ◀
+        </button>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0" }}>
+            {toROCDate(weekStartStr)} ~ {toROCDate(weekEndStr)}
+          </p>
+          <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>
+            {weekOffset === 0 ? "本週" : weekOffset === -1 ? "上週" : weekOffset === 1 ? "下週" : ""}
+          </p>
+        </div>
+        <button onClick={() => setWeekOffset(weekOffset + 1)}
+          style={{ background: "#ffffff10", border: "none", borderRadius: 8, color: "#e2e8f0", fontSize: 18, padding: "4px 14px", cursor: "pointer" }}>
+          ▶
+        </button>
+        <button onClick={() => setWeekOffset(0)}
+          style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#6366f1", fontSize: 12, padding: "6px 14px", cursor: "pointer" }}>
+          回到本週
+        </button>
+      </div>
+
+      {/* 統計卡片 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        {[
+          { label: "本週完成", value: completedTasks.length, unit: "項", color: "#10b981" },
+          { label: "進行中",   value: inProgressTasks.length, unit: "項", color: "#f59e0b" },
+          { label: "本週總工時", value: totalWeekHours, unit: "h", color: "#6366f1" },
+          { label: "活躍風險", value: activeRisks.length, unit: "項", color: "#ef4444" },
+        ].map((card) => (
+          <div key={card.label} style={{
+            background: "#161b27", borderRadius: 10, padding: "16px 20px",
+            border: `1px solid ${card.color}22`
+          }}>
+            <p style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>{card.label}</p>
+            <p style={{ fontSize: 24, fontWeight: 700, color: card.color }}>
+              {card.value} <span style={{ fontSize: 12, fontWeight: 400 }}>{card.unit}</span>
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+
+        {/* 本週完成 */}
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#10b981", marginBottom: 12 }}>✅ 本週完成</p>
+          {completedTasks.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#475569" }}>無</p>
+          ) : completedTasks.map((t) => {
+            const group = groups.find((g) => g.id === t.groupId);
+            return (
+              <div key={t.id} style={{ fontSize: 12, color: "#94a3b8", padding: "4px 0", display: "flex", gap: 8 }}>
+                {group && <span style={{ fontSize: 10, color: group.color }}>[{group.name}]</span>}
+                <span>{t.title}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 進行中 */}
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#f59e0b", marginBottom: 12 }}>🔄 進行中</p>
+          {inProgressTasks.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#475569" }}>無</p>
+          ) : inProgressTasks.map((t) => {
+            const group = groups.find((g) => g.id === t.groupId);
+            const comp = getCompletion(t);
+            return (
+              <div key={t.id} style={{ fontSize: 12, color: "#94a3b8", padding: "4px 0", display: "flex", alignItems: "center", gap: 8 }}>
+                {group && <span style={{ fontSize: 10, color: group.color }}>[{group.name}]</span>}
+                <span style={{ flex: 1 }}>{t.title}</span>
+                <span style={{ fontSize: 11, color: "#6366f1" }}>{comp}%</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 工時統計 */}
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#6366f1", marginBottom: 12 }}>⏱ 工時統計</p>
+          {Object.keys(weekHoursMap).length === 0 ? (
+            <p style={{ fontSize: 12, color: "#475569" }}>本週無工時紀錄</p>
+          ) : Object.entries(weekHoursMap)
+              .sort((a, b) => b[1] - a[1])
+              .map(([name, hours]) => (
+                <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>
+                  <span style={{ color: "#94a3b8" }}>{name}</span>
+                  <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{Math.round(hours * 10) / 10} h</span>
+                </div>
+              ))
+          }
+        </div>
+
+        {/* 風險狀態 */}
+        <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: "#ef4444", marginBottom: 12 }}>⚠️ 風險狀態</p>
+          {activeRisks.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#475569" }}>無活躍風險</p>
+          ) : activeRisks.map((r) => {
+            const statusCfg = RISK_STATUS_CONFIG[r.status];
+            return (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12 }}>
+                <span style={{
+                  fontSize: 9, padding: "1px 6px", borderRadius: 99,
+                  background: statusCfg.color + "22", color: statusCfg.color
+                }}>{statusCfg.label}</span>
+                <span style={{ color: "#94a3b8" }}>{r.title}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 下週預計工作 */}
+      <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#8b5cf6", marginBottom: 12 }}>📅 下週預計工作</p>
+        {nextWeekTasks.length === 0 ? (
+          <p style={{ fontSize: 12, color: "#475569" }}>無</p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {nextWeekTasks.map((t) => {
+              const group = groups.find((g) => g.id === t.groupId);
+              const assignee = findMemberById(groups, t.assignee);
+              return (
+                <div key={t.id} style={{ fontSize: 12, color: "#94a3b8", padding: "4px 0", display: "flex", gap: 8 }}>
+                  {group && <span style={{ fontSize: 10, color: group.color }}>[{group.name}]</span>}
+                  <span>{t.title}</span>
+                  {assignee && <span style={{ fontSize: 10, color: "#475569" }}>- {assignee.name}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* PM 備註 */}
+      <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 12 }}>📝 PM 備註</p>
+        <textarea className="field-input field-textarea" value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="輸入本週備註、特殊事項..." rows={4} />
+        <button onClick={handleSaveNotes}
+          style={{
+            marginTop: 10, background: "#6366f1", border: "none", borderRadius: 8,
+            color: "#fff", fontSize: 13, fontWeight: 600, padding: "8px 20px", cursor: "pointer"
+          }}>
+          儲存備註
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -1765,6 +2384,8 @@ export default function App() {
         return parsed.map((p: any) => ({
           ...p,
           meetings: p.meetings || [],
+          risks: p.risks || [],
+          weeklyReports: p.weeklyReports || [],
           groups: (p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS).map((g: any) => ({
             ...g,
             members: (g.members || []).map((m: any) =>
@@ -1822,7 +2443,7 @@ export default function App() {
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings">("kanban");
+  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -1841,6 +2462,18 @@ export default function App() {
     ));
   };
 
+  const handleUpdateRisks = (risks: Risk[]) => {
+    setProjects((prev) => prev.map((p) =>
+      p.id === activeProjectId ? { ...p, risks } : p
+    ));
+  };
+
+  const handleUpdateWeeklyReports = (reports: WeeklyReport[]) => {
+    setProjects((prev) => prev.map((p) =>
+      p.id === activeProjectId ? { ...p, weeklyReports: reports } : p
+    ));
+  };
+
   const handleSaveProject = (name: string, description: string, color: string) => {
     const newProject: Project = {
       id: "p" + Date.now(),
@@ -1848,6 +2481,7 @@ export default function App() {
       groups: DEFAULT_GROUPS,
       meetings: [],
       risks: [],
+      weeklyReports: [],
       columns: [
         { id: "todo",       title: "待處理", tasks: [] },
         { id: "inprogress", title: "進行中", tasks: [] },
@@ -2215,7 +2849,7 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+          {(view === "kanban" || view === "gantt") && <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
             {/* 第一行：搜尋 + 清除 */}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
@@ -2321,7 +2955,7 @@ export default function App() {
                 </div>
               );
             })()}
-          </div>
+          </div>}
 
           {view === "kanban" ? (
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
@@ -2336,11 +2970,25 @@ export default function App() {
             <GanttView columns={filteredColumns} groups={activeProject?.groups || []} onEditTask={setEditingTask} />
           ) : view === "dashboard" ? (
             <DashboardView columns={columns} groups={activeProject?.groups || []} />
-          ) : (
+          ) : view === "meetings" ? (
             <MeetingsView
               meetings={activeProject?.meetings || []}
               groups={activeProject?.groups || []}
               onUpdate={handleUpdateMeetings}
+            />
+          ) : view === "risks" ? (
+            <RiskMatrixView
+              risks={activeProject?.risks || []}
+              groups={activeProject?.groups || []}
+              onUpdate={handleUpdateRisks}
+            />
+          ) : (
+            <WeeklyReportView
+              columns={columns}
+              groups={activeProject?.groups || []}
+              risks={activeProject?.risks || []}
+              weeklyReports={activeProject?.weeklyReports || []}
+              onUpdateReports={handleUpdateWeeklyReports}
             />
           )}
         </div>
