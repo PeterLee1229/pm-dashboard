@@ -1,13 +1,6 @@
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTable from "jspdf-autotable";
 import { toPng } from "html-to-image";
-
-// 讓 TypeScript 認識 autoTable
-declare module "jspdf" {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-  }
-}
 
 // ── CSV 匯出 ──────────────────────────────────────────────────────
 
@@ -23,7 +16,9 @@ export function downloadCSV(filename: string, headers: string[], rows: string[][
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
+  document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
 
@@ -51,16 +46,12 @@ export function exportTaskListPDF(
 ) {
   const doc = new jsPDF({ orientation: "landscape" });
 
-  // 載入中文字型支援 - 使用內建 helvetica 搭配 unicode
   doc.setFont("helvetica");
-
-  // 標題
   doc.setFontSize(16);
   doc.text(`${projectName} - Task List`, 14, 15);
   doc.setFontSize(10);
   doc.text(`Export Date: ${new Date().toLocaleDateString()}`, 14, 22);
 
-  // 表格資料
   const tableRows: any[] = [];
 
   tasks.forEach((task) => {
@@ -87,7 +78,7 @@ export function exportTaskListPDF(
     });
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 28,
     head: [["Task", "Group", "Assignee", "Priority", "Start", "End", "Completion"]],
     body: tableRows,
@@ -123,7 +114,6 @@ export function exportTimeReportPDF(
   doc.setFontSize(10);
   doc.text(`Export Date: ${new Date().toLocaleDateString()}`, 14, 22);
 
-  // 彙總表
   const summaryRows = memberHours.map((m) => [
     m.name,
     m.memberId,
@@ -131,7 +121,7 @@ export function exportTimeReportPDF(
     `${m.totalHours} h`,
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 28,
     head: [["Name", "ID", "Group", "Total Hours"]],
     body: summaryRows,
@@ -140,7 +130,6 @@ export function exportTimeReportPDF(
     alternateRowStyles: { fillColor: [245, 247, 250] },
   });
 
-  // 明細表
   let startY = (doc as any).lastAutoTable.finalY + 12;
 
   memberHours.forEach((m) => {
@@ -155,7 +144,7 @@ export function exportTimeReportPDF(
     doc.text(`${m.name} (${m.memberId}) - ${m.group}`, 14, startY);
     startY += 4;
 
-    doc.autoTable({
+    autoTable(doc, {
       startY,
       head: [["Task", "Date", "Hours"]],
       body: m.logs.map((l) => [l.task, l.date, `${l.hours} h`]),
@@ -174,19 +163,26 @@ export function exportTimeReportPDF(
 
 export async function exportGanttPNG(elementId: string, projectName: string) {
   const element = document.getElementById(elementId);
-  if (!element) return;
+  if (!element) {
+    alert("請先切換到甘特圖視圖再匯出");
+    return;
+  }
 
   try {
     const dataUrl = await toPng(element, {
       backgroundColor: "#161b27",
       pixelRatio: 2,
+      cacheBust: true,
     });
     const link = document.createElement("a");
     link.download = `${projectName}_Gantt.png`;
     link.href = dataUrl;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   } catch (error) {
     console.error("Gantt export failed:", error);
+    alert("甘特圖匯出失敗，請確認甘特圖有資料");
   }
 }
 
