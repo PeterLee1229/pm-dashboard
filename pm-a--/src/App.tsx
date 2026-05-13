@@ -8,7 +8,7 @@ import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Play, Pause, Timer, Calendar, BarChart2, Search } from "lucide-react";
+import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Flag, Timer, Calendar, BarChart2, Search } from "lucide-react";
 
 type Priority = "low" | "medium" | "high";
 type SubTask = {
@@ -16,9 +16,11 @@ type SubTask = {
   title: string;
   description: string;
   assignee: string;
+  groupId: string;
   startDate: string;
   endDate: string;
   completion: number;
+  trackedHours: number;
 };
 type Task = {
   id: string;
@@ -26,8 +28,7 @@ type Task = {
   description: string;
   priority: Priority;
   assignee: string;
-  trackedSeconds: number;
-  isRunning: boolean;
+  trackedHours: number;
   startDate: string;
   endDate: string;
   completion: number;
@@ -71,27 +72,27 @@ const initialColumns: Column[] = [
   {
     id: "todo", title: "待處理",
     tasks: [
-      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "inprogress", title: "進行中",
     tasks: [
-      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "review", title: "審查中",
     tasks: [
-      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
   {
     id: "done", title: "已完成",
     tasks: [
-      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
+      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
     ],
   },
 ];
@@ -137,13 +138,6 @@ function getCompletion(task: Task): number {
   if (task.subtasks.length === 0) return task.completion;
   const avg = task.subtasks.reduce((sum, s) => sum + s.completion, 0) / task.subtasks.length;
   return Math.round(avg);
-}
-
-function formatTime(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 // ── Task Edit Modal ──────────────────────────────────────────────────
@@ -202,7 +196,9 @@ function TaskModal({ task, groups, onSave, onClose }: {
           <div className="field">
             <label className="field-label"><User size={13} /> 所屬組別</label>
             <select className="field-input" value={form.groupId}
-              onChange={(e) => setForm({ ...form, groupId: e.target.value, assignee: "" })}>
+              disabled={form.subtasks.length > 0}
+              onChange={(e) => setForm({ ...form, groupId: e.target.value, assignee: "" })}
+              style={{ opacity: form.subtasks.length > 0 ? 0.4 : 1, cursor: form.subtasks.length > 0 ? "not-allowed" : "auto" }}>
               <option value="">未分組</option>
               {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
@@ -210,7 +206,11 @@ function TaskModal({ task, groups, onSave, onClose }: {
 
           <div className="field">
             <label className="field-label"><User size={13} /> 指派人</label>
-            {(() => {
+            {form.subtasks.length > 0 ? (
+              <div className="field-input" style={{ opacity: 0.4, cursor: "not-allowed", color: "#475569" }}>
+                由子工項各自指派
+              </div>
+            ) : (() => {
               const selectedGroup = groups.find((g) => g.id === form.groupId);
               const availableMembers = selectedGroup?.members || [];
               if (form.groupId && availableMembers.length > 0) {
@@ -279,7 +279,8 @@ function TaskModal({ task, groups, onSave, onClose }: {
               <button onClick={() => {
                 const newSub: SubTask = {
                   id: "s" + Date.now(), title: "新子工項", description: "",
-                  assignee: "", startDate: "", endDate: "", completion: 0
+                  assignee: "", groupId: "", startDate: "", endDate: "",
+                  completion: 0, trackedHours: 0
                 };
                 setForm({ ...form, subtasks: [...form.subtasks, newSub] });
               }} style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 6, color: "#6366f1", fontSize: 12, padding: "3px 10px", cursor: "pointer" }}>
@@ -305,11 +306,49 @@ function TaskModal({ task, groups, onSave, onClose }: {
                   </button>
                 </div>
 
-                <input placeholder="指派人" value={sub.assignee} onChange={(e) => {
-                  const updated = [...form.subtasks];
-                  updated[idx] = { ...sub, assignee: e.target.value };
-                  setForm({ ...form, subtasks: updated });
-                }} className="field-input" style={{ marginBottom: 6, fontSize: 12 }} />
+                {/* 子工項組別選擇 */}
+                <select className="field-input" value={sub.groupId || ""}
+                  onChange={(e) => {
+                    const updated = [...form.subtasks];
+                    updated[idx] = { ...sub, groupId: e.target.value, assignee: "" };
+                    setForm({ ...form, subtasks: updated });
+                  }}
+                  style={{ marginBottom: 6, fontSize: 12 }}>
+                  <option value="">選擇組別</option>
+                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+
+                {/* 子工項指派人 */}
+                {(() => {
+                  const subGroup = groups.find((g) => g.id === sub.groupId);
+                  const subMembers = subGroup?.members || [];
+                  if (sub.groupId && subMembers.length > 0) {
+                    return (
+                      <select className="field-input" value={sub.assignee}
+                        onChange={(e) => {
+                          const updated = [...form.subtasks];
+                          updated[idx] = { ...sub, assignee: e.target.value };
+                          setForm({ ...form, subtasks: updated });
+                        }}
+                        style={{ marginBottom: 6, fontSize: 12 }}>
+                        <option value="">選擇指派人</option>
+                        {subMembers.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    );
+                  }
+                  return (
+                    <input placeholder={sub.groupId ? "該組別尚無成員" : "請先選擇組別"}
+                      disabled={!sub.groupId || subMembers.length === 0}
+                      value={sub.assignee}
+                      onChange={(e) => {
+                        const updated = [...form.subtasks];
+                        updated[idx] = { ...sub, assignee: e.target.value };
+                        setForm({ ...form, subtasks: updated });
+                      }}
+                      className="field-input"
+                      style={{ marginBottom: 6, fontSize: 12, opacity: 0.5 }} />
+                  );
+                })()}
 
                 <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                   <input type="date" value={sub.startDate} onChange={(e) => {
@@ -332,14 +371,45 @@ function TaskModal({ task, groups, onSave, onClose }: {
                   }} style={{ flex: 1, accentColor: "#10b981" }} />
                   <span style={{ fontSize: 12, color: "#94a3b8", minWidth: 36 }}>{sub.completion}%</span>
                 </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                  <label style={{ fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>本日執行工時</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={sub.trackedHours || 0}
+                    onChange={(e) => {
+                      const updated = [...form.subtasks];
+                      updated[idx] = { ...sub, trackedHours: parseFloat(e.target.value) || 0 };
+                      setForm({ ...form, subtasks: updated });
+                    }}
+                    style={{
+                      flex: 1, background: "#161b27", border: "1px solid #ffffff10",
+                      borderRadius: 6, padding: "5px 10px", color: "#e2e8f0",
+                      fontSize: 12, outline: "none"
+                    }}
+                    placeholder="小時"
+                  />
+                  <span style={{ fontSize: 11, color: "#475569" }}>h</span>
+                </div>
               </div>
             ))}
           </div>
 
-          <div className="field">
-            <label className="field-label"><Timer size={13} /> 累計工時</label>
-            <div className="field-time">{formatTime(task.trackedSeconds)}</div>
-          </div>
+          {form.subtasks.length === 0 && (
+            <div className="field">
+              <label className="field-label"><Timer size={13} /> 本日執行工時</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                className="field-input"
+                value={form.trackedHours}
+                onChange={(e) => setForm({ ...form, trackedHours: parseFloat(e.target.value) || 0 })}
+                placeholder="輸入工時，例如 2.5"
+              />
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">
@@ -352,8 +422,8 @@ function TaskModal({ task, groups, onSave, onClose }: {
 }
 
 // ── Task Card ────────────────────────────────────────────────────────
-function TaskCard({ task, isDragging = false, onClick, onToggleTimer }: {
-  task: Task; isDragging?: boolean; onClick?: () => void; onToggleTimer?: (taskId: string) => void;
+function TaskCard({ task, isDragging = false, onClick }: {
+  task: Task; isDragging?: boolean; onClick?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } =
     useSortable({ id: task.id });
@@ -389,27 +459,17 @@ function TaskCard({ task, isDragging = false, onClick, onToggleTimer }: {
       </div>
       <div className="task-footer">
         <span className="assignee">{task.assignee}</span>
-        <div className="timer-wrap">
-          <span className={`timer-display${task.isRunning ? " running" : ""}`}>
-            <Timer size={11} />
-            {formatTime(task.trackedSeconds)}
-          </span>
-          <button className="timer-btn" onClick={(e) => { e.stopPropagation(); onToggleTimer?.(task.id); }}>
-            {task.isRunning ? <Pause size={12} /> : <Play size={12} />}
-          </button>
-        </div>
       </div>
     </div>
   );
 }
 
 // ── Column ───────────────────────────────────────────────────────────
-function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggleTimer }: {
+function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask }: {
   column: Column;
   onAddTask: (colId: string, title: string) => void;
   onDeleteTask: (colId: string, taskId: string) => void;
   onEditTask: (task: Task) => void;
-  onToggleTimer: (taskId: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -435,7 +495,7 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, onToggle
         <div className="task-list">
           {column.tasks.map((task) => (
             <div key={task.id} style={{ position: "relative" }}>
-              <TaskCard task={task} onClick={() => onEditTask(task)} onToggleTimer={onToggleTimer} />
+              <TaskCard task={task} onClick={() => onEditTask(task)} />
               <button className="delete-task" onClick={(e) => { e.stopPropagation(); onDeleteTask(column.id, task.id); }}>
                 <X size={11} />
               </button>
@@ -786,12 +846,19 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
 
   const hoursMap: Record<string, number> = {};
   allTasks.forEach((t) => {
-    if (t.assignee && t.trackedSeconds > 0) {
-      hoursMap[t.assignee] = (hoursMap[t.assignee] || 0) + t.trackedSeconds;
+    if (t.subtasks.length === 0 && t.assignee && t.trackedHours > 0) {
+      hoursMap[t.assignee] = (hoursMap[t.assignee] || 0) + t.trackedHours;
     }
   });
-  const hoursData = Object.entries(hoursMap).map(([name, secs]) => ({
-    name, 工時: Math.round(secs / 360) / 10
+  allTasks.forEach((t) => {
+    t.subtasks.forEach((s) => {
+      if (s.assignee && (s.trackedHours || 0) > 0) {
+        hoursMap[s.assignee] = (hoursMap[s.assignee] || 0) + (s.trackedHours || 0);
+      }
+    });
+  });
+  const hoursData = Object.entries(hoursMap).map(([name, hours]) => ({
+    name, 工時: Math.round(hours * 10) / 10
   }));
 
   const totalCompletion = allTasks.length > 0
@@ -910,23 +977,25 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
 
       {selectedGroup && (() => {
         const groupTasks = allTasks.filter((t) => t.groupId === selectedGroup.id);
-        const groupSubtasks = groupTasks.flatMap((t) => t.subtasks);
 
         const memberStats: Record<string, { tasks: string[]; hours: number }> = {};
 
         groupTasks.forEach((t) => {
-          if (t.assignee) {
+          if (t.subtasks.length === 0 && t.assignee) {
             if (!memberStats[t.assignee]) memberStats[t.assignee] = { tasks: [], hours: 0 };
             memberStats[t.assignee].tasks.push(t.title);
-            memberStats[t.assignee].hours += t.trackedSeconds || 0;
+            memberStats[t.assignee].hours += t.trackedHours || 0;
           }
         });
 
-        groupSubtasks.forEach((s) => {
-          if (s.assignee) {
-            if (!memberStats[s.assignee]) memberStats[s.assignee] = { tasks: [], hours: 0 };
-            memberStats[s.assignee].tasks.push(s.title);
-          }
+        groupTasks.forEach((t) => {
+          t.subtasks.forEach((s) => {
+            if (s.assignee) {
+              if (!memberStats[s.assignee]) memberStats[s.assignee] = { tasks: [], hours: 0 };
+              memberStats[s.assignee].tasks.push(`${t.title} → ${s.title}`);
+              memberStats[s.assignee].hours += s.trackedHours || 0;
+            }
+          });
         });
 
         selectedGroup.members.forEach((m) => {
@@ -961,7 +1030,7 @@ function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[]
                           background: "#10b98122", color: "#10b981",
                           border: "1px solid #10b98133"
                         }}>
-                          工時：{stats.hours > 0 ? `${Math.round(stats.hours / 360) / 10} 小時` : "0 小時"}
+                          工時：{stats.hours > 0 ? `${Math.round(stats.hours * 10) / 10} 小時` : "0 小時"}
                         </span>
                       </div>
                       {stats.tasks.length > 0 ? (
@@ -1352,23 +1421,6 @@ export default function App() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const findColumn = (taskId: string) => columns.find((c) => c.tasks.some((t) => t.id === taskId));
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setColumns((cols) => cols.map((col) => ({
-        ...col,
-        tasks: col.tasks.map((t) => t.isRunning ? { ...t, trackedSeconds: t.trackedSeconds + 1 } : t),
-      })));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleToggleTimer = (taskId: string) => {
-    setColumns((cols) => cols.map((col) => ({
-      ...col,
-      tasks: col.tasks.map((t) => t.id === taskId ? { ...t, isRunning: !t.isRunning } : t),
-    })));
-  };
-
   const handleDragStart = (e: DragStartEvent) => {
     const task = findColumn(e.active.id as string)?.tasks.find((t) => t.id === e.active.id);
     if (task) setActiveTask(task);
@@ -1408,7 +1460,7 @@ export default function App() {
 
   const handleAddTask = (colId: string, title: string) => {
     setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedSeconds: 0, isRunning: false, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" }] } : col
+      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", trackedHours: 0, startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" }] } : col
     ));
   };
 
@@ -1650,7 +1702,7 @@ export default function App() {
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
               <div className="board">
                 {filteredColumns.map((col) => (
-                  <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} onToggleTimer={handleToggleTimer} />
+                  <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask}  />
                 ))}
               </div>
               <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging />}</DragOverlay>
