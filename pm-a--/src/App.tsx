@@ -2,7 +2,7 @@ import { useState, useEffect, type ReactElement } from "react";
 import {
   exportTaskListCSV, exportTaskListPDF,
   exportTimeReportCSV, exportTimeReportPDF,
-  exportGanttPNG
+  exportGanttPNG, exportWeeklyReportPDF
 } from "./exportUtils";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import {
@@ -2098,12 +2098,13 @@ function GanttView({ columns, groups, onEditTask }: {
 }
 
 // ── Weekly Report View ───────────────────────────────────────────────
-function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateReports }: {
+function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateReports, projectName }: {
   columns: Column[];
   groups: Group[];
   risks: Risk[];
   weeklyReports: WeeklyReport[];
   onUpdateReports: (reports: WeeklyReport[]) => void;
+  projectName: string;
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -2117,12 +2118,10 @@ function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateRepor
   const existingReport = weeklyReports.find((r) => r.weekStart === weekStartStr);
   const [notes, setNotes] = useState(existingReport?.notes || "");
 
-  const prevWeekStartRef = useState(weekStartStr);
-  if (prevWeekStartRef[0] !== weekStartStr) {
-    prevWeekStartRef[0] = weekStartStr;
+  useEffect(() => {
     const found = weeklyReports.find((r) => r.weekStart === weekStartStr);
     setNotes(found?.notes || "");
-  }
+  }, [weekStartStr]);
 
   const handleSaveNotes = () => {
     if (existingReport) {
@@ -2239,6 +2238,45 @@ function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateRepor
         <button onClick={() => setWeekOffset(0)}
           style={{ background: "#6366f122", border: "1px solid #6366f144", borderRadius: 8, color: "#6366f1", fontSize: 12, padding: "6px 14px", cursor: "pointer" }}>
           回到本週
+        </button>
+        <button onClick={() => {
+          const weekLabel = `${toROCDate(weekStartStr)} ~ ${toROCDate(weekEndStr)}`;
+          exportWeeklyReportPDF(projectName, weekLabel, {
+            completedTasks: completedTasks.map((t) => ({
+              title: t.title,
+              group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
+            })),
+            inProgressTasks: inProgressTasks.map((t) => ({
+              title: t.title,
+              group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
+              completion: getCompletion(t),
+            })),
+            weekHours: Object.entries(weekHoursMap)
+              .sort((a, b) => b[1] - a[1])
+              .map(([name, hours]) => ({ name, hours: Math.round(hours * 10) / 10 })),
+            totalHours: totalWeekHours,
+            activeRisks: activeRisks.map((r) => ({
+              title: r.title,
+              status: RISK_STATUS_CONFIG[r.status].label,
+            })),
+            nextWeekTasks: nextWeekTasks.map((t) => {
+              const group = groups.find((g) => g.id === t.groupId);
+              const assignee = findMemberById(groups, t.assignee);
+              return {
+                title: t.title,
+                group: group?.name || "未分組",
+                assignee: assignee ? memberDisplay(assignee) : "未指派",
+              };
+            }),
+            notes,
+          });
+        }}
+          style={{
+            background: "#8b5cf622", border: "1px solid #8b5cf644",
+            borderRadius: 8, color: "#8b5cf6", fontSize: 12, fontWeight: 600,
+            padding: "6px 14px", cursor: "pointer"
+          }}>
+          匯出 PDF
         </button>
       </div>
 
