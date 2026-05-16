@@ -1,9 +1,10 @@
+import "dotenv/config";
 import path from "node:path";
 import { defineConfig } from "prisma/config";
 
 export default defineConfig({
-  schema: path.join(__dirname, "prisma", "schema.prisma"),
+  schema: path.join("prisma", "schema.prisma"),
   datasource: {
-    url: "postgresql://postgres:mysecret@localhost:5432/postgres",
+    url: process.env.DATABASE_URL!,
   },
 });

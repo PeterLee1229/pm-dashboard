@@ -6,6 +6,17 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // 存加密後的密碼
+  name      String
+  memberId  String   @unique  // 員工編號
+  role      String   @default("member")  // "pm" 或 "member"
+  groupId   String?
+  createdAt DateTime @default(now())
+}
+
 model Task {
   id          String    @id @default(cuid())
   title       String
