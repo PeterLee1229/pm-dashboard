@@ -1,4 +1,11 @@
 import { useState, useEffect, type ReactElement } from "react";
+import LoginPage from "./LoginPage";
+import { isLoggedIn, clearToken,
+  getProjects, createProject as apiCreateProject, updateProject as apiUpdateProject, deleteProject as apiDeleteProject,
+  getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask,
+  getProjectGroups, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup,
+  addGroupMember, removeGroupMember, getUsers,
+} from "./api";
 import {
   exportTaskListCSV, exportTaskListPDF,
   exportTimeReportCSV, exportTimeReportPDF,
@@ -259,6 +266,7 @@ function TaskModal({ task, groups, onSave, onClose }: {
   onClose: () => void;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
+  console.log("TaskModal groups:", groups);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -876,7 +884,7 @@ function GroupModal({ groups, onSave, onClose }: {
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups }: {
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly";
   setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly") => void;
   projects: Project[];
@@ -885,6 +893,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   onAddProject: () => void;
   onDeleteProject: (id: string) => void;
   onManageGroups: () => void;
+  onLogout: () => void;
 }) {
   const items = [
     { id: "kanban",    label: "看板",     icon: <Circle size={16} /> },
@@ -970,7 +979,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
         );
       })}
 
-      {/* 管理組別 */}
+      {/* 管理組別 + 登出 */}
       <div style={{ marginTop: "auto", paddingTop: 16, borderTop: "1px solid #ffffff08" }}>
         <button onClick={onManageGroups} style={{
           display: "flex", alignItems: "center", gap: 10,
@@ -980,6 +989,15 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
           borderLeft: "3px solid transparent"
         }}>
           <User size={16} />管理組別與成員
+        </button>
+        <button onClick={onLogout} style={{
+          display: "flex", alignItems: "center", gap: 8,
+          width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+          background: "transparent", color: "#ef4444",
+          fontSize: 12, cursor: "pointer", textAlign: "left",
+          transition: "background .15s"
+        }}>
+          <X size={14} /> 登出
         </button>
       </div>
     </div>
@@ -2418,46 +2436,10 @@ function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateRepor
 
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
-  const [projects, setProjects] = useState<Project[]>(() => {
-    try {
-      const saved = localStorage.getItem("pm-projects");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.map((p: any) => ({
-          ...p,
-          meetings: p.meetings || [],
-          risks: p.risks || [],
-          weeklyReports: p.weeklyReports || [],
-          groups: (p.groups?.length > 0 ? p.groups : DEFAULT_GROUPS).map((g: any) => ({
-            ...g,
-            members: (g.members || []).map((m: any) =>
-              typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id }
-            ),
-          })),
-          columns: p.columns.map((col: any) => ({
-            ...col,
-            tasks: col.tasks.map((t: any) => ({
-              ...t,
-              timeLogs: t.timeLogs || [],
-              groupId: t.groupId || "",
-              subtasks: (t.subtasks || []).map((s: any) => ({
-                ...s,
-                timeLogs: s.timeLogs || [],
-                groupId: s.groupId || "",
-              })),
-            })),
-          })),
-        }));
-      }
-      return initialProjects;
-    } catch {
-      return initialProjects;
-    }
-  });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => {
-    return localStorage.getItem("pm-active-project") || "p1";
-  });
+  const [activeProjectId, setActiveProjectId] = useState<string>("");
 
   const activeProject = projects.find((p) => p.id === activeProjectId) || projects[0];
   const columns = activeProject?.columns || [];
@@ -2472,11 +2454,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    localStorage.setItem("pm-projects", JSON.stringify(projects));
-  }, [projects]);
-
-  useEffect(() => {
-    localStorage.setItem("pm-active-project", activeProjectId);
     setFilterGroups([]);
     setFilterPriorities([]);
     setFilterAssignees([]);
@@ -2491,6 +2468,7 @@ export default function App() {
 
   const handleAddProject = () => setShowProjectModal(true);
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const handleSaveGroups = (groups: Group[]) => {
     setProjects((prev) => prev.map((p) =>
@@ -2516,29 +2494,25 @@ export default function App() {
     ));
   };
 
-  const handleSaveProject = (name: string, description: string, color: string) => {
-    const newProject: Project = {
-      id: "p" + Date.now(),
-      name, description, color,
-      groups: DEFAULT_GROUPS,
-      meetings: [],
-      risks: [],
-      weeklyReports: [],
-      columns: [
-        { id: "todo",       title: "待處理", tasks: [] },
-        { id: "inprogress", title: "進行中", tasks: [] },
-        { id: "review",     title: "審查中", tasks: [] },
-        { id: "done",       title: "已完成", tasks: [] },
-      ],
-    };
-    setProjects((prev) => [...prev, newProject]);
-    setActiveProjectId(newProject.id);
+  const handleSaveProject = async (name: string, description: string, color: string) => {
+    try {
+      const newProject = await apiCreateProject({ name, description, color });
+      await loadProjects();
+      setActiveProjectId(newProject.id);
+    } catch (err) {
+      console.error("新增專案失敗:", err);
+    }
   };
 
-  const handleDeleteProject = (id: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
-    if (activeProjectId === id) {
-      setActiveProjectId(projects.find((p) => p.id !== id)?.id || "");
+  const handleDeleteProject = async (id: string) => {
+    try {
+      await apiDeleteProject(id);
+      await loadProjects();
+      if (activeProjectId === id && projects.length > 1) {
+        setActiveProjectId(projects.find((p) => p.id !== id)?.id || "");
+      }
+    } catch (err) {
+      console.error("刪除專案失敗:", err);
     }
   };
 
@@ -2547,6 +2521,92 @@ export default function App() {
   const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
   const [filterGroups, setFilterGroups] = useState<string[]>([]);
 
+  const [loggedIn, setLoggedIn] = useState(isLoggedIn());
+
+  const handleLogout = () => {
+    clearToken();
+    setLoggedIn(false);
+  };
+
+  const loadProjects = async () => {
+    try {
+      setLoading(true);
+      const projectsData = await getProjects();
+
+      const formatted: Project[] = await Promise.all(
+        projectsData.map(async (p: any) => {
+          let tasks: any[] = [];
+          try { tasks = await getProjectTasks(p.id); } catch {}
+
+          const columnMap: Record<string, Task[]> = {
+            todo: [], inprogress: [], review: [], done: []
+          };
+          tasks.forEach((t: any) => {
+            const col = t.columnId || "todo";
+            if (!columnMap[col]) columnMap[col] = [];
+            columnMap[col].push({
+              ...t,
+              subtasks: (t.subtasks || []).map((s: any) => ({
+                ...s,
+                timeLogs: s.timeLogs || [],
+              })),
+              timeLogs: t.timeLogs || [],
+            });
+          });
+
+          const groups: Group[] = (p.groups || []).map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            color: g.color,
+            members: (g.members || []).map((m: any) => ({
+              id: m.user?.memberId || m.userId,
+              name: m.user?.name || "",
+            })),
+          }));
+
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description || "",
+            color: p.color || "#6366f1",
+            groups,
+            meetings: p.meetings || [],
+            risks: p.risks || [],
+            weeklyReports: p.weeklyReports || [],
+            columns: [
+              { id: "todo",       title: "待處理", tasks: columnMap.todo },
+              { id: "inprogress", title: "進行中", tasks: columnMap.inprogress },
+              { id: "review",     title: "審查中", tasks: columnMap.review },
+              { id: "done",       title: "已完成", tasks: columnMap.done },
+            ],
+          };
+        })
+      );
+
+      setProjects(formatted);
+      setActiveProjectId((prev) => {
+        if (formatted.length > 0 && !formatted.find((p) => p.id === prev)) {
+          return formatted[0].id;
+        }
+        return prev;
+      });
+    } catch (err) {
+      console.error("載入專案失敗:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   const filteredColumns = columns.map((col) => ({
     ...col,
@@ -2580,6 +2640,20 @@ export default function App() {
     let overCol = columns.find((c) => c.id === over.id);
     if (!overCol) overCol = findColumn(over.id as string);
     if (!activeCol || !overCol || activeCol.id === overCol.id) return;
+
+    if (overCol.id === "done") {
+      const task = activeCol.tasks.find((t) => t.id === active.id);
+      if (task) {
+        const completion = getCompletion(task);
+        if (completion < 100) {
+          setToast(`「${task.title}」完成度為 ${completion}%，需達 100% 才能移至已完成`);
+          return;
+        }
+      }
+    }
+
+    apiUpdateTask(active.id as string, { columnId: overCol.id }).catch(console.error);
+
     setColumns((cols) => cols.map((col) => {
       if (col.id === activeCol.id) return { ...col, tasks: col.tasks.filter((t) => t.id !== active.id) };
       if (col.id === overCol!.id) {
@@ -2597,32 +2671,79 @@ export default function App() {
     if (!over) return;
     const activeCol = findColumn(active.id as string);
     const overCol = findColumn(over.id as string);
-    if (!activeCol || !overCol || activeCol.id !== overCol.id) return;
-    const oldIdx = activeCol.tasks.findIndex((t) => t.id === active.id);
-    const newIdx = overCol.tasks.findIndex((t) => t.id === over.id);
-    if (oldIdx !== newIdx) {
-      setColumns((cols) => cols.map((col) =>
-        col.id === activeCol.id ? { ...col, tasks: arrayMove(col.tasks, oldIdx, newIdx) } : col
-      ));
+    if (!activeCol || !overCol) return;
+
+    if (activeCol.id !== overCol.id && overCol.id === "done") {
+      const task = activeCol.tasks.find((t) => t.id === active.id);
+      if (task && getCompletion(task) < 100) {
+        setToast(`「${task.title}」完成度為 ${getCompletion(task)}%，需達 100% 才能移至已完成`);
+        return;
+      }
+    }
+
+    if (activeCol.id === overCol.id) {
+      const oldIdx = activeCol.tasks.findIndex((t) => t.id === active.id);
+      const newIdx = overCol.tasks.findIndex((t) => t.id === over.id);
+      if (oldIdx !== newIdx) {
+        setColumns((cols) => cols.map((col) =>
+          col.id === activeCol.id ? { ...col, tasks: arrayMove(col.tasks, oldIdx, newIdx) } : col
+        ));
+      }
     }
   };
 
-  const handleAddTask = (colId: string, title: string) => {
-    setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: [...col.tasks, { id: "t" + Date.now(), title, description: "", priority: "medium", assignee: "我", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" }] } : col
-    ));
+  const handleAddTask = async (colId: string, title: string) => {
+    try {
+      const newTask = await createProjectTask(activeProjectId, {
+        title,
+        columnId: colId,
+        priority: "medium",
+        assignee: "",
+        groupId: "",
+      });
+      setColumns((cols) => cols.map((col) =>
+        col.id === colId ? {
+          ...col,
+          tasks: [...col.tasks, { ...newTask, subtasks: [], timeLogs: [] }]
+        } : col
+      ));
+    } catch (err) {
+      console.error("新增任務失敗:", err);
+    }
   };
 
-  const handleDeleteTask = (colId: string, taskId: string) => {
-    setColumns((cols) => cols.map((col) =>
-      col.id === colId ? { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) } : col
-    ));
+  const handleDeleteTask = async (colId: string, taskId: string) => {
+    try {
+      await apiDeleteTask(taskId);
+      setColumns((cols) => cols.map((col) =>
+        col.id === colId ? { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) } : col
+      ));
+    } catch (err) {
+      console.error("刪除任務失敗:", err);
+    }
   };
 
-  const handleSaveTask = (updated: Task) => {
-    setColumns((cols) => cols.map((col) => ({
-      ...col, tasks: col.tasks.map((t) => t.id === updated.id ? updated : t),
-    })));
+  const handleSaveTask = async (updated: Task) => {
+    try {
+      await apiUpdateTask(updated.id, {
+        title: updated.title,
+        description: updated.description,
+        priority: updated.priority,
+        assignee: updated.assignee,
+        groupId: updated.groupId,
+        startDate: updated.startDate,
+        endDate: updated.endDate,
+        completion: updated.completion,
+        timeLogs: updated.timeLogs,
+        subtasks: updated.subtasks,
+      });
+      setColumns((cols) => cols.map((col) => ({
+        ...col,
+        tasks: col.tasks.map((t) => t.id === updated.id ? updated : t),
+      })));
+    } catch (err) {
+      console.error("更新任務失敗:", err);
+    }
   };
 
   const prepareTaskExportData = () => {
@@ -2719,6 +2840,26 @@ export default function App() {
   const totalTasks = columns.reduce((s, c) => s + c.tasks.length, 0);
   const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
 
+  if (!loggedIn) {
+    return <LoginPage onLogin={() => setLoggedIn(true)} />;
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "#0f1117",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'Segoe UI', system-ui, sans-serif"
+      }}>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontSize: 32, marginBottom: 12 }}>📋</p>
+          <p style={{ fontSize: 15, color: "#e2e8f0", marginBottom: 4 }}>PM Dashboard</p>
+          <p style={{ fontSize: 13, color: "#64748b" }}>載入中...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{`
@@ -2804,6 +2945,11 @@ export default function App() {
         .btn-cancel:hover { background: #ffffff18; }
         .btn-save { flex: 2; background: #6366f1; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; padding: 10px; cursor: pointer; }
         .btn-save:hover { background: #4f46e5; }
+
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
       `}</style>
 
       <Sidebar
@@ -2815,6 +2961,7 @@ export default function App() {
         onAddProject={handleAddProject}
         onDeleteProject={handleDeleteProject}
         onManageGroups={() => setShowGroupModal(true)}
+        onLogout={handleLogout}
       />
 
       <div style={{ marginLeft: 200 }}>
@@ -3040,7 +3187,7 @@ export default function App() {
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={activeProject?.groups || []} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
+        <TaskModal task={editingTask} groups={activeProject?.groups ?? []} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
       )}
 
       {showProjectModal && (
@@ -3056,6 +3203,18 @@ export default function App() {
           onSave={handleSaveGroups}
           onClose={() => setShowGroupModal(false)}
         />
+      )}
+
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          background: "#f59e0b", color: "#000", fontSize: 13, fontWeight: 600,
+          padding: "12px 24px", borderRadius: 10, zIndex: 200,
+          boxShadow: "0 8px 24px #0006",
+          animation: "toast-in .2s ease"
+        }}>
+          ⚠️ {toast}
+        </div>
       )}
     </>
   );
