@@ -7,14 +7,15 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String   // 存加密後的密碼
-  name      String
-  memberId  String   @unique  // 員工編號
-  role      String   @default("member")  // "pm" 或 "member"
-  groupId   String?
-  createdAt DateTime @default(now())
+  id            String        @id @default(cuid())
+  email         String        @unique
+  password      String
+  name          String
+  memberId      String        @unique
+  role          String        @default("member")
+  groups        GroupMember[]
+  ownedProjects Project[]
+  createdAt     DateTime      @default(now())
 }
 
 model Task {
@@ -55,6 +56,29 @@ model Project {
   name        String
   description String   @default("")
   color       String   @default("#6366f1")
+  ownerId     String?
+  owner       User?    @relation(fields: [ownerId], references: [id])
   tasks       Task[]
+  groups      Group[]
   createdAt   DateTime @default(now())
+}
+
+model Group {
+  id        String        @id @default(cuid())
+  name      String
+  color     String        @default("#6366f1")
+  projectId String
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  members   GroupMember[]
+  createdAt DateTime      @default(now())
+}
+
+model GroupMember {
+  id      String @id @default(cuid())
+  groupId String
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
 }

@@ -182,6 +182,64 @@ app.delete("/api/subtasks/:id", authMiddleware, async (req, res) => {
   }
 });
 
+// ── Group API ──────────────────────────────
+
+// 取得專案的所有組別（含成員）
+app.get("/api/projects/:projectId/groups", authMiddleware, async (req: any, res) => {
+  const groups = await prisma.group.findMany({
+    where: { projectId: req.params.projectId },
+    include: {
+      members: {
+        include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
+      }
+    }
+  });
+  res.json(groups);
+});
+
+// 建立組別
+app.post("/api/projects/:projectId/groups", authMiddleware, async (req: any, res) => {
+  const group = await prisma.group.create({
+    data: {
+      name: req.body.name,
+      color: req.body.color || "#6366f1",
+      projectId: req.params.projectId,
+    }
+  });
+  res.status(201).json(group);
+});
+
+// 把成員加入組別
+app.post("/api/groups/:groupId/members", authMiddleware, async (req: any, res) => {
+  const member = await prisma.groupMember.create({
+    data: {
+      groupId: req.params.groupId,
+      userId: req.body.userId,
+    },
+    include: { user: { select: { id: true, name: true, memberId: true } } }
+  });
+  res.status(201).json(member);
+});
+
+// 從組別移除成員
+app.delete("/api/groups/:groupId/members/:userId", authMiddleware, async (req: any, res) => {
+  await prisma.groupMember.deleteMany({
+    where: {
+      groupId: req.params.groupId,
+      userId: req.params.userId,
+    }
+  });
+  res.json({ success: true });
+});
+
+// 取得所有已註冊的使用者（管理者用，用來選人加入組別）
+app.get("/api/users", authMiddleware, async (_req: any, res) => {
+  const users = await prisma.user.findMany({
+    select: { id: true, name: true, memberId: true, email: true, role: true }
+  });
+  res.json(users);
+});
+
 // 註冊
 app.post("/api/auth/register", async (req, res) => {
   const hashedPassword = await bcrypt.hash(req.body.password, 10);
