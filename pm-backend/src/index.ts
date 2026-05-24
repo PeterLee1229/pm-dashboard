@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import cors from "cors";
 
 const pool = new pg.Pool({
   connectionString: "postgresql://postgres:mysecret@localhost:5432/postgres",
@@ -19,6 +20,12 @@ if (!JWT_SECRET) {
 
 const app = express();
 app.use(express.json());
+
+//前端呼叫後端的 CORS 設定，允許來自特定來源的請求，並允許攜帶 Cookie（credentials: true）
+app.use(cors({
+  origin: ["http://localhost:5173", "https://pm-dashboard-delta-eight.vercel.app"],
+  credentials: true,
+}));
 
 // 首頁
 app.get("/", (req, res) => {
