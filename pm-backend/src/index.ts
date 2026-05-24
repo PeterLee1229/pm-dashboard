@@ -34,38 +34,61 @@ app.get("/", (req, res) => {
 
 // ── Project API ────────────────────────────
 
-// 取得所有專案
-app.get("/api/projects", async (req, res) => {
+// 取得目前使用者的所有專案（自己建的 + 被加入的）
+app.get("/api/projects", authMiddleware, async (req: any, res) => {
   const projects = await prisma.project.findMany({
-    include: { tasks: { include: { subtasks: true } } }
+    where: {
+      OR: [
+        { ownerId: req.user.userId },
+        { groups: { some: { members: { some: { userId: req.user.userId } } } } }
+      ]
+    },
+    include: {
+      groups: {
+        include: {
+          members: {
+            include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
+          }
+        }
+      }
+    }
   });
   res.json(projects);
 });
 
-// 新增專案
-app.post("/api/projects", async (req, res) => {
+// 建立專案（自動設為 owner）
+app.post("/api/projects", authMiddleware, async (req: any, res) => {
   const project = await prisma.project.create({
     data: {
       name: req.body.name,
       description: req.body.description || "",
       color: req.body.color || "#6366f1",
+      ownerId: req.user.userId,
     }
   });
   res.status(201).json(project);
 });
 
-// 刪除專案（僅 PM）
-app.delete("/api/projects/:id", authMiddleware, async (req: any, res) => {
-  if (req.user.role !== "PM") {
-    return res.status(403).json({ error: "權限不足" });
-  }
+// 更新專案
+app.put("/api/projects/:id", authMiddleware, async (req: any, res) => {
   try {
-    // 先刪該專案下所有任務的子工項，再刪任務，最後刪專案
-    const tasks = await prisma.task.findMany({ where: { projectId: req.params.id } });
-    for (const task of tasks) {
-      await prisma.subTask.deleteMany({ where: { taskId: task.id } });
-    }
-    await prisma.task.deleteMany({ where: { projectId: req.params.id } });
+    const project = await prisma.project.update({
+      where: { id: req.params.id },
+      data: {
+        name: req.body.name,
+        description: req.body.description,
+        color: req.body.color,
+      }
+    });
+    res.json(project);
+  } catch {
+    res.status(404).json({ error: "找不到專案" });
+  }
+});
+
+// 刪除專案（Cascade 會自動清除 tasks、subtasks、groups）
+app.delete("/api/projects/:id", authMiddleware, async (req: any, res) => {
+  try {
     await prisma.project.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch {
@@ -75,30 +98,18 @@ app.delete("/api/projects/:id", authMiddleware, async (req: any, res) => {
 
 // ── Task API ───────────────────────────────
 
-// 取得所有任務（可依專案篩選）
-app.get("/api/tasks", authMiddleware, async (req, res) => {
-  const where = req.query.projectId
-    ? { projectId: req.query.projectId as string }
-    : {};
+// 取得專案的所有任務（含子任務）
+app.get("/api/projects/:projectId/tasks", authMiddleware, async (req: any, res) => {
   const tasks = await prisma.task.findMany({
-    where,
-    include: { subtasks: true }
+    where: { projectId: req.params.projectId },
+    include: { subtasks: true },
+    orderBy: { createdAt: "asc" }
   });
   res.json(tasks);
 });
 
-// 取得單一任務
-app.get("/api/tasks/:id", authMiddleware, async (req, res) => {
-  const task = await prisma.task.findUnique({
-    where: { id: req.params.id },
-    include: { subtasks: true }
-  });
-  if (!task) return res.status(404).json({ error: "找不到任務" });
-  res.json(task);
-});
-
-// 新增任務
-app.post("/api/tasks", authMiddleware, async (req, res) => {
+// 建立任務
+app.post("/api/projects/:projectId/tasks", authMiddleware, async (req: any, res) => {
   const task = await prisma.task.create({
     data: {
       title: req.body.title,
@@ -106,34 +117,60 @@ app.post("/api/tasks", authMiddleware, async (req, res) => {
       priority: req.body.priority || "medium",
       assignee: req.body.assignee || "",
       groupId: req.body.groupId || "",
+      columnId: req.body.columnId || "todo",
       startDate: req.body.startDate || "",
       endDate: req.body.endDate || "",
-      columnId: req.body.columnId || "todo",
-      projectId: req.body.projectId,
-    }
+      completion: req.body.completion || 0,
+      timeLogs: req.body.timeLogs || [],
+      projectId: req.params.projectId,
+    },
+    include: { subtasks: true }
   });
   res.status(201).json(task);
 });
 
-// 更新任務
-app.put("/api/tasks/:id", authMiddleware, async (req, res) => {
+// 更新任務（含子任務同步）
+app.put("/api/tasks/:id", authMiddleware, async (req: any, res) => {
   try {
-    const task = await prisma.task.update({
+    const { subtasks, ...taskData } = req.body;
+
+    await prisma.task.update({
       where: { id: req.params.id },
-      data: req.body,
+      data: taskData,
+    });
+
+    if (subtasks && Array.isArray(subtasks)) {
+      await prisma.subTask.deleteMany({ where: { taskId: req.params.id } });
+      for (const sub of subtasks) {
+        await prisma.subTask.create({
+          data: {
+            title: sub.title || "",
+            description: sub.description || "",
+            assignee: sub.assignee || "",
+            groupId: sub.groupId || "",
+            startDate: sub.startDate || "",
+            endDate: sub.endDate || "",
+            completion: sub.completion || 0,
+            timeLogs: sub.timeLogs || [],
+            taskId: req.params.id,
+          }
+        });
+      }
+    }
+
+    const updated = await prisma.task.findUnique({
+      where: { id: req.params.id },
       include: { subtasks: true }
     });
-    res.json(task);
+    res.json(updated);
   } catch {
     res.status(404).json({ error: "找不到任務" });
   }
 });
 
-// 刪除任務
-app.delete("/api/tasks/:id", authMiddleware, async (req, res) => {
+// 刪除任務（Cascade 會自動清除子任務）
+app.delete("/api/tasks/:id", authMiddleware, async (req: any, res) => {
   try {
-    // 先刪子工項
-    await prisma.subTask.deleteMany({ where: { taskId: req.params.id } });
     await prisma.task.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch {
@@ -141,46 +178,6 @@ app.delete("/api/tasks/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// ── SubTask API ────────────────────────────
-
-// 新增子工項
-app.post("/api/subtasks", authMiddleware, async (req, res) => {
-  const subtask = await prisma.subTask.create({
-    data: {
-      title: req.body.title,
-      description: req.body.description || "",
-      assignee: req.body.assignee || "",
-      groupId: req.body.groupId || "",
-      startDate: req.body.startDate || "",
-      endDate: req.body.endDate || "",
-      taskId: req.body.taskId,
-    }
-  });
-  res.status(201).json(subtask);
-});
-
-// 更新子工項
-app.put("/api/subtasks/:id", authMiddleware, async (req, res) => {
-  try {
-    const subtask = await prisma.subTask.update({
-      where: { id: req.params.id },
-      data: req.body,
-    });
-    res.json(subtask);
-  } catch {
-    res.status(404).json({ error: "找不到子工項" });
-  }
-});
-
-// 刪除子工項
-app.delete("/api/subtasks/:id", authMiddleware, async (req, res) => {
-  try {
-    await prisma.subTask.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch {
-    res.status(404).json({ error: "找不到子工項" });
-  }
-});
 
 // ── Group API ──────────────────────────────
 
@@ -230,6 +227,32 @@ app.delete("/api/groups/:groupId/members/:userId", authMiddleware, async (req: a
     }
   });
   res.json({ success: true });
+});
+
+// 更新組別
+app.put("/api/groups/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const group = await prisma.group.update({
+      where: { id: req.params.id },
+      data: {
+        name: req.body.name,
+        color: req.body.color,
+      }
+    });
+    res.json(group);
+  } catch {
+    res.status(404).json({ error: "找不到組別" });
+  }
+});
+
+// 刪除組別（Cascade 會自動清除成員關聯）
+app.delete("/api/groups/:id", authMiddleware, async (req: any, res) => {
+  try {
+    await prisma.group.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch {
+    res.status(404).json({ error: "找不到組別" });
+  }
 });
 
 // 取得所有已註冊的使用者（管理者用，用來選人加入組別）
