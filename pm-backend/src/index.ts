@@ -316,3 +316,157 @@ app.listen(3000, () => {
 }).on("error", (err) => {
   console.error("Server error:", err);
 });
+
+// ══ 會議系列 API ══════════════════════════════════════
+
+// 取得專案的所有會議系列（含紀錄）
+app.get("/api/projects/:projectId/meetings", authMiddleware, async (req: any, res) => {
+  const series = await prisma.meetingSeries.findMany({
+    where: { projectId: req.params.projectId },
+    include: {
+      records: { orderBy: { date: "desc" } }
+    },
+    orderBy: { createdAt: "asc" }
+  });
+  res.json(series);
+});
+
+// 建立會議系列
+app.post("/api/projects/:projectId/meetings", authMiddleware, async (req: any, res) => {
+  const series = await prisma.meetingSeries.create({
+    data: {
+      name: req.body.name,
+      type: req.body.type || "regular",
+      projectId: req.params.projectId,
+    },
+    include: { records: true }
+  });
+  res.status(201).json(series);
+});
+
+// 刪除會議系列
+app.delete("/api/meetings/:id", authMiddleware, async (req: any, res) => {
+  await prisma.meetingRecord.deleteMany({ where: { seriesId: req.params.id } });
+  await prisma.meetingSeries.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
+// 新增會議紀錄
+app.post("/api/meetings/:seriesId/records", authMiddleware, async (req: any, res) => {
+  const record = await prisma.meetingRecord.create({
+    data: {
+      date: req.body.date,
+      attendees: req.body.attendees || [],
+      summary: req.body.summary || "",
+      externalLink: req.body.externalLink || "",
+      seriesId: req.params.seriesId,
+    }
+  });
+  res.status(201).json(record);
+});
+
+// 更新會議紀錄
+app.put("/api/meeting-records/:id", authMiddleware, async (req: any, res) => {
+  const record = await prisma.meetingRecord.update({
+    where: { id: req.params.id },
+    data: {
+      summary: req.body.summary,
+      attendees: req.body.attendees,
+      externalLink: req.body.externalLink,
+    }
+  });
+  res.json(record);
+});
+
+// 刪除會議紀錄
+app.delete("/api/meeting-records/:id", authMiddleware, async (req: any, res) => {
+  await prisma.meetingRecord.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
+// ══ 風險 API ══════════════════════════════════════════
+
+// 取得專案的所有風險
+app.get("/api/projects/:projectId/risks", authMiddleware, async (req: any, res) => {
+  const risks = await prisma.risk.findMany({
+    where: { projectId: req.params.projectId },
+    orderBy: { createdAt: "asc" }
+  });
+  res.json(risks);
+});
+
+// 建立風險
+app.post("/api/projects/:projectId/risks", authMiddleware, async (req: any, res) => {
+  const risk = await prisma.risk.create({
+    data: {
+      title: req.body.title,
+      description: req.body.description || "",
+      probability: req.body.probability || "medium",
+      impact: req.body.impact || "medium",
+      countermeasure: req.body.countermeasure || "",
+      ownerId: req.body.ownerId || "",
+      ownerGroupId: req.body.ownerGroupId || "",
+      status: req.body.status || "monitoring",
+      createdDate: req.body.createdDate || new Date().toISOString().split("T")[0],
+      projectId: req.params.projectId,
+    }
+  });
+  res.status(201).json(risk);
+});
+
+// 更新風險
+app.put("/api/risks/:id", authMiddleware, async (req: any, res) => {
+  const risk = await prisma.risk.update({
+    where: { id: req.params.id },
+    data: {
+      title: req.body.title,
+      description: req.body.description,
+      probability: req.body.probability,
+      impact: req.body.impact,
+      countermeasure: req.body.countermeasure,
+      ownerId: req.body.ownerId,
+      ownerGroupId: req.body.ownerGroupId,
+      status: req.body.status,
+    }
+  });
+  res.json(risk);
+});
+
+// 刪除風險
+app.delete("/api/risks/:id", authMiddleware, async (req: any, res) => {
+  await prisma.risk.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
+// ══ 週報 API ══════════════════════════════════════════
+
+// 取得專案的所有週報
+app.get("/api/projects/:projectId/weekly-reports", authMiddleware, async (req: any, res) => {
+  const reports = await prisma.weeklyReport.findMany({
+    where: { projectId: req.params.projectId },
+    orderBy: { weekStart: "desc" }
+  });
+  res.json(reports);
+});
+
+// 建立或更新週報備註
+app.put("/api/projects/:projectId/weekly-reports", authMiddleware, async (req: any, res) => {
+  const report = await prisma.weeklyReport.upsert({
+    where: {
+      projectId_weekStart: {
+        projectId: req.params.projectId,
+        weekStart: req.body.weekStart,
+      }
+    },
+    update: {
+      notes: req.body.notes,
+    },
+    create: {
+      weekStart: req.body.weekStart,
+      weekEnd: req.body.weekEnd,
+      notes: req.body.notes || "",
+      projectId: req.params.projectId,
+    }
+  });
+  res.json(report);
+});
