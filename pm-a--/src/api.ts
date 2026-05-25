@@ -161,3 +161,81 @@ export async function removeGroupMember(groupId: string, userId: string) {
 export async function getUsers() {
   return apiFetch("/users");
 }
+
+// ── 會議 API ────────────────────────────────
+
+export async function getProjectMeetings(projectId: string) {
+  return apiFetch(`/projects/${projectId}/meetings`);
+}
+
+export async function createMeetingSeries(projectId: string, data: any) {
+  return apiFetch(`/projects/${projectId}/meetings`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMeetingSeries(id: string) {
+  return apiFetch(`/meetings/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function createMeetingRecord(seriesId: string, data: any) {
+  return apiFetch(`/meetings/${seriesId}/records`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateMeetingRecord(id: string, data: any) {
+  return apiFetch(`/meeting-records/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMeetingRecord(id: string) {
+  return apiFetch(`/meeting-records/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ── 風險 API ────────────────────────────────
+
+export async function getProjectRisks(projectId: string) {
+  return apiFetch(`/projects/${projectId}/risks`);
+}
+
+export async function createRisk(projectId: string, data: any) {
+  return apiFetch(`/projects/${projectId}/risks`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateRisk(id: string, data: any) {
+  return apiFetch(`/risks/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteRisk(id: string) {
+  return apiFetch(`/risks/${id}`, {
+    method: "DELETE",
+  });
+}
+
+// ── 週報 API ────────────────────────────────
+
+export async function getWeeklyReports(projectId: string) {
+  return apiFetch(`/projects/${projectId}/weekly-reports`);
+}
+
+export async function saveWeeklyReport(projectId: string, data: any) {
+  return apiFetch(`/projects/${projectId}/weekly-reports`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}

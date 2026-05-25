@@ -5,6 +5,14 @@ import { isLoggedIn, clearToken,
   getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask,
   getProjectGroups, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup,
   addGroupMember, removeGroupMember, getUsers,
+  getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
+  deleteMeetingSeries as apiDeleteMeetingSeries,
+  createMeetingRecord as apiCreateMeetingRecord,
+  updateMeetingRecord as apiUpdateMeetingRecord,
+  deleteMeetingRecord as apiDeleteMeetingRecord,
+  getProjectRisks, createRisk as apiCreateRisk,
+  updateRisk as apiUpdateRisk, deleteRisk as apiDeleteRisk,
+  getWeeklyReports, saveWeeklyReport as apiSaveWeeklyReport,
 } from "./api";
 import {
   exportTaskListCSV, exportTaskListPDF,
@@ -108,9 +116,9 @@ type Project = {
   color: string;
   columns: Column[];
   groups: Group[];
-  meetings: MeetingSeries[];
-  risks: Risk[];
-  weeklyReports: WeeklyReport[];
+  meetings?: MeetingSeries[];
+  risks?: Risk[];
+  weeklyReports?: WeeklyReport[];
 };
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
@@ -1166,10 +1174,122 @@ function NewSeriesModal({ onSave, onClose }: {
   );
 }
 
-function MeetingsView({ meetings, groups, onUpdate }: {
+function MeetingRecordCard({ record, groups, seriesId, onDelete, onUpdate }: {
+  record: MeetingRecord;
+  groups: Group[];
+  seriesId: string;
+  onDelete: (seriesId: string, recordId: string) => void;
+  onUpdate?: (seriesId: string, recordId: string, data: any) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editSummary, setEditSummary] = useState(record.summary);
+  const [editLink, setEditLink] = useState(record.externalLink);
+
+  const lines = record.summary.split("\n");
+  const needsTruncate = lines.length > 3 || record.summary.length > 150;
+  const displayText = (!expanded && needsTruncate)
+    ? lines.slice(0, 3).join("\n").slice(0, 150) + "..."
+    : record.summary;
+
+  return (
+    <div style={{ background: "#0f1117", borderRadius: 10, padding: 14, border: "1px solid #ffffff08" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{record.date}</span>
+        <div style={{ display: "flex", gap: 6 }}>
+          {onUpdate && (
+            <button onClick={() => {
+              if (!editing) { setEditSummary(record.summary); setEditLink(record.externalLink); }
+              setEditing(!editing);
+            }} style={{
+              background: "#6366f118", border: "1px solid #6366f133",
+              borderRadius: 4, color: "#6366f1", cursor: "pointer",
+              padding: "3px 8px", fontSize: 10,
+            }}>
+              {editing ? "取消" : "編輯"}
+            </button>
+          )}
+          <button onClick={() => onDelete(seriesId, record.id)}
+            style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+        {record.attendees.map((aId: string) => {
+          const member = findMemberById(groups, aId);
+          return (
+            <span key={aId} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, background: "#6366f118", color: "#6366f1", border: "1px solid #6366f133" }}>
+              {member ? memberDisplay(member) : aId}
+            </span>
+          );
+        })}
+      </div>
+
+      {editing ? (
+        <div>
+          <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>會議摘要</label>
+          <textarea className="field-input field-textarea" value={editSummary}
+            onChange={(e) => setEditSummary(e.target.value)}
+            rows={6} style={{ marginBottom: 10 }} />
+          <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>外部連結</label>
+          <input className="field-input" value={editLink}
+            onChange={(e) => setEditLink(e.target.value)}
+            placeholder="貼上 Google Docs / Notion 連結..."
+            style={{ marginBottom: 10 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => {
+              if (onUpdate) { onUpdate(seriesId, record.id, { summary: editSummary, externalLink: editLink }); setEditing(false); }
+            }} style={{
+              background: "#6366f1", border: "none", borderRadius: 6,
+              color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 16px", cursor: "pointer",
+            }}>
+              儲存
+            </button>
+            <button onClick={() => { setEditing(false); setEditSummary(record.summary); setEditLink(record.externalLink); }}
+              style={{
+                background: "#ffffff10", border: "none", borderRadius: 6,
+                color: "#94a3b8", fontSize: 12, padding: "6px 16px", cursor: "pointer",
+              }}>
+              取消
+            </button>
+          </div>
+        </div>
+      ) : (
+        record.summary && (
+          <div>
+            <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 4, whiteSpace: "pre-wrap" }}>
+              {displayText}
+            </p>
+            {needsTruncate && (
+              <button onClick={() => setExpanded(!expanded)}
+                style={{ background: "none", border: "none", color: "#6366f1", fontSize: 11, cursor: "pointer", padding: 0 }}>
+                {expanded ? "收合 ▲" : "展開全文 ▼"}
+              </button>
+            )}
+          </div>
+        )
+      )}
+
+      {record.externalLink && !editing && (
+        <a href={record.externalLink} target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 11, color: "#6366f1", textDecoration: "none", display: "inline-block", marginTop: 8 }}>
+          📎 查看完整記錄 →
+        </a>
+      )}
+    </div>
+  );
+}
+
+function MeetingsView({ meetings, groups, onCreateSeries, onDeleteSeries, onCreateRecord, onDeleteRecord, onUpdateRecord }: {
   meetings: MeetingSeries[];
   groups: Group[];
-  onUpdate: (meetings: MeetingSeries[]) => void;
+  onCreateSeries: (name: string, type: string) => void;
+  onDeleteSeries: (id: string) => void;
+  onCreateRecord: (seriesId: string, record: any) => void;
+  onDeleteRecord: (seriesId: string, recordId: string) => void;
+  onUpdateRecord: (seriesId: string, recordId: string, data: any) => void;
 }) {
   const [showSeriesModal, setShowSeriesModal] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
@@ -1178,12 +1298,9 @@ function MeetingsView({ meetings, groups, onUpdate }: {
   const toggleExpand = (id: string) =>
     setExpandedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
-  const handleDeleteSeries = (id: string) => onUpdate(meetings.filter((m) => m.id !== id));
+  const handleDeleteSeries = (id: string) => onDeleteSeries(id);
 
-  const handleDeleteRecord = (seriesId: string, recordId: string) =>
-    onUpdate(meetings.map((m) =>
-      m.id === seriesId ? { ...m, records: m.records.filter((r) => r.id !== recordId) } : m
-    ));
+  const handleDeleteRecord = (seriesId: string, recordId: string) => onDeleteRecord(seriesId, recordId);
 
   const renderSeries = (series: MeetingSeries) => {
     const isExpanded = expandedIds.includes(series.id);
@@ -1227,9 +1344,7 @@ function MeetingsView({ meetings, groups, onUpdate }: {
               <NewRecordForm
                 groups={groups}
                 onSave={(record) => {
-                  onUpdate(meetings.map((m) =>
-                    m.id === series.id ? { ...m, records: [record, ...m.records] } : m
-                  ));
+                  onCreateRecord(series.id, record);
                   setAddingRecordId(null);
                 }}
                 onCancel={() => setAddingRecordId(null)}
@@ -1241,34 +1356,14 @@ function MeetingsView({ meetings, groups, onUpdate }: {
             )}
 
             {series.records.map((record) => (
-              <div key={record.id} style={{ background: "#0f1117", borderRadius: 10, padding: 14, border: "1px solid #ffffff08" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{record.date}</span>
-                  <button onClick={() => handleDeleteRecord(series.id, record.id)}
-                    style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
-                    <X size={12} />
-                  </button>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                  {record.attendees.map((aId) => {
-                    const member = findMemberById(groups, aId);
-                    return (
-                      <span key={aId} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, background: "#6366f118", color: "#6366f1", border: "1px solid #6366f133" }}>
-                        {member ? member.name : aId}
-                      </span>
-                    );
-                  })}
-                </div>
-                {record.summary && (
-                  <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, marginBottom: 8, whiteSpace: "pre-wrap" }}>{record.summary}</p>
-                )}
-                {record.externalLink && (
-                  <a href={record.externalLink} target="_blank" rel="noopener noreferrer"
-                    style={{ fontSize: 11, color: "#6366f1", textDecoration: "none" }}>
-                    📎 查看完整記錄 →
-                  </a>
-                )}
-              </div>
+              <MeetingRecordCard
+                key={record.id}
+                record={record}
+                groups={groups}
+                seriesId={series.id}
+                onDelete={handleDeleteRecord}
+                onUpdate={onUpdateRecord}
+              />
             ))}
           </div>
         )}
@@ -1313,7 +1408,7 @@ function MeetingsView({ meetings, groups, onUpdate }: {
 
       {showSeriesModal && (
         <NewSeriesModal
-          onSave={(series) => { onUpdate([...meetings, series]); setShowSeriesModal(false); }}
+          onSave={(series) => { onCreateSeries(series.name, series.type); setShowSeriesModal(false); }}
           onClose={() => setShowSeriesModal(false)}
         />
       )}
@@ -1691,10 +1786,12 @@ function RiskModal({ risk, groups, onSave, onClose }: {
 }
 
 // ── Risk Matrix View ──────────────────────────────────────────────────
-function RiskMatrixView({ risks, groups, onUpdate }: {
+function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk }: {
   risks: Risk[];
   groups: Group[];
-  onUpdate: (risks: Risk[]) => void;
+  onCreateRisk: (risk: Risk) => void;
+  onUpdateRisk: (risk: Risk) => void;
+  onDeleteRisk: (id: string) => void;
 }) {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
@@ -1715,9 +1812,7 @@ function RiskMatrixView({ risks, groups, onUpdate }: {
     return "#4ade8015";
   };
 
-  const handleDelete = (id: string) => {
-    onUpdate(risks.filter((r) => r.id !== id));
-  };
+  const handleDelete = (id: string) => onDeleteRisk(id);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1856,9 +1951,9 @@ function RiskMatrixView({ risks, groups, onUpdate }: {
           groups={groups}
           onSave={(risk) => {
             if (editingRisk) {
-              onUpdate(risks.map((r) => r.id === risk.id ? risk : r));
+              onUpdateRisk(risk);
             } else {
-              onUpdate([...risks, risk]);
+              onCreateRisk(risk);
             }
             setShowRiskModal(false);
           }}
@@ -2120,12 +2215,12 @@ function GanttView({ columns, groups, onEditTask }: {
 }
 
 // ── Weekly Report View ───────────────────────────────────────────────
-function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateReports, projectName }: {
+function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, projectName }: {
   columns: Column[];
   groups: Group[];
   risks: Risk[];
   weeklyReports: WeeklyReport[];
-  onUpdateReports: (reports: WeeklyReport[]) => void;
+  onSaveNotes: (weekStart: string, weekEnd: string, notes: string) => void;
   projectName: string;
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
@@ -2146,18 +2241,7 @@ function WeeklyReportView({ columns, groups, risks, weeklyReports, onUpdateRepor
   }, [weekStartStr]);
 
   const handleSaveNotes = () => {
-    if (existingReport) {
-      onUpdateReports(weeklyReports.map((r) =>
-        r.weekStart === weekStartStr ? { ...r, notes } : r
-      ));
-    } else {
-      onUpdateReports([...weeklyReports, {
-        id: "wr" + Date.now(),
-        weekStart: weekStartStr,
-        weekEnd: weekEndStr,
-        notes,
-      }]);
-    }
+    onSaveNotes(weekStartStr, weekEndStr, notes);
   };
 
   const allTasks = columns.flatMap((c) => c.tasks);
@@ -2476,22 +2560,95 @@ export default function App() {
     ));
   };
 
-  const handleUpdateMeetings = (meetings: MeetingSeries[]) => {
-    setProjects((prev) => prev.map((p) =>
-      p.id === activeProjectId ? { ...p, meetings } : p
-    ));
+  const handleCreateMeetingSeries = async (name: string, type: string) => {
+    try {
+      const series = await apiCreateMeetingSeries(activeProjectId, { name, type });
+      setMeetings(prev => [...prev, { ...series, records: [] }]);
+    } catch (err) {
+      console.error("建立會議系列失敗:", err);
+    }
   };
 
-  const handleUpdateRisks = (risks: Risk[]) => {
-    setProjects((prev) => prev.map((p) =>
-      p.id === activeProjectId ? { ...p, risks } : p
-    ));
+  const handleDeleteMeetingSeries = async (id: string) => {
+    try {
+      await apiDeleteMeetingSeries(id);
+      setMeetings(prev => prev.filter(m => m.id !== id));
+    } catch (err) {
+      console.error("刪除會議系列失敗:", err);
+    }
   };
 
-  const handleUpdateWeeklyReports = (reports: WeeklyReport[]) => {
-    setProjects((prev) => prev.map((p) =>
-      p.id === activeProjectId ? { ...p, weeklyReports: reports } : p
-    ));
+  const handleCreateMeetingRecord = async (seriesId: string, record: any) => {
+    try {
+      const newRecord = await apiCreateMeetingRecord(seriesId, record);
+      setMeetings(prev => prev.map(m =>
+        m.id === seriesId ? { ...m, records: [newRecord, ...m.records] } : m
+      ));
+    } catch (err) {
+      console.error("新增會議紀錄失敗:", err);
+    }
+  };
+
+  const handleDeleteMeetingRecord = async (seriesId: string, recordId: string) => {
+    try {
+      await apiDeleteMeetingRecord(recordId);
+      setMeetings(prev => prev.map(m =>
+        m.id === seriesId ? { ...m, records: m.records.filter(r => r.id !== recordId) } : m
+      ));
+    } catch (err) {
+      console.error("刪除會議紀錄失敗:", err);
+    }
+  };
+
+  const handleUpdateMeetingRecord = async (seriesId: string, recordId: string, data: any) => {
+    try {
+      await apiUpdateMeetingRecord(recordId, data);
+      setMeetings(prev => prev.map(m =>
+        m.id === seriesId ? { ...m, records: m.records.map(r => r.id === recordId ? { ...r, ...data } : r) } : m
+      ));
+    } catch (err) {
+      console.error("更新會議紀錄失敗:", err);
+    }
+  };
+
+  const handleCreateRisk = async (risk: Risk) => {
+    try {
+      const newRisk = await apiCreateRisk(activeProjectId, risk);
+      setRisks(prev => [...prev, newRisk]);
+    } catch (err) {
+      console.error("建立風險失敗:", err);
+    }
+  };
+
+  const handleUpdateRisk = async (risk: Risk) => {
+    try {
+      const updated = await apiUpdateRisk(risk.id, risk);
+      setRisks(prev => prev.map(r => r.id === risk.id ? updated : r));
+    } catch (err) {
+      console.error("更新風險失敗:", err);
+    }
+  };
+
+  const handleDeleteRisk = async (id: string) => {
+    try {
+      await apiDeleteRisk(id);
+      setRisks(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      console.error("刪除風險失敗:", err);
+    }
+  };
+
+  const handleSaveWeeklyNotes = async (weekStart: string, weekEnd: string, notes: string) => {
+    try {
+      const report = await apiSaveWeeklyReport(activeProjectId, { weekStart, weekEnd, notes });
+      setWeeklyReports(prev => {
+        const exists = prev.find(r => r.weekStart === weekStart);
+        if (exists) return prev.map(r => r.weekStart === weekStart ? report : r);
+        return [...prev, report];
+      });
+    } catch (err) {
+      console.error("儲存週報失敗:", err);
+    }
   };
 
   const handleSaveProject = async (name: string, description: string, color: string) => {
@@ -2520,6 +2677,10 @@ export default function App() {
   const [filterPriorities, setFilterPriorities] = useState<string[]>([]);
   const [filterAssignees, setFilterAssignees] = useState<string[]>([]);
   const [filterGroups, setFilterGroups] = useState<string[]>([]);
+
+  const [meetings, setMeetings] = useState<MeetingSeries[]>([]);
+  const [risks, setRisks] = useState<Risk[]>([]);
+  const [weeklyReports, setWeeklyReports] = useState<WeeklyReport[]>([]);
 
   const [loggedIn, setLoggedIn] = useState(isLoggedIn());
 
@@ -2570,9 +2731,6 @@ export default function App() {
             description: p.description || "",
             color: p.color || "#6366f1",
             groups,
-            meetings: p.meetings || [],
-            risks: p.risks || [],
-            weeklyReports: p.weeklyReports || [],
             columns: [
               { id: "todo",       title: "待處理", tasks: columnMap.todo },
               { id: "inprogress", title: "進行中", tasks: columnMap.inprogress },
@@ -2600,6 +2758,27 @@ export default function App() {
   useEffect(() => {
     loadProjects();
   }, []);
+
+  const loadProjectDetails = async (projectId: string) => {
+    try {
+      const [meetingsData, risksData, reportsData] = await Promise.all([
+        getProjectMeetings(projectId),
+        getProjectRisks(projectId),
+        getWeeklyReports(projectId),
+      ]);
+      setMeetings(meetingsData);
+      setRisks(risksData);
+      setWeeklyReports(reportsData);
+    } catch (err) {
+      console.error("載入專案詳情失敗:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeProjectId) {
+      loadProjectDetails(activeProjectId);
+    }
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (toast) {
@@ -2940,11 +3119,19 @@ export default function App() {
         .priority-group { display: flex; gap: 8px; }
         .priority-option { flex: 1; border-radius: 8px; padding: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
 
+        button { transition: all .15s ease; }
+        button:hover { filter: brightness(1.15); transform: translateY(-1px); }
+        button:active { transform: scale(0.97); }
+        .drag-handle:hover { filter: none; transform: none; }
+        .dropdown-item:hover { background: #ffffff08 !important; filter: none; transform: none; }
+
         .modal-footer { display: flex; gap: 10px; padding: 14px 20px 18px; border-top: 1px solid #ffffff08; }
         .btn-cancel { flex: 1; background: #ffffff10; border: none; border-radius: 8px; color: #94a3b8; font-size: 13px; padding: 10px; cursor: pointer; }
-        .btn-cancel:hover { background: #ffffff18; }
+        .btn-cancel:hover { background: #ffffff18; filter: none; }
         .btn-save { flex: 2; background: #6366f1; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; padding: 10px; cursor: pointer; }
-        .btn-save:hover { background: #4f46e5; }
+        .btn-save:hover { background: #4f46e5; box-shadow: 0 2px 8px #6366f144; filter: none; }
+        .confirm-btn:hover { background: #4f46e5; box-shadow: 0 2px 8px #6366f144; filter: none; }
+        .add-btn:hover { background: #ffffff15; filter: none; }
 
         @keyframes toast-in {
           from { opacity: 0; transform: translateX(-50%) translateY(12px); }
@@ -2996,42 +3183,32 @@ export default function App() {
                     boxShadow: "0 12px 32px #000a"
                   }}>
                     <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>任務清單</p>
-                    <button onClick={() => { exportTaskListCSV(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
-                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                    <button className="dropdown-item" onClick={() => { exportTaskListCSV(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
                       📄 CSV 格式
                     </button>
-                    <button onClick={() => { exportTaskListPDF(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
-                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                    <button className="dropdown-item" onClick={() => { exportTaskListPDF(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
                       📑 PDF 格式
                     </button>
 
                     <div style={{ height: 1, background: "#ffffff08", margin: "4px 0" }} />
 
                     <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>工時報表</p>
-                    <button onClick={() => { exportTimeReportCSV(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
-                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                    <button className="dropdown-item" onClick={() => { exportTimeReportCSV(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
                       📄 CSV 格式
                     </button>
-                    <button onClick={() => { exportTimeReportPDF(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
-                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                    <button className="dropdown-item" onClick={() => { exportTimeReportPDF(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
                       📑 PDF 格式
                     </button>
 
                     <div style={{ height: 1, background: "#ffffff08", margin: "4px 0" }} />
 
                     <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>甘特圖</p>
-                    <button onClick={() => { exportGanttPNG("gantt-container", activeProject.name); setShowExportMenu(false); }}
-                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}
-                      onMouseOver={(e) => (e.currentTarget.style.background = "#ffffff08")}
-                      onMouseOut={(e) => (e.currentTarget.style.background = "none")}>
+                    <button className="dropdown-item" onClick={() => { exportGanttPNG("gantt-container", activeProject.name); setShowExportMenu(false); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
                       🖼️ PNG 圖片
                     </button>
                   </div>
@@ -3163,23 +3340,29 @@ export default function App() {
             <DashboardView columns={columns} groups={activeProject?.groups || []} />
           ) : view === "meetings" ? (
             <MeetingsView
-              meetings={activeProject?.meetings || []}
+              meetings={meetings}
               groups={activeProject?.groups || []}
-              onUpdate={handleUpdateMeetings}
+              onCreateSeries={handleCreateMeetingSeries}
+              onDeleteSeries={handleDeleteMeetingSeries}
+              onCreateRecord={handleCreateMeetingRecord}
+              onDeleteRecord={handleDeleteMeetingRecord}
+              onUpdateRecord={handleUpdateMeetingRecord}
             />
           ) : view === "risks" ? (
             <RiskMatrixView
-              risks={activeProject?.risks || []}
+              risks={risks}
               groups={activeProject?.groups || []}
-              onUpdate={handleUpdateRisks}
+              onCreateRisk={handleCreateRisk}
+              onUpdateRisk={handleUpdateRisk}
+              onDeleteRisk={handleDeleteRisk}
             />
           ) : (
             <WeeklyReportView
               columns={columns}
               groups={activeProject?.groups || []}
-              risks={activeProject?.risks || []}
-              weeklyReports={activeProject?.weeklyReports || []}
-              onUpdateReports={handleUpdateWeeklyReports}
+              risks={risks}
+              weeklyReports={weeklyReports}
+              onSaveNotes={handleSaveWeeklyNotes}
               projectName={activeProject?.name || ""}
             />
           )}
