@@ -1,10 +1,12 @@
 import { useState, useEffect, type ReactElement } from "react";
 import LoginPage from "./LoginPage";
-import { isLoggedIn, clearToken,
+import { isLoggedIn, clearToken, getCurrentUser,
+  getAdminUsers, updateAdminUser,
   getProjects, createProject as apiCreateProject, updateProject as apiUpdateProject, deleteProject as apiDeleteProject,
   getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask,
   getProjectGroups, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup,
   addGroupMember, removeGroupMember, getUsers,
+  getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
   createMeetingRecord as apiCreateMeetingRecord,
@@ -119,6 +121,7 @@ type Project = {
   meetings?: MeetingSeries[];
   risks?: Risk[];
   weeklyReports?: WeeklyReport[];
+  userRole?: string;
 };
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
@@ -892,9 +895,9 @@ function GroupModal({ groups, onSave, onClose }: {
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout }: {
-  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly";
-  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly") => void;
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject }: {
+  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members";
+  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members") => void;
   projects: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
@@ -902,6 +905,8 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   onDeleteProject: (id: string) => void;
   onManageGroups: () => void;
   onLogout: () => void;
+  currentUser: any;
+  activeProject: Project | undefined;
 }) {
   const items = [
     { id: "kanban",    label: "看板",     icon: <Circle size={16} /> },
@@ -914,96 +919,134 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
 
   return (
     <div style={{
-      width: 200, minHeight: "100vh", background: "#111827",
-      borderRight: "1px solid #ffffff08", padding: "24px 12px",
-      display: "flex", flexDirection: "column", gap: 4,
-      position: "fixed", top: 0, left: 0, zIndex: 50, overflowY: "auto"
+      width: 200, height: "100vh", background: "#111827",
+      borderRight: "1px solid #ffffff08",
+      display: "flex", flexDirection: "column",
+      position: "fixed", top: 0, left: 0, zIndex: 50,
     }}>
-      {/* Logo */}
-      <div style={{ padding: "0 8px 20px" }}>
-        <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>專案管理</p>
-        <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>PM Dashboard</p>
-      </div>
-
-      {/* 專案列表 */}
-      <div style={{ paddingBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px 10px" }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>專案</span>
-          <button onClick={onAddProject} style={{
-            background: "none", border: "none", color: "#475569", cursor: "pointer",
-            padding: 2, display: "flex", borderRadius: 4, transition: "color .15s"
-          }}><Plus size={14} /></button>
+      {/* 上半部：可滾動 */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "24px 12px 12px" }}>
+        {/* Logo */}
+        <div style={{ padding: "0 8px 20px" }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>專案管理</p>
+          <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>PM Dashboard</p>
         </div>
 
-        {projects.map((p) => {
-          const active = p.id === activeProjectId;
-          return (
-            <div key={p.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
-              <button onClick={() => setActiveProjectId(p.id)} style={{
-                flex: 1, display: "flex", alignItems: "center", gap: 8,
-                padding: "8px 12px", borderRadius: 8, border: "none",
-                background: active ? p.color + "18" : "transparent",
-                color: active ? p.color : "#64748b",
-                fontSize: 12, fontWeight: active ? 600 : 400,
-                cursor: "pointer", textAlign: "left", transition: "all .15s",
-                borderLeft: active ? `3px solid ${p.color}` : "3px solid transparent",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-              }}>
-                <div style={{ width: 8, height: 8, borderRadius: 99, background: p.color, flexShrink: 0 }} />
-                {p.name}
-              </button>
-              {projects.length > 1 && (
-                <button onClick={() => onDeleteProject(p.id)} style={{
-                  position: "absolute", right: 6,
-                  background: "none", border: "none", color: "#ef4444",
-                  cursor: "pointer", padding: 2, display: "none", borderRadius: 4
-                }} className="delete-project">
-                  <X size={11} />
+        {/* 專案列表 */}
+        <div style={{ paddingBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px 10px" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>專案</span>
+            <button onClick={onAddProject} style={{
+              background: "none", border: "none", color: "#475569", cursor: "pointer",
+              padding: 2, display: "flex", borderRadius: 4,
+            }}><Plus size={14} /></button>
+          </div>
+
+          {projects.map((p) => {
+            const active = p.id === activeProjectId;
+            return (
+              <div key={p.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                <button onClick={() => setActiveProjectId(p.id)} style={{
+                  flex: 1, display: "flex", alignItems: "center", gap: 8,
+                  padding: "8px 12px", borderRadius: 8, border: "none",
+                  background: active ? p.color + "18" : "transparent",
+                  color: active ? p.color : "#64748b",
+                  fontSize: 12, fontWeight: active ? 600 : 400,
+                  cursor: "pointer", textAlign: "left",
+                  borderLeft: active ? `3px solid ${p.color}` : "3px solid transparent",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 99, background: p.color, flexShrink: 0 }} />
+                  {p.name}
                 </button>
-              )}
-            </div>
+                {projects.length > 1 && (
+                  <button onClick={() => onDeleteProject(p.id)} style={{
+                    position: "absolute", right: 6,
+                    background: "none", border: "none", color: "#ef4444",
+                    cursor: "pointer", padding: 2, display: "none", borderRadius: 4
+                  }} className="delete-project">
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 分隔線 */}
+        <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
+
+        {/* 視圖切換 */}
+        {items.map((item) => {
+          const active = view === item.id;
+          return (
+            <button key={item.id} onClick={() => setView(item.id)} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px", borderRadius: 8, border: "none",
+              background: active ? "#6366f122" : "transparent",
+              color: active ? "#6366f1" : "#64748b",
+              fontSize: 13, fontWeight: active ? 600 : 400,
+              cursor: "pointer", textAlign: "left",
+              borderLeft: active ? "3px solid #6366f1" : "3px solid transparent",
+              width: "100%",
+            }}>
+              {item.icon}{item.label}
+            </button>
           );
         })}
+
+        {/* 管理組別 + 專案成員 */}
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
+          <button onClick={onManageGroups} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+            background: "transparent", color: "#64748b",
+            fontSize: 13, cursor: "pointer", textAlign: "left",
+            borderLeft: "3px solid transparent"
+          }}>
+            <User size={16} />管理組別與成員
+          </button>
+
+          {(currentUser?.role === "admin" || activeProject?.userRole === "owner") && (
+            <button onClick={() => setView("project_members")} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px", borderRadius: 8, border: "none",
+              background: view === "project_members" ? "#6366f122" : "transparent",
+              color: view === "project_members" ? "#6366f1" : "#64748b",
+              fontSize: 13, fontWeight: view === "project_members" ? 600 : 400,
+              cursor: "pointer", textAlign: "left", width: "100%",
+              borderLeft: view === "project_members" ? "3px solid #6366f1" : "3px solid transparent"
+            }}>
+              <User size={16} /> 專案成員
+            </button>
+          )}
+        </div>
+
+        {/* 系統管理（僅 admin） */}
+        {currentUser?.role === "admin" && (
+          <div style={{ marginTop: 4 }}>
+            <button onClick={() => setView("admin")} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px", borderRadius: 8, border: "none",
+              background: view === "admin" ? "#ef444422" : "transparent",
+              color: view === "admin" ? "#ef4444" : "#64748b",
+              fontSize: 13, fontWeight: view === "admin" ? 600 : 400,
+              cursor: "pointer", textAlign: "left", width: "100%",
+              borderLeft: view === "admin" ? "3px solid #ef4444" : "3px solid transparent"
+            }}>
+              ⚙️ 系統管理
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* 分隔線 */}
-      <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
-
-      {/* 視圖切換 */}
-      {items.map((item) => {
-        const active = view === item.id;
-        return (
-          <button key={item.id} onClick={() => setView(item.id)} style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 12px", borderRadius: 8, border: "none",
-            background: active ? "#6366f122" : "transparent",
-            color: active ? "#6366f1" : "#64748b",
-            fontSize: 13, fontWeight: active ? 600 : 400,
-            cursor: "pointer", textAlign: "left", transition: "all .15s",
-            borderLeft: active ? "3px solid #6366f1" : "3px solid transparent"
-          }}>
-            {item.icon}{item.label}
-          </button>
-        );
-      })}
-
-      {/* 管理組別 + 登出 */}
-      <div style={{ marginTop: "auto", paddingTop: 16, borderTop: "1px solid #ffffff08" }}>
-        <button onClick={onManageGroups} style={{
-          display: "flex", alignItems: "center", gap: 10,
-          width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
-          background: "transparent", color: "#64748b",
-          fontSize: 13, cursor: "pointer", textAlign: "left", transition: "all .15s",
-          borderLeft: "3px solid transparent"
-        }}>
-          <User size={16} />管理組別與成員
-        </button>
+      {/* 下半部：固定底部 */}
+      <div style={{ padding: "12px", borderTop: "1px solid #ffffff08" }}>
         <button onClick={onLogout} style={{
           display: "flex", alignItems: "center", gap: 8,
           width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
           background: "transparent", color: "#ef4444",
           fontSize: 12, cursor: "pointer", textAlign: "left",
-          transition: "background .15s"
         }}>
           <X size={14} /> 登出
         </button>
@@ -2518,6 +2561,355 @@ function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, 
   );
 }
 
+// ── ProjectMembersView ───────────────────────────────────────────────
+function ProjectMembersView({ projectId, projectName, currentUser }: {
+  projectId: string;
+  projectName: string;
+  currentUser: any;
+}) {
+  const [members, setMembers] = useState<any[]>([]);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  useEffect(() => { loadData(); }, [projectId]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [membersData, usersData] = await Promise.all([
+        getProjectMembers(projectId),
+        getUsers(),
+      ]);
+      setMembers(membersData);
+      setAllUsers(usersData);
+    } catch (err) {
+      console.error("載入成員失敗:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    try {
+      await updateProjectMemberRole(projectId, userId, newRole);
+      setMembers(prev => prev.map(m => m.userId === userId ? { ...m, role: newRole } : m));
+    } catch (err: any) {
+      alert(err.message || "變更角色失敗");
+    }
+  };
+
+  const handleRemove = async (userId: string) => {
+    try {
+      await removeProjectMember(projectId, userId);
+      setMembers(prev => prev.filter(m => m.userId !== userId));
+    } catch (err: any) {
+      alert(err.message || "移除成員失敗");
+    }
+  };
+
+  const handleAdd = async (userId: string, role: string) => {
+    try {
+      const member = await addProjectMember(projectId, userId, role);
+      setMembers(prev => [...prev, member]);
+      setShowAddModal(false);
+    } catch (err: any) {
+      alert(err.message || "邀請成員失敗");
+    }
+  };
+
+  const PROJECT_ROLES = [
+    { value: "owner",        label: "Owner",        color: "#ef4444" },
+    { value: "pm",           label: "PM",           color: "#f59e0b" },
+    { value: "group_leader", label: "Group Leader", color: "#8b5cf6" },
+    { value: "member",       label: "Member",       color: "#6366f1" },
+    { value: "viewer",       label: "Viewer",       color: "#64748b" },
+  ];
+
+  const memberUserIds = members.map(m => m.userId);
+  const availableUsers = allUsers.filter(u => !memberUserIds.includes(u.id));
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>載入中...</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, margin: 0 }}>專案成員管理</h2>
+
+      {/* 統計卡片 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+        {PROJECT_ROLES.map(r => (
+          <div key={r.value} style={{
+            background: "#161b27", borderRadius: 10, padding: "14px 18px",
+            border: `1px solid ${r.color}22`
+          }}>
+            <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>{r.label}</p>
+            <p style={{ fontSize: 24, fontWeight: 700, color: r.color }}>
+              {members.filter(m => m.role === r.value).length}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* 成員列表 */}
+      <div style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 20px", background: "#1a2030", borderBottom: "1px solid #ffffff08"
+        }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
+            {projectName} — 專案成員
+          </span>
+          <button onClick={() => setShowAddModal(true)} style={{
+            background: "#6366f122", border: "1px solid #6366f144",
+            borderRadius: 8, color: "#6366f1", fontSize: 12, fontWeight: 600,
+            padding: "6px 16px", cursor: "pointer"
+          }}>
+            + 邀請成員
+          </button>
+        </div>
+
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 100px 160px 120px 60px",
+          padding: "10px 20px", borderBottom: "1px solid #ffffff08",
+          fontSize: 11, color: "#475569", fontWeight: 600
+        }}>
+          <span>姓名</span><span>員工編號</span><span>Email</span>
+          <span style={{ textAlign: "center" }}>專案角色</span>
+          <span style={{ textAlign: "center" }}>操作</span>
+        </div>
+
+        {members.map((m) => (
+          <div key={m.id} style={{
+            display: "grid", gridTemplateColumns: "1fr 100px 160px 120px 60px",
+            padding: "12px 20px", borderBottom: "1px solid #ffffff06",
+            alignItems: "center", fontSize: 13
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{m.user?.name || "未知"}</span>
+              {m.userId === currentUser?.id && (
+                <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 99, background: "#6366f122", color: "#6366f1" }}>你</span>
+              )}
+            </div>
+            <span style={{ color: "#94a3b8" }}>{m.user?.memberId || ""}</span>
+            <span style={{ color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>{m.user?.email || ""}</span>
+            <div style={{ textAlign: "center" }}>
+              {m.role === "owner" ? (
+                <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 99, background: "#ef444422", color: "#ef4444" }}>Owner</span>
+              ) : (
+                <select value={m.role} onChange={(e) => handleRoleChange(m.userId, e.target.value)} style={{
+                  background: "#0f1117", border: "1px solid #ffffff12", borderRadius: 6,
+                  color: "#e2e8f0", fontSize: 11, padding: "4px 8px", cursor: "pointer", outline: "none"
+                }}>
+                  <option value="pm">PM</option>
+                  <option value="group_leader">Group Leader</option>
+                  <option value="member">Member</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+              )}
+            </div>
+            <div style={{ textAlign: "center" }}>
+              {m.role !== "owner" && m.userId !== currentUser?.id && (
+                <button onClick={() => handleRemove(m.userId)} style={{
+                  background: "#ef444418", border: "1px solid #ef444433",
+                  borderRadius: 6, color: "#ef4444", fontSize: 10,
+                  padding: "4px 8px", cursor: "pointer"
+                }}>移除</button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {members.length === 0 && (
+          <div style={{ padding: 24, textAlign: "center", color: "#475569", fontSize: 13 }}>尚無成員</div>
+        )}
+      </div>
+
+      {showAddModal && (
+        <AddMemberModal availableUsers={availableUsers} onAdd={handleAdd} onClose={() => setShowAddModal(false)} />
+      )}
+    </div>
+  );
+}
+
+function AddMemberModal({ availableUsers, onAdd, onClose }: {
+  availableUsers: any[];
+  onAdd: (userId: string, role: string) => void;
+  onClose: () => void;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedRole, setSelectedRole] = useState("member");
+  const [searchText, setSearchText] = useState("");
+
+  const filtered = availableUsers.filter(u =>
+    u.name.toLowerCase().includes(searchText.toLowerCase()) ||
+    (u.memberId || "").toLowerCase().includes(searchText.toLowerCase()) ||
+    u.email.toLowerCase().includes(searchText.toLowerCase())
+  );
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">邀請成員加入專案</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <label className="field-label">搜尋使用者</label>
+            <input className="field-input" value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="輸入姓名、員工編號或 Email..." />
+          </div>
+          <div className="field">
+            <label className="field-label">選擇使用者</label>
+            <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+              {filtered.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>
+                  {availableUsers.length === 0 ? "所有使用者都已加入" : "找不到符合的使用者"}
+                </p>
+              ) : filtered.map(u => (
+                <div key={u.id} onClick={() => setSelectedUserId(u.id)} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "8px 12px", borderRadius: 8, cursor: "pointer",
+                  background: selectedUserId === u.id ? "#6366f122" : "#0f1117",
+                  border: `1px solid ${selectedUserId === u.id ? "#6366f1" : "#ffffff08"}`,
+                }}>
+                  <div>
+                    <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{u.name}</span>
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>({u.memberId})</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "#475569" }}>{u.email}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label className="field-label">指定角色</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[
+                { value: "pm",           label: "PM",           color: "#f59e0b" },
+                { value: "group_leader", label: "Group Leader", color: "#8b5cf6" },
+                { value: "member",       label: "Member",       color: "#6366f1" },
+                { value: "viewer",       label: "Viewer",       color: "#64748b" },
+              ].map(r => (
+                <button key={r.value} onClick={() => setSelectedRole(r.value)} style={{
+                  flex: 1, borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                  background: selectedRole === r.value ? r.color + "22" : "transparent",
+                  border: `1px solid ${selectedRole === r.value ? r.color : "#ffffff15"}`,
+                  color: selectedRole === r.value ? r.color : "#64748b"
+                }}>{r.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-save" onClick={() => { if (selectedUserId) onAdd(selectedUserId, selectedRole); }}
+            style={{ opacity: selectedUserId ? 1 : 0.4 }}>
+            邀請加入
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── AdminView ────────────────────────────────────────────────────────
+function AdminView({ currentUser }: { currentUser: any }) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAdminUsers()
+      .then(setUsers)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setSaving(userId);
+    try {
+      await updateAdminUser(userId, { role: newRole });
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+    } catch {}
+    setSaving(null);
+  };
+
+  const adminCount  = users.filter((u) => u.role === "admin").length;
+  const activeCount = users.filter((u) => u._count?.projectMemberships > 0).length;
+
+  if (loading) return <div style={{ padding: 40, color: "#94a3b8" }}>載入中…</div>;
+
+  return (
+    <div style={{ padding: "32px 40px", maxWidth: 900 }}>
+      <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, marginBottom: 24 }}>系統管理</h2>
+
+      {/* 統計卡片 */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 32 }}>
+        {[
+          { label: "總使用者", value: users.length, color: "#6366f1" },
+          { label: "管理員",   value: adminCount,   color: "#ef4444" },
+          { label: "有專案成員", value: activeCount, color: "#10b981" },
+        ].map((s) => (
+          <div key={s.label} style={{
+            flex: 1, background: "#1e293b", borderRadius: 12, padding: "20px 24px",
+            border: `1px solid ${s.color}44`
+          }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 使用者表格 */}
+      <div style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#0f172a" }}>
+              {["姓名", "員工編號", "Email", "系統角色", "所屬專案數"].map((h) => (
+                <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, color: "#64748b", fontWeight: 600 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((u, i) => (
+              <tr key={u.id} style={{ borderTop: i > 0 ? "1px solid #ffffff08" : undefined }}>
+                <td style={{ padding: "12px 16px", color: "#e2e8f0", fontSize: 14 }}>{u.name}</td>
+                <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{u.memberId || "—"}</td>
+                <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{u.email}</td>
+                <td style={{ padding: "12px 16px" }}>
+                  {u.id === currentUser?.id ? (
+                    <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600, background: "#ef444422", padding: "3px 8px", borderRadius: 6 }}>
+                      {u.role === "admin" ? "管理員" : "一般使用者"}（本人）
+                    </span>
+                  ) : (
+                    <select
+                      value={u.role}
+                      disabled={saving === u.id}
+                      onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                      style={{
+                        background: "#0f172a", color: "#e2e8f0", border: "1px solid #ffffff20",
+                        borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer"
+                      }}
+                    >
+                      <option value="user">一般使用者</option>
+                      <option value="admin">管理員</option>
+                    </select>
+                  )}
+                </td>
+                <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>
+                  {u._count?.projectMemberships ?? 0}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -2546,7 +2938,7 @@ export default function App() {
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly">("kanban");
+  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -2654,6 +3046,20 @@ export default function App() {
   const handleSaveProject = async (name: string, description: string, color: string) => {
     try {
       const newProject = await apiCreateProject({ name, description, color });
+
+      const defaultGroups = [
+        { name: "專管組", color: "#6366f1" },
+        { name: "美術組", color: "#f59e0b" },
+        { name: "設計組", color: "#8b5cf6" },
+        { name: "硬體組", color: "#10b981" },
+        { name: "軟體組", color: "#06b6d4" },
+        { name: "維運組", color: "#f43f5e" },
+        { name: "費曼圖", color: "#facc15" },
+      ];
+      for (const group of defaultGroups) {
+        await apiCreateGroup(newProject.id, group);
+      }
+
       await loadProjects();
       setActiveProjectId(newProject.id);
     } catch (err) {
@@ -2683,6 +3089,7 @@ export default function App() {
   const [weeklyReports, setWeeklyReports] = useState<WeeklyReport[]>([]);
 
   const [loggedIn, setLoggedIn] = useState(isLoggedIn());
+  const [currentUser, setCurrentUser] = useState(getCurrentUser());
 
   const handleLogout = () => {
     clearToken();
@@ -2748,16 +3155,21 @@ export default function App() {
         }
         return prev;
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("載入專案失敗:", err);
+      if (err.message?.includes("登入已過期")) {
+        setLoggedIn(false);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    if (loggedIn) {
+      loadProjects();
+    }
+  }, [loggedIn]);
 
   const loadProjectDetails = async (projectId: string) => {
     try {
@@ -3020,7 +3432,7 @@ export default function App() {
   const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
 
   if (!loggedIn) {
-    return <LoginPage onLogin={() => setLoggedIn(true)} />;
+    return <LoginPage onLogin={() => { setLoggedIn(true); setCurrentUser(getCurrentUser()); }} />;
   }
 
   if (loading) {
@@ -3149,9 +3561,25 @@ export default function App() {
         onDeleteProject={handleDeleteProject}
         onManageGroups={() => setShowGroupModal(true)}
         onLogout={handleLogout}
+        currentUser={currentUser}
+        activeProject={activeProject}
       />
 
-      <div style={{ marginLeft: 200 }}>
+      {view === "admin" && currentUser?.role === "admin" ? (
+        <div style={{ marginLeft: 200 }}>
+          <AdminView currentUser={currentUser} />
+        </div>
+      ) : view === "project_members" && activeProject ? (
+        <div style={{ marginLeft: 200, padding: "32px 40px" }}>
+          <ProjectMembersView
+            projectId={activeProject.id}
+            projectName={activeProject.name}
+            currentUser={currentUser}
+          />
+        </div>
+      ) : null}
+
+      <div style={{ marginLeft: 200, display: (view === "admin" || view === "project_members") ? "none" : undefined }}>
         <div className="app">
           <div className="topbar">
             <div className="topbar-left">

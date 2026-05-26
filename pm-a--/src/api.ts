@@ -10,6 +10,16 @@ export function setToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem("pm-token");
+  localStorage.removeItem("pm-user");
+}
+
+export function getCurrentUser() {
+  try {
+    const saved = localStorage.getItem("pm-user");
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function isLoggedIn(): boolean {
@@ -34,7 +44,6 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 
   if (response.status === 401) {
     clearToken();
-    window.location.reload();
     throw new Error("登入已過期，請重新登入");
   }
 
@@ -55,6 +64,7 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({ email, password }),
   });
   setToken(data.token);
+  localStorage.setItem("pm-user", JSON.stringify(data.user));
   return data;
 }
 
@@ -237,5 +247,44 @@ export async function saveWeeklyReport(projectId: string, data: any) {
   return apiFetch(`/projects/${projectId}/weekly-reports`, {
     method: "PUT",
     body: JSON.stringify(data),
+  });
+}
+
+// ── Admin API ────────────────────────────────
+
+export async function getAdminUsers() {
+  return apiFetch("/admin/users");
+}
+
+export async function updateAdminUser(id: string, data: any) {
+  return apiFetch(`/admin/users/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+// ── 專案成員 API ────────────────────────────
+
+export async function getProjectMembers(projectId: string) {
+  return apiFetch(`/projects/${projectId}/members`);
+}
+
+export async function addProjectMember(projectId: string, userId: string, role: string) {
+  return apiFetch(`/projects/${projectId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ userId, role }),
+  });
+}
+
+export async function removeProjectMember(projectId: string, userId: string) {
+  return apiFetch(`/projects/${projectId}/members/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateProjectMemberRole(projectId: string, userId: string, role: string) {
+  return apiFetch(`/projects/${projectId}/members/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
   });
 }
