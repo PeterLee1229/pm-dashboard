@@ -995,18 +995,8 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
           );
         })}
 
-        {/* 管理組別 + 專案成員 */}
+        {/* 專案成員 + 管理功能 */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
-          <button onClick={onManageGroups} style={{
-            display: "flex", alignItems: "center", gap: 10,
-            width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
-            background: "transparent", color: "#64748b",
-            fontSize: 13, cursor: "pointer", textAlign: "left",
-            borderLeft: "3px solid transparent"
-          }}>
-            <User size={16} />管理組別與成員
-          </button>
-
           {(currentUser?.role === "admin" || activeProject?.userRole === "owner") && (
             <button onClick={() => setView("project_members")} style={{
               display: "flex", alignItems: "center", gap: 10,
@@ -1025,6 +1015,15 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
         {/* 系統管理（僅 admin） */}
         {currentUser?.role === "admin" && (
           <div style={{ marginTop: 4 }}>
+            <button onClick={onManageGroups} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+              background: "transparent", color: "#64748b",
+              fontSize: 13, cursor: "pointer", textAlign: "left",
+              borderLeft: "3px solid transparent"
+            }}>
+              <User size={16} /> 管理組別
+            </button>
             <button onClick={() => setView("admin")} style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "10px 12px", borderRadius: 8, border: "none",
@@ -2669,18 +2668,21 @@ function ProjectMembersView({ projectId, projectName, currentUser }: {
         </div>
 
         <div style={{
-          display: "grid", gridTemplateColumns: "1fr 100px 160px 120px 60px",
+          display: "grid", gridTemplateColumns: "1fr 80px 100px 140px 120px 60px",
           padding: "10px 20px", borderBottom: "1px solid #ffffff08",
           fontSize: 11, color: "#475569", fontWeight: 600
         }}>
-          <span>姓名</span><span>員工編號</span><span>Email</span>
+          <span>姓名</span>
+          <span>組別</span>
+          <span>員工編號</span>
+          <span>Email</span>
           <span style={{ textAlign: "center" }}>專案角色</span>
           <span style={{ textAlign: "center" }}>操作</span>
         </div>
 
         {members.map((m) => (
           <div key={m.id} style={{
-            display: "grid", gridTemplateColumns: "1fr 100px 160px 120px 60px",
+            display: "grid", gridTemplateColumns: "1fr 80px 100px 140px 120px 60px",
             padding: "12px 20px", borderBottom: "1px solid #ffffff06",
             alignItems: "center", fontSize: 13
           }}>
@@ -2688,6 +2690,17 @@ function ProjectMembersView({ projectId, projectName, currentUser }: {
               <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{m.user?.name || "未知"}</span>
               {m.userId === currentUser?.id && (
                 <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 99, background: "#6366f122", color: "#6366f1" }}>你</span>
+              )}
+            </div>
+            <div>
+              {m.user?.group ? (
+                <span style={{
+                  fontSize: 10, padding: "2px 7px", borderRadius: 99,
+                  background: m.user.group.color + "22", color: m.user.group.color,
+                  border: `1px solid ${m.user.group.color}33`
+                }}>{m.user.group.name}</span>
+              ) : (
+                <span style={{ fontSize: 10, color: "#475569" }}>未分組</span>
               )}
             </div>
             <span style={{ color: "#94a3b8" }}>{m.user?.memberId || ""}</span>
@@ -2736,71 +2749,96 @@ function AddMemberModal({ availableUsers, onAdd, onClose }: {
   onAdd: (userId: string, role: string) => void;
   onClose: () => void;
 }) {
+  const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState("member");
-  const [searchText, setSearchText] = useState("");
 
-  const filtered = availableUsers.filter(u =>
-    u.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    (u.memberId || "").toLowerCase().includes(searchText.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchText.toLowerCase())
-  );
+  const groupMap = new Map<string, { id: string; name: string; color: string }>();
+  availableUsers.forEach(u => { if (u.group) groupMap.set(u.group.id, u.group); });
+  const groups = Array.from(groupMap.values());
+
+  const filteredUsers = selectedGroupId
+    ? availableUsers.filter(u => u.group?.id === selectedGroupId)
+    : [];
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ width: 520 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-label">邀請成員加入專案</span>
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
+
+          {/* 選擇組別 */}
           <div className="field">
-            <label className="field-label">搜尋使用者</label>
-            <input className="field-input" value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="輸入姓名、員工編號或 Email..." />
+            <label className="field-label">選擇組別</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {groups.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#475569" }}>沒有可邀請的使用者</p>
+              ) : groups.map(g => (
+                <button key={g.id}
+                  onClick={() => { setSelectedGroupId(g.id); setSelectedUserId(""); }}
+                  style={{
+                    background: selectedGroupId === g.id ? g.color + "22" : "transparent",
+                    border: `1px solid ${selectedGroupId === g.id ? g.color : "#ffffff15"}`,
+                    color: selectedGroupId === g.id ? g.color : "#64748b",
+                    borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+                  }}>
+                  {g.name}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="field">
-            <label className="field-label">選擇使用者</label>
-            <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-              {filtered.length === 0 ? (
-                <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>
-                  {availableUsers.length === 0 ? "所有使用者都已加入" : "找不到符合的使用者"}
-                </p>
-              ) : filtered.map(u => (
-                <div key={u.id} onClick={() => setSelectedUserId(u.id)} style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "8px 12px", borderRadius: 8, cursor: "pointer",
-                  background: selectedUserId === u.id ? "#6366f122" : "#0f1117",
-                  border: `1px solid ${selectedUserId === u.id ? "#6366f1" : "#ffffff08"}`,
-                }}>
-                  <div>
-                    <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{u.name}</span>
-                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>({u.memberId})</span>
-                  </div>
-                  <span style={{ fontSize: 11, color: "#475569" }}>{u.email}</span>
+
+          {/* 選擇人員 */}
+          {selectedGroupId && (
+            <div className="field">
+              <label className="field-label">選擇人員</label>
+              {filteredUsers.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#475569" }}>該組別沒有可邀請的人員</p>
+              ) : (
+                <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                  {filteredUsers.map(u => (
+                    <div key={u.id} onClick={() => setSelectedUserId(u.id)} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "8px 12px", borderRadius: 8, cursor: "pointer",
+                      background: selectedUserId === u.id ? "#6366f122" : "#0f1117",
+                      border: `1px solid ${selectedUserId === u.id ? "#6366f1" : "#ffffff08"}`,
+                    }}>
+                      <div>
+                        <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>({u.memberId})</span>
+                      </div>
+                      <span style={{ fontSize: 11, color: "#475569" }}>{u.email}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-          <div className="field">
-            <label className="field-label">指定角色</label>
-            <div style={{ display: "flex", gap: 6 }}>
-              {[
-                { value: "pm",           label: "PM",           color: "#f59e0b" },
-                { value: "group_leader", label: "Group Leader", color: "#8b5cf6" },
-                { value: "member",       label: "Member",       color: "#6366f1" },
-                { value: "viewer",       label: "Viewer",       color: "#64748b" },
-              ].map(r => (
-                <button key={r.value} onClick={() => setSelectedRole(r.value)} style={{
-                  flex: 1, borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                  background: selectedRole === r.value ? r.color + "22" : "transparent",
-                  border: `1px solid ${selectedRole === r.value ? r.color : "#ffffff15"}`,
-                  color: selectedRole === r.value ? r.color : "#64748b"
-                }}>{r.label}</button>
-              ))}
+          )}
+
+          {/* 角色選擇 */}
+          {selectedUserId && (
+            <div className="field">
+              <label className="field-label">指定專案角色</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[
+                  { value: "pm",           label: "PM",           color: "#f59e0b" },
+                  { value: "group_leader", label: "Group Leader", color: "#8b5cf6" },
+                  { value: "member",       label: "Member",       color: "#6366f1" },
+                  { value: "viewer",       label: "Viewer",       color: "#64748b" },
+                ].map(r => (
+                  <button key={r.value} onClick={() => setSelectedRole(r.value)} style={{
+                    flex: 1, borderRadius: 8, padding: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    background: selectedRole === r.value ? r.color + "22" : "transparent",
+                    border: `1px solid ${selectedRole === r.value ? r.color : "#ffffff15"}`,
+                    color: selectedRole === r.value ? r.color : "#64748b"
+                  }}>{r.label}</button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
         <div className="modal-footer">
           <button className="btn-cancel" onClick={onClose}>取消</button>

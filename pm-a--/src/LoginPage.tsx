@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { login, register } from "./api";
+import { useState, useEffect } from "react";
+import { login, register, getGroups } from "./api";
 
 export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -7,21 +7,27 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [memberId, setMemberId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [groups, setGroups] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [registerSuccess, setRegisterSuccess] = useState(false);
+
+  useEffect(() => {
+    getGroups().then(setGroups).catch(console.error);
+  }, []);
 
   const handleSubmit = async () => {
     setError("");
     setLoading(true);
     try {
       if (isRegister) {
-        if (!email || !password || !name || !memberId) {
+        if (!email || !password || !name || !memberId || !groupId) {
           setError("請填寫所有欄位");
           setLoading(false);
           return;
         }
-        await register(email, password, name, memberId);
+        await register(email, password, name, memberId, groupId);
         setIsRegister(false);
         setError("");
         setPassword("");
@@ -132,6 +138,17 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                 <input className="login-input" value={memberId}
                   onChange={(e) => setMemberId(e.target.value)}
                   placeholder="例如 A001" />
+              </div>
+              <div className="login-field">
+                <label className="login-label">所屬組別</label>
+                <select className="login-input" value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                  style={{ cursor: "pointer" }}>
+                  <option value="">請選擇組別</option>
+                  {groups.map((g: any) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
               </div>
             </>
           )}

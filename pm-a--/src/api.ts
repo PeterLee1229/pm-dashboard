@@ -68,11 +68,16 @@ export async function login(email: string, password: string) {
   return data;
 }
 
-export async function register(email: string, password: string, name: string, memberId: string) {
+export async function register(email: string, password: string, name: string, memberId: string, groupId?: string) {
   return apiFetch("/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password, name, memberId }),
+    body: JSON.stringify({ email, password, name, memberId, groupId }),
   });
+}
+
+export async function getGroups() {
+  const response = await fetch(`${API_URL}/groups`);
+  return response.json();
 }
 
 // ── 專案 API ────────────────────────────────
