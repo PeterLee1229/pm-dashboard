@@ -89,32 +89,62 @@ app.post("/api/auth/register", async (req, res) => {
         name: req.body.name,
         memberId: req.body.memberId,
         role: req.body.role || "user",
-      }
+        groupId: req.body.groupId || null,
+      },
+      include: { group: { select: { id: true, name: true, color: true } } }
     });
-    res.status(201).json({ id: user.id, name: user.name });
+    res.status(201).json({
+      id: user.id, name: user.name, memberId: user.memberId,
+      group: (user as any).group
+    });
   } catch (err: any) {
-    res.status(400).json({ error: err.message || "註冊失敗" });
+    if (err.code === "P2002") {
+      return res.status(400).json({ error: "Email 或員工編號已被使用" });
+    }
+    res.status(500).json({ error: "註冊失敗" });
   }
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { email: req.body.email } });
+  const user = await prisma.user.findUnique({
+    where: { email: req.body.email },
+    include: { group: { select: { id: true, name: true, color: true } } }
+  }) as any;
   if (!user) return res.status(401).json({ error: "帳號不存在" });
 
   const valid = await bcrypt.compare(req.body.password, user.password);
   if (!valid) return res.status(401).json({ error: "密碼錯誤" });
 
   const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
-  res.json({ token, user: { id: user.id, name: user.name, memberId: user.memberId, role: user.role } });
+  res.json({
+    token,
+    user: {
+      id: user.id, name: user.name, memberId: user.memberId, role: user.role,
+      group: user.group ? { id: user.group.id, name: user.group.name, color: user.group.color } : null
+    }
+  });
 });
 
 // ── 使用者 API ────────────────────────────────────────────────────────
 
 app.get("/api/users", authMiddleware, async (_req: any, res) => {
   const users = await prisma.user.findMany({
-    select: { id: true, name: true, memberId: true, email: true, role: true }
+    select: {
+      id: true, name: true, memberId: true, email: true, role: true,
+      group: { select: { id: true, name: true, color: true } }
+    }
   });
   res.json(users);
+});
+
+app.get("/api/groups", async (_req, res) => {
+  const groups = await prisma.group.findMany({
+    orderBy: { name: "asc" },
+    include: {
+      users: { select: { id: true, name: true, memberId: true, email: true } }
+    }
+  });
+  res.json(groups);
 });
 
 // ── 專案 API ──────────────────────────────────────────────────────────
@@ -215,7 +245,14 @@ app.get("/api/projects/:projectId/members", authMiddleware, async (req: any, res
   }
   const members = await prisma.projectMember.findMany({
     where: { projectId },
-    include: { user: { select: { id: true, name: true, memberId: true, email: true } } },
+    include: {
+      user: {
+        select: {
+          id: true, name: true, memberId: true, email: true,
+          group: { select: { id: true, name: true, color: true } }
+        }
+      }
+    },
     orderBy: { id: "asc" }
   });
   res.json(members);
@@ -698,6 +735,47 @@ app.put("/api/admin/users/:id", authMiddleware, async (req: any, res) => {
     select: { id: true, name: true, memberId: true, email: true, role: true }
   });
   res.json(user);
+});
+
+// ── Admin 組別管理 ────────────────────────────────────────────────────
+
+app.post("/api/admin/groups", authMiddleware, async (req: any, res) => {
+  if (!(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "需要管理員權限" });
+  }
+  try {
+    const group = await prisma.group.create({
+      data: { name: req.body.name, color: req.body.color || "#6366f1" }
+    });
+    res.status(201).json(group);
+  } catch (err: any) {
+    if (err.code === "P2002") return res.status(400).json({ error: "組別名稱已存在" });
+    res.status(500).json({ error: "建立失敗" });
+  }
+});
+
+app.put("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
+  if (!(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "需要管理員權限" });
+  }
+  try {
+    const group = await prisma.group.update({
+      where: { id: req.params.id },
+      data: { name: req.body.name, color: req.body.color }
+    });
+    res.json(group);
+  } catch (err: any) {
+    if (err.code === "P2002") return res.status(400).json({ error: "組別名稱已存在" });
+    res.status(500).json({ error: "更新失敗" });
+  }
+});
+
+app.delete("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
+  if (!(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "需要管理員權限" });
+  }
+  await prisma.group.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
 });
 
 // ── 啟動伺服器 ────────────────────────────────────────────────────────

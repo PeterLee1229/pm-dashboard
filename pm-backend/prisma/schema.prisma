@@ -7,16 +7,17 @@ generator client {
 }
 
 model User {
-  id                 String   @id @default(cuid())
-  email              String   @unique
-  password           String
-  name               String
-  memberId           String   @unique
-  role               String   @default("user")  // admin 或 user（系統層級）
-  groups             GroupMember[]
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  memberId  String   @unique
+  role      String   @default("user")
+  groupId   String?
+  group     Group?   @relation(fields: [groupId], references: [id])
   projectMemberships ProjectMember[]
-  ownedProjects      Project[]
-  createdAt          DateTime @default(now())
+  ownedProjects Project[]
+  createdAt DateTime @default(now())
 }
 
 model Task {
@@ -53,40 +54,27 @@ model SubTask {
 }
 
 model Project {
-  id              String           @id @default(cuid())
-  name            String
-  description     String           @default("")
-  color           String           @default("#6366f1")
-  ownerId         String?
-  owner           User?            @relation(fields: [ownerId], references: [id])
-  members         ProjectMember[]
-  tasks           Task[]
-  groups          Group[]
-  meetingSeries   MeetingSeries[]
-  risks           Risk[]
-  weeklyReports   WeeklyReport[]
-  createdAt       DateTime         @default(now())
+  id          String           @id @default(cuid())
+  name        String
+  description String           @default("")
+  color       String           @default("#6366f1")
+  ownerId     String?
+  owner       User?            @relation(fields: [ownerId], references: [id])
+  tasks       Task[]
+  members     ProjectMember[]
+  meetingSeries MeetingSeries[]
+  risks       Risk[]
+  weeklyReports WeeklyReport[]
+  createdAt   DateTime         @default(now())
 }
 
+// Group 不再綁專案，改成系統層級（公司組織架構）
 model Group {
   id        String        @id @default(cuid())
-  name      String
+  name      String        @unique
   color     String        @default("#6366f1")
-  projectId String
-  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  members   GroupMember[]
+  users     User[]
   createdAt DateTime      @default(now())
-}
-
-model GroupMember {
-  id      String @id @default(cuid())
-  groupId String
-  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  userId  String
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role    String @default("member")  // owner, pm, group_leader, member, viewer
-
-  @@unique([groupId, userId])
 }
 
 model ProjectMember {
