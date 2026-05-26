@@ -7,15 +7,16 @@ generator client {
 }
 
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
-  password      String
-  name          String
-  memberId      String        @unique
-  role          String        @default("member")
-  groups        GroupMember[]
-  ownedProjects Project[]
-  createdAt     DateTime      @default(now())
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  password           String
+  name               String
+  memberId           String   @unique
+  role               String   @default("user")  // admin 或 user（系統層級）
+  groups             GroupMember[]
+  projectMemberships ProjectMember[]
+  ownedProjects      Project[]
+  createdAt          DateTime @default(now())
 }
 
 model Task {
@@ -58,6 +59,7 @@ model Project {
   color           String           @default("#6366f1")
   ownerId         String?
   owner           User?            @relation(fields: [ownerId], references: [id])
+  members         ProjectMember[]
   tasks           Task[]
   groups          Group[]
   meetingSeries   MeetingSeries[]
@@ -82,8 +84,20 @@ model GroupMember {
   group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
   userId  String
   user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    String @default("member")  // owner, pm, group_leader, member, viewer
 
   @@unique([groupId, userId])
+}
+
+model ProjectMember {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String  @default("member")  // owner, pm, group_leader, member, viewer
+
+  @@unique([projectId, userId])
 }
 
 model MeetingSeries {
