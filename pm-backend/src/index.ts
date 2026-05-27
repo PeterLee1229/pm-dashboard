@@ -7,11 +7,9 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 
-const pool = new pg.Pool({
-  connectionString: "postgresql://postgres:mysecret@localhost:5432/postgres",
-});
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter } as any) as any;
+const prisma = new PrismaClient({ adapter });
 const JWT_SECRET = process.env.JWT_SECRET!;
 if (!JWT_SECRET) {
   console.error("JWT_SECRET is not set. Set the JWT_SECRET environment variable.");
@@ -106,23 +104,43 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { email: req.body.email },
-    include: { group: { select: { id: true, name: true, color: true } } }
-  }) as any;
-  if (!user) return res.status(401).json({ error: "帳號不存在" });
+  try {
+    console.log("登入嘗試:", req.body.email);
 
-  const valid = await bcrypt.compare(req.body.password, user.password);
-  if (!valid) return res.status(401).json({ error: "密碼錯誤" });
+    const user = await prisma.user.findUnique({
+      where: { email: req.body.email },
+      include: { group: true }
+    });
 
-  const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
-  res.json({
-    token,
-    user: {
-      id: user.id, name: user.name, memberId: user.memberId, role: user.role,
-      group: user.group ? { id: user.group.id, name: user.group.name, color: user.group.color } : null
-    }
-  });
+    console.log("查到使用者:", user ? user.email : "找不到");
+
+    if (!user) return res.status(401).json({ error: "帳號不存在" });
+
+    const valid = await bcrypt.compare(req.body.password, user.password);
+    console.log("密碼驗證:", valid);
+
+    if (!valid) return res.status(401).json({ error: "密碼錯誤" });
+
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        memberId: user.memberId,
+        role: user.role,
+        group: user.group ? { id: user.group.id, name: user.group.name, color: user.group.color } : null
+      }
+    });
+  } catch (err) {
+    console.error("登入錯誤完整訊息:", err);
+    res.status(500).json({ error: "登入失敗" });
+  }
 });
 
 // ── 使用者 API ────────────────────────────────────────────────────────
@@ -460,41 +478,35 @@ app.delete("/api/tasks/:id", authMiddleware, async (req: any, res) => {
 
 // ── 組別 API ──────────────────────────────────────────────────────────
 
-app.get("/api/projects/:projectId/groups", authMiddleware, async (req: any, res) => {
+// 回傳所有系統組別（含組員），projectId 保留在 URL 路徑以維持前端相容
+app.get("/api/projects/:projectId/groups", authMiddleware, async (_req: any, res) => {
   const groups = await prisma.group.findMany({
-    where: { projectId: req.params.projectId },
+    orderBy: { name: "asc" },
     include: {
-      members: {
-        include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
-      }
+      users: { select: { id: true, name: true, memberId: true, email: true } }
     }
   });
   res.json(groups);
 });
 
+// 建立系統組別（Admin 或 owner/pm 可操作）
 app.post("/api/projects/:projectId/groups", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
-  const group = await prisma.group.create({
-    data: {
-      name: req.body.name,
-      color: req.body.color || "#6366f1",
-      projectId: req.params.projectId,
-    }
-  });
-  res.status(201).json(group);
+  try {
+    const group = await prisma.group.create({
+      data: { name: req.body.name, color: req.body.color || "#6366f1" }
+    });
+    res.status(201).json(group);
+  } catch (err: any) {
+    if (err.code === "P2002") return res.status(400).json({ error: "組別名稱已存在" });
+    res.status(500).json({ error: "建立失敗" });
+  }
 });
 
 app.put("/api/groups/:id", authMiddleware, async (req: any, res) => {
+  if (!(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "需要管理員權限" });
+  }
   try {
-    const group = await prisma.group.findUnique({ where: { id: req.params.id } });
-    if (!group) return res.status(404).json({ error: "找不到組別" });
-
-    if (!(await isAdmin(req.user.userId))) {
-      const role = await getProjectRole(req.user.userId, group.projectId);
-      if (!role || !["owner", "pm"].includes(role)) {
-        return res.status(403).json({ error: "權限不足" });
-      }
-    }
-
     const updated = await prisma.group.update({
       where: { id: req.params.id },
       data: { name: req.body.name, color: req.body.color }
@@ -506,40 +518,15 @@ app.put("/api/groups/:id", authMiddleware, async (req: any, res) => {
 });
 
 app.delete("/api/groups/:id", authMiddleware, async (req: any, res) => {
+  if (!(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "需要管理員權限" });
+  }
   try {
-    const group = await prisma.group.findUnique({ where: { id: req.params.id } });
-    if (!group) return res.status(404).json({ error: "找不到組別" });
-
-    if (!(await isAdmin(req.user.userId))) {
-      const role = await getProjectRole(req.user.userId, group.projectId);
-      if (!role || !["owner", "pm"].includes(role)) {
-        return res.status(403).json({ error: "權限不足" });
-      }
-    }
-
     await prisma.group.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch {
     res.status(404).json({ error: "找不到組別" });
   }
-});
-
-app.post("/api/groups/:groupId/members", authMiddleware, async (req: any, res) => {
-  const member = await prisma.groupMember.create({
-    data: {
-      groupId: req.params.groupId,
-      userId: req.body.userId,
-    },
-    include: { user: { select: { id: true, name: true, memberId: true } } }
-  });
-  res.status(201).json(member);
-});
-
-app.delete("/api/groups/:groupId/members/:userId", authMiddleware, async (req: any, res) => {
-  await prisma.groupMember.deleteMany({
-    where: { groupId: req.params.groupId, userId: req.params.userId }
-  });
-  res.json({ success: true });
 });
 
 // ── 會議 API ──────────────────────────────────────────────────────────
