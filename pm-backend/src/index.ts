@@ -75,6 +75,12 @@ function requireProjectRole(...roles: string[]) {
   };
 }
 
+async function createNotification(userId: string, type: string, title: string, message: string, projectId?: string, taskId?: string) {
+  return prisma.notification.create({
+    data: { userId, type, title, message, projectId, taskId }
+  });
+}
+
 // ── 認證 API ──────────────────────────────────────────────────────────
 
 app.post("/api/auth/register", async (req, res) => {
@@ -309,6 +315,14 @@ app.post("/api/projects/:projectId/members", authMiddleware, async (req: any, re
       },
       include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
     });
+
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    await createNotification(
+      req.body.userId, "project_invited", "專案邀請",
+      `你被邀請加入專案「${project?.name || ""}」，角色為 ${req.body.role || "member"}`,
+      projectId
+    );
+
     res.status(201).json(member);
   } catch {
     res.status(400).json({ error: "新增成員失敗（可能已是成員）" });
@@ -403,6 +417,19 @@ app.post("/api/projects/:projectId/tasks", authMiddleware, requireProjectRole("o
     },
     include: { subtasks: true }
   });
+
+  if (task.assignee) {
+    const assigneeUser = await prisma.user.findFirst({ where: { memberId: task.assignee } });
+    if (assigneeUser && assigneeUser.id !== req.user.userId) {
+      const project = await prisma.project.findUnique({ where: { id: req.params.projectId } });
+      await createNotification(
+        assigneeUser.id, "task_assigned", "新任務指派",
+        `你被指派了新任務「${task.title}」在專案「${project?.name || ""}」中`,
+        req.params.projectId, task.id
+      );
+    }
+  }
+
   res.status(201).json(task);
 });
 
@@ -449,6 +476,20 @@ app.put("/api/tasks/:id", authMiddleware, async (req: any, res) => {
             taskId: req.params.id,
           }
         });
+      }
+    }
+
+    if (req.body.columnId && req.body.columnId !== task.columnId && task.assignee) {
+      const columnNames: Record<string, string> = {
+        todo: "待處理", inprogress: "進行中", review: "審查中", done: "已完成"
+      };
+      const assigneeUser = await prisma.user.findFirst({ where: { memberId: task.assignee } });
+      if (assigneeUser && assigneeUser.id !== req.user.userId) {
+        await createNotification(
+          assigneeUser.id, "task_moved", "任務狀態變更",
+          `任務「${task.title}」已移至「${columnNames[req.body.columnId] || req.body.columnId}」`,
+          task.projectId, task.id
+        );
       }
     }
 
@@ -655,6 +696,25 @@ app.put("/api/risks/:id", authMiddleware, async (req: any, res) => {
       status: req.body.status,
     }
   });
+
+  if (req.body.status && req.body.status !== risk.status) {
+    const statusNames: Record<string, string> = {
+      monitoring: "監控中", occurred: "已發生", resolved: "已解除"
+    };
+    const projectMembers = await prisma.projectMember.findMany({
+      where: { projectId: risk.projectId }
+    });
+    for (const pm of projectMembers) {
+      if (pm.userId !== req.user.userId) {
+        await createNotification(
+          pm.userId, "risk_updated", "風險狀態變更",
+          `風險「${risk.title}」狀態已變更為「${statusNames[req.body.status] || req.body.status}」`,
+          risk.projectId
+        );
+      }
+    }
+  }
+
   res.json(updated);
 });
 
@@ -767,6 +827,40 @@ app.delete("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
     return res.status(403).json({ error: "需要管理員權限" });
   }
   await prisma.group.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
+// ── 通知 API ──────────────────────────────────────────────────────────
+
+app.get("/api/notifications", authMiddleware, async (req: any, res) => {
+  const notifications = await prisma.notification.findMany({
+    where: { userId: req.user.userId },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  res.json(notifications);
+});
+
+app.get("/api/notifications/unread-count", authMiddleware, async (req: any, res) => {
+  const count = await prisma.notification.count({
+    where: { userId: req.user.userId, isRead: false }
+  });
+  res.json({ count });
+});
+
+app.put("/api/notifications/read-all", authMiddleware, async (req: any, res) => {
+  await prisma.notification.updateMany({
+    where: { userId: req.user.userId, isRead: false },
+    data: { isRead: true }
+  });
+  res.json({ success: true });
+});
+
+app.put("/api/notifications/:id/read", authMiddleware, async (req: any, res) => {
+  await prisma.notification.update({
+    where: { id: req.params.id },
+    data: { isRead: true }
+  });
   res.json({ success: true });
 });
 

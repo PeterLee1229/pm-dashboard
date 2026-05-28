@@ -7,17 +7,18 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  memberId  String   @unique
-  role      String   @default("user")
-  groupId   String?
-  group     Group?   @relation(fields: [groupId], references: [id])
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  password           String
+  name               String
+  memberId           String   @unique
+  role               String   @default("user")
+  groupId            String?
+  group              Group?   @relation(fields: [groupId], references: [id])
   projectMemberships ProjectMember[]
-  ownedProjects Project[]
-  createdAt DateTime @default(now())
+  ownedProjects      Project[]
+  createdAt          DateTime @default(now())
+  notifications      Notification[]
 }
 
 model Task {
@@ -135,4 +136,17 @@ model WeeklyReport {
   createdAt DateTime @default(now())
 
   @@unique([projectId, weekStart])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  projectId String?
+  taskId    String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
