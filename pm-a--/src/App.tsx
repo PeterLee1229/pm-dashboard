@@ -3189,6 +3189,7 @@ export default function App() {
   const currentProjectRole = currentUser?.role === "admin" ? "admin" : (activeProject?.userRole || "viewer");
 
   const [systemGroups, setSystemGroups] = useState<any[]>([]);
+  const [projectMembers, setProjectMembers] = useState<any[]>([]);
 
   useEffect(() => {
     if (loggedIn) {
@@ -3309,8 +3310,6 @@ export default function App() {
       console.error("載入專案詳情失敗:", err);
     }
   };
-
-  const [projectMembers, setProjectMembers] = useState<any[]>([]);
 
   const loadProjectMembers = async (projectId: string) => {
     try {
