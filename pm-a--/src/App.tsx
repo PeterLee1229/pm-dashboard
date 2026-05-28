@@ -5,7 +5,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   getProjects, createProject as apiCreateProject, updateProject as apiUpdateProject, deleteProject as apiDeleteProject,
   getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask,
   getProjectGroups, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup,
-  addGroupMember, removeGroupMember, getUsers,
+  addGroupMember, removeGroupMember, getUsers, getGroups,
   getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
@@ -221,6 +221,7 @@ function hasPermission(userRole: string, action: string): boolean {
     "drag_to_done":    ["owner", "pm"],
     "drag_task":       ["owner", "pm", "group_leader", "member"],
     "manage_meetings": ["owner", "pm", "group_leader"],
+    "view_risks":      ["owner", "pm", "group_leader", "member", "viewer"],
     "manage_risks":    ["owner", "pm", "group_leader", "member"],
     "manage_weekly":   ["owner", "pm"],
     "export":          ["owner", "pm", "group_leader", "member"],
@@ -1029,7 +1030,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
         {sidebarBtn("gantt",     "甘特圖", <Clock size={16} />)}
         {sidebarBtn("dashboard", "儀表板", <BarChart2 size={16} />)}
         {hasPermission(currentProjectRole, "manage_meetings") && sidebarBtn("meetings", "會議記錄", <AlignLeft size={16} />)}
-        {hasPermission(currentProjectRole, "manage_risks")    && sidebarBtn("risks",    "風險管理", <AlertCircle size={16} />)}
+        {hasPermission(currentProjectRole, "view_risks")       && sidebarBtn("risks",    "風險管理", <AlertCircle size={16} />)}
         {hasPermission(currentProjectRole, "manage_weekly")   && sidebarBtn("weekly",   "週報",     <CheckCircle2 size={16} />)}
 
         {/* 專案成員 + 管理功能 */}
@@ -1052,15 +1053,17 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
         {/* 系統管理（僅 admin） */}
         {currentUser?.role === "admin" && (
           <div style={{ marginTop: 4 }}>
-            <button onClick={onManageGroups} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
-              background: "transparent", color: "#64748b",
-              fontSize: 13, cursor: "pointer", textAlign: "left",
-              borderLeft: "3px solid transparent"
-            }}>
-              <User size={16} /> 管理組別
-            </button>
+            {currentUser?.role === "admin" && (
+              <button onClick={onManageGroups} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+                background: "transparent", color: "#64748b",
+                fontSize: 13, cursor: "pointer", textAlign: "left",
+                borderLeft: "3px solid transparent"
+              }}>
+                <User size={16} /> 管理組別
+              </button>
+            )}
             <button onClick={() => setView("admin")} style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "10px 12px", borderRadius: 8, border: "none",
@@ -1865,12 +1868,13 @@ function RiskModal({ risk, groups, onSave, onClose }: {
 }
 
 // ── Risk Matrix View ──────────────────────────────────────────────────
-function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk }: {
+function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk, canManage }: {
   risks: Risk[];
   groups: Group[];
   onCreateRisk: (risk: Risk) => void;
   onUpdateRisk: (risk: Risk) => void;
   onDeleteRisk: (id: string) => void;
+  canManage: boolean;
 }) {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
@@ -1911,22 +1915,34 @@ function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRis
             );
           })}
         </div>
-        <button onClick={() => { setEditingRisk(null); setShowRiskModal(true); }}
-          style={{
-            background: "#6366f122", border: "1px solid #6366f144",
-            borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
-            padding: "8px 20px", cursor: "pointer"
-          }}>
-          + 新增風險
-        </button>
+        {canManage && (
+          <button onClick={() => { setEditingRisk(null); setShowRiskModal(true); }}
+            style={{
+              background: "#6366f122", border: "1px solid #6366f144",
+              borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
+              padding: "8px 20px", cursor: "pointer"
+            }}>
+            + 新增風險
+          </button>
+        )}
       </div>
 
       {/* 5×5 矩陣 */}
       <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>風險矩陣（機率 × 影響）</p>
         <div style={{ display: "flex" }}>
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", paddingRight: 8, paddingTop: 28, paddingBottom: 4 }}>
-            <span style={{ fontSize: 10, color: "#64748b", writingMode: "vertical-rl", transform: "rotate(180deg)", letterSpacing: 2, textAlign: "center", height: "100%" }}>機率 →</span>
+          {/* Y 軸標籤 */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 20, marginRight: 4
+          }}>
+            <span style={{
+              fontSize: 11, color: "#64748b",
+              writingMode: "vertical-rl",
+              transform: "rotate(180deg)",
+              letterSpacing: 4,
+              whiteSpace: "nowrap"
+            }}>← 機率</span>
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", paddingLeft: 50 }}>
@@ -1951,7 +1967,7 @@ function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRis
                       gap: 3, padding: 3, cursor: cellRisks.length > 0 ? "pointer" : "default"
                     }}>
                       {cellRisks.map((r) => (
-                        <div key={r.id} onClick={() => { setEditingRisk(r); setShowRiskModal(true); }}
+                        <div key={r.id} onClick={() => { if (canManage) { setEditingRisk(r); setShowRiskModal(true); } }}
                           title={r.title}
                           style={{
                             width: 18, height: 18, borderRadius: 4, fontSize: 8, fontWeight: 700,
@@ -1959,7 +1975,7 @@ function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRis
                             background: RISK_STATUS_CONFIG[r.status].color + "33",
                             color: RISK_STATUS_CONFIG[r.status].color,
                             border: `1px solid ${RISK_STATUS_CONFIG[r.status].color}66`,
-                            cursor: "pointer"
+                            cursor: canManage ? "pointer" : "default"
                           }}>
                           {r.title.charAt(0)}
                         </div>
@@ -1989,8 +2005,8 @@ function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRis
               return (
                 <div key={risk.id} style={{
                   background: "#0f1117", borderRadius: 10, padding: 14,
-                  border: "1px solid #ffffff08", cursor: "pointer"
-                }} onClick={() => { setEditingRisk(risk); setShowRiskModal(true); }}>
+                  border: "1px solid #ffffff08", cursor: canManage ? "pointer" : "default"
+                }} onClick={() => { if (canManage) { setEditingRisk(risk); setShowRiskModal(true); } }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{risk.title}</span>
@@ -2000,10 +2016,12 @@ function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRis
                         border: `1px solid ${statusCfg.color}44`
                       }}>{statusCfg.label}</span>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(risk.id); }}
-                      style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
-                      <X size={14} />
-                    </button>
+                    {canManage && (
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(risk.id); }}
+                        style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
+                        <X size={14} />
+                      </button>
+                    )}
                   </div>
                   {risk.description && (
                     <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 8 }}>{risk.description}</p>
@@ -3021,12 +3039,6 @@ export default function App() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const handleSaveGroups = (groups: Group[]) => {
-    setProjects((prev) => prev.map((p) =>
-      p.id === activeProjectId ? { ...p, groups } : p
-    ));
-  };
-
   const handleCreateMeetingSeries = async (name: string, type: string) => {
     try {
       const series = await apiCreateMeetingSeries(activeProjectId, { name, type });
@@ -3168,6 +3180,24 @@ export default function App() {
 
   const currentProjectRole = currentUser?.role === "admin" ? "admin" : (activeProject?.userRole || "viewer");
 
+  const [systemGroups, setSystemGroups] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (loggedIn) {
+      getGroups().then(setSystemGroups).catch(console.error);
+    }
+  }, [loggedIn]);
+
+  const formattedGroups: Group[] = systemGroups.map((g: any) => ({
+    id: g.id,
+    name: g.name,
+    color: g.color,
+    members: (g.users || []).map((u: any) => ({
+      id: u.memberId || u.id,
+      name: u.name,
+    })),
+  }));
+
   const handleLogout = () => {
     clearToken();
     setLoggedIn(false);
@@ -3177,6 +3207,7 @@ export default function App() {
     try {
       setLoading(true);
       const projectsData = await getProjects();
+      console.log("API 回傳的專案:", JSON.stringify(projectsData, null, 2));
 
       const formatted: Project[] = await Promise.all(
         projectsData.map(async (p: any) => {
@@ -3199,22 +3230,13 @@ export default function App() {
             });
           });
 
-          const groups: Group[] = (p.groups || []).map((g: any) => ({
-            id: g.id,
-            name: g.name,
-            color: g.color,
-            members: (g.members || []).map((m: any) => ({
-              id: m.user?.memberId || m.userId,
-              name: m.user?.name || "",
-            })),
-          }));
-
           return {
             id: p.id,
             name: p.name,
             description: p.description || "",
             color: p.color || "#6366f1",
-            groups,
+            userRole: p.userRole || "viewer",
+            groups: [],
             columns: [
               { id: "todo",       title: "待處理", tasks: columnMap.todo },
               { id: "inprogress", title: "進行中", tasks: columnMap.inprogress },
@@ -3280,7 +3302,7 @@ export default function App() {
     ...col,
     tasks: col.tasks.filter((task) => {
       const memberName = (() => {
-        const m = findMemberById(activeProject?.groups || [], task.assignee);
+        const m = findMemberById(formattedGroups, task.assignee);
         return m ? m.name : task.assignee;
       })();
       const matchSearch = searchText === "" ||
@@ -3424,8 +3446,8 @@ export default function App() {
   const prepareTaskExportData = () => {
     const allTasks = columns.flatMap((c) => c.tasks);
     return allTasks.map((task) => {
-      const group = activeProject.groups.find((g) => g.id === task.groupId);
-      const assignee = findMemberById(activeProject.groups, task.assignee);
+      const group = formattedGroups.find((g) => g.id === task.groupId);
+      const assignee = findMemberById(formattedGroups, task.assignee);
       return {
         title: task.title,
         group: group?.name || "未分組",
@@ -3435,8 +3457,8 @@ export default function App() {
         endDate: getEffectiveEndDate(task),
         completion: getCompletion(task),
         subtasks: task.subtasks.map((sub) => {
-          const subGroup = activeProject.groups.find((g) => g.id === sub.groupId);
-          const subAssignee = findMemberById(activeProject.groups, sub.assignee);
+          const subGroup = formattedGroups.find((g) => g.id === sub.groupId);
+          const subAssignee = findMemberById(formattedGroups, sub.assignee);
           return {
             title: sub.title,
             group: subGroup?.name || "未分組",
@@ -3459,8 +3481,8 @@ export default function App() {
 
     allTasks.forEach((t) => {
       if (t.subtasks.length === 0 && t.assignee) {
-        const member = findMemberById(activeProject.groups, t.assignee);
-        const group = activeProject.groups.find((g) => g.id === t.groupId);
+        const member = findMemberById(formattedGroups, t.assignee);
+        const group = formattedGroups.find((g) => g.id === t.groupId);
         if (!memberMap[t.assignee]) {
           memberMap[t.assignee] = {
             name: member?.name || t.assignee,
@@ -3479,8 +3501,8 @@ export default function App() {
     allTasks.forEach((t) => {
       t.subtasks.forEach((s) => {
         if (s.assignee) {
-          const member = findMemberById(activeProject.groups, s.assignee);
-          const group = activeProject.groups.find((g) => g.id === s.groupId);
+          const member = findMemberById(formattedGroups, s.assignee);
+          const group = formattedGroups.find((g) => g.id === s.groupId);
           if (!memberMap[s.assignee]) {
             memberMap[s.assignee] = {
               name: member?.name || s.assignee,
@@ -3752,9 +3774,9 @@ export default function App() {
             </div>
 
             {/* 第二行：組別多選 */}
-            {activeProject?.groups?.length > 0 && (
+            {formattedGroups.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {activeProject.groups.map((g) => {
+                {formattedGroups.map((g) => {
                   const active = filterGroups.includes(g.id);
                   return (
                     <button key={g.id}
@@ -3762,7 +3784,7 @@ export default function App() {
                         if (active) {
                           const newGroups = filterGroups.filter((x) => x !== g.id);
                           setFilterGroups(newGroups);
-                          const remainingMemberIds = activeProject.groups
+                          const remainingMemberIds = formattedGroups
                             .filter((gr) => newGroups.includes(gr.id))
                             .flatMap((gr) => gr.members || [])
                             .map((m) => m.id);
@@ -3808,7 +3830,7 @@ export default function App() {
 
             {/* 第四行：人員篩選 - 依選中組別動態顯示 */}
             {filterGroups.length > 0 && (() => {
-              const selectedGroups = activeProject.groups.filter((g) => filterGroups.includes(g.id));
+              const selectedGroups = formattedGroups.filter((g) => filterGroups.includes(g.id));
               const memberMap = new Map<string, Member>();
               selectedGroups.flatMap((g) => g.members || []).forEach((m) => memberMap.set(m.id, m));
               const availableMembers = Array.from(memberMap.values());
@@ -3842,19 +3864,19 @@ export default function App() {
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
               <div className="board">
                 {filteredColumns.map((col) => (
-                  <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={activeProject?.groups || []} />
+                  <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={formattedGroups} />
                 ))}
               </div>
-              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={activeProject?.groups || []} />}</DragOverlay>
+              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={formattedGroups} />}</DragOverlay>
             </DndContext>
           ) : view === "gantt" ? (
-            <GanttView columns={filteredColumns} groups={activeProject?.groups || []} onEditTask={setEditingTask} />
+            <GanttView columns={filteredColumns} groups={formattedGroups} onEditTask={setEditingTask} />
           ) : view === "dashboard" ? (
-            <DashboardView columns={columns} groups={activeProject?.groups || []} />
+            <DashboardView columns={columns} groups={formattedGroups} />
           ) : view === "meetings" ? (
             <MeetingsView
               meetings={meetings}
-              groups={activeProject?.groups || []}
+              groups={formattedGroups}
               onCreateSeries={handleCreateMeetingSeries}
               onDeleteSeries={handleDeleteMeetingSeries}
               onCreateRecord={handleCreateMeetingRecord}
@@ -3864,15 +3886,16 @@ export default function App() {
           ) : view === "risks" ? (
             <RiskMatrixView
               risks={risks}
-              groups={activeProject?.groups || []}
+              groups={formattedGroups}
               onCreateRisk={handleCreateRisk}
               onUpdateRisk={handleUpdateRisk}
               onDeleteRisk={handleDeleteRisk}
+              canManage={hasPermission(currentProjectRole, "manage_risks")}
             />
           ) : (
             <WeeklyReportView
               columns={columns}
-              groups={activeProject?.groups || []}
+              groups={formattedGroups}
               risks={risks}
               weeklyReports={weeklyReports}
               onSaveNotes={handleSaveWeeklyNotes}
@@ -3883,7 +3906,7 @@ export default function App() {
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={activeProject?.groups ?? []} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
+        <TaskModal task={editingTask} groups={formattedGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
       )}
 
       {showProjectModal && (
@@ -3895,8 +3918,8 @@ export default function App() {
 
       {showGroupModal && (
         <GroupModal
-          groups={activeProject?.groups || []}
-          onSave={handleSaveGroups}
+          groups={formattedGroups}
+          onSave={() => getGroups().then(setSystemGroups).catch(console.error)}
           onClose={() => setShowGroupModal(false)}
         />
       )}
