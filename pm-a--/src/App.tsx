@@ -2617,10 +2617,11 @@ function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, 
 }
 
 // ── ProjectMembersView ───────────────────────────────────────────────
-function ProjectMembersView({ projectId, projectName, currentUser }: {
+function ProjectMembersView({ projectId, projectName, currentUser, onMembersChange }: {
   projectId: string;
   projectName: string;
   currentUser: any;
+  onMembersChange?: () => void;
 }) {
   const [members, setMembers] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -2658,6 +2659,7 @@ function ProjectMembersView({ projectId, projectName, currentUser }: {
     try {
       await removeProjectMember(projectId, userId);
       setMembers(prev => prev.filter(m => m.userId !== userId));
+      onMembersChange?.();
     } catch (err: any) {
       alert(err.message || "移除成員失敗");
     }
@@ -2668,6 +2670,7 @@ function ProjectMembersView({ projectId, projectName, currentUser }: {
       const member = await addProjectMember(projectId, userId, role);
       setMembers(prev => [...prev, member]);
       setShowAddModal(false);
+      onMembersChange?.();
     } catch (err: any) {
       alert(err.message || "邀請成員失敗");
     }
@@ -3203,6 +3206,23 @@ export default function App() {
     })),
   }));
 
+  const projectMemberGroups: Group[] = (() => {
+    const groupMap = new Map<string, { id: string; name: string; color: string; members: Member[] }>();
+    projectMembers.forEach((pm: any) => {
+      const user = pm.user;
+      if (!user) return;
+      const group = user.group;
+      const groupId = group?.id || "ungrouped";
+      const groupName = group?.name || "未分組";
+      const groupColor = group?.color || "#64748b";
+      if (!groupMap.has(groupId)) {
+        groupMap.set(groupId, { id: groupId, name: groupName, color: groupColor, members: [] });
+      }
+      groupMap.get(groupId)!.members.push({ id: user.memberId || user.id, name: user.name });
+    });
+    return Array.from(groupMap.values());
+  })();
+
   const handleLogout = () => {
     clearToken();
     setLoggedIn(false);
@@ -3290,9 +3310,22 @@ export default function App() {
     }
   };
 
+  const [projectMembers, setProjectMembers] = useState<any[]>([]);
+
+  const loadProjectMembers = async (projectId: string) => {
+    try {
+      const members = await getProjectMembers(projectId);
+      setProjectMembers(members);
+    } catch (err) {
+      console.error("載入專案成員失敗:", err);
+      setProjectMembers([]);
+    }
+  };
+
   useEffect(() => {
     if (activeProjectId) {
       loadProjectDetails(activeProjectId);
+      loadProjectMembers(activeProjectId);
     }
   }, [activeProjectId]);
 
@@ -3307,7 +3340,7 @@ export default function App() {
     ...col,
     tasks: col.tasks.filter((task) => {
       const memberName = (() => {
-        const m = findMemberById(formattedGroups, task.assignee);
+        const m = findMemberById(projectMemberGroups, task.assignee);
         return m ? m.name : task.assignee;
       })();
       const matchSearch = searchText === "" ||
@@ -3339,6 +3372,13 @@ export default function App() {
     if (!overCol) overCol = findColumn(over.id as string);
     if (!activeCol || !overCol || activeCol.id === overCol.id) return;
 
+    // 從「已完成」拖出：只有 PM 以上可以
+    if (activeCol.id === "done" && !hasPermission(currentProjectRole, "drag_to_done")) {
+      setToast("只有 PM 以上可以將任務從已完成移出");
+      return;
+    }
+
+    // 拖到「已完成」：檢查權限 + 完成度
     if (overCol.id === "done") {
       if (!hasPermission(currentProjectRole, "drag_to_done")) {
         setToast("只有 PM 以上可以將任務移至已完成");
@@ -3375,7 +3415,18 @@ export default function App() {
     const overCol = findColumn(over.id as string);
     if (!activeCol || !overCol) return;
 
+    // 從「已完成」拖出：只有 PM 以上可以
+    if (activeCol.id === "done" && overCol.id !== "done" && !hasPermission(currentProjectRole, "drag_to_done")) {
+      setToast("只有 PM 以上可以將任務從已完成移出");
+      return;
+    }
+
+    // 拖到「已完成」：檢查權限 + 完成度
     if (activeCol.id !== overCol.id && overCol.id === "done") {
+      if (!hasPermission(currentProjectRole, "drag_to_done")) {
+        setToast("只有 PM 以上可以將任務移至已完成");
+        return;
+      }
       const task = activeCol.tasks.find((t) => t.id === active.id);
       if (task && getCompletion(task) < 100) {
         setToast(`「${task.title}」完成度為 ${getCompletion(task)}%，需達 100% 才能移至已完成`);
@@ -3451,8 +3502,8 @@ export default function App() {
   const prepareTaskExportData = () => {
     const allTasks = columns.flatMap((c) => c.tasks);
     return allTasks.map((task) => {
-      const group = formattedGroups.find((g) => g.id === task.groupId);
-      const assignee = findMemberById(formattedGroups, task.assignee);
+      const group = projectMemberGroups.find((g) => g.id === task.groupId);
+      const assignee = findMemberById(projectMemberGroups, task.assignee);
       return {
         title: task.title,
         group: group?.name || "未分組",
@@ -3462,8 +3513,8 @@ export default function App() {
         endDate: getEffectiveEndDate(task),
         completion: getCompletion(task),
         subtasks: task.subtasks.map((sub) => {
-          const subGroup = formattedGroups.find((g) => g.id === sub.groupId);
-          const subAssignee = findMemberById(formattedGroups, sub.assignee);
+          const subGroup = projectMemberGroups.find((g) => g.id === sub.groupId);
+          const subAssignee = findMemberById(projectMemberGroups, sub.assignee);
           return {
             title: sub.title,
             group: subGroup?.name || "未分組",
@@ -3486,8 +3537,8 @@ export default function App() {
 
     allTasks.forEach((t) => {
       if (t.subtasks.length === 0 && t.assignee) {
-        const member = findMemberById(formattedGroups, t.assignee);
-        const group = formattedGroups.find((g) => g.id === t.groupId);
+        const member = findMemberById(projectMemberGroups, t.assignee);
+        const group = projectMemberGroups.find((g) => g.id === t.groupId);
         if (!memberMap[t.assignee]) {
           memberMap[t.assignee] = {
             name: member?.name || t.assignee,
@@ -3506,8 +3557,8 @@ export default function App() {
     allTasks.forEach((t) => {
       t.subtasks.forEach((s) => {
         if (s.assignee) {
-          const member = findMemberById(formattedGroups, s.assignee);
-          const group = formattedGroups.find((g) => g.id === s.groupId);
+          const member = findMemberById(projectMemberGroups, s.assignee);
+          const group = projectMemberGroups.find((g) => g.id === s.groupId);
           if (!memberMap[s.assignee]) {
             memberMap[s.assignee] = {
               name: member?.name || s.assignee,
@@ -3542,6 +3593,7 @@ export default function App() {
   const loadNotifications = async () => {
     try {
       const [notifs, countData] = await Promise.all([getNotifications(), getUnreadCount()]);
+      console.log("通知:", notifs, "未讀:", countData);
       setNotifications(notifs);
       setUnreadCount(countData.count);
     } catch (err) {
@@ -3713,6 +3765,7 @@ export default function App() {
             projectId={activeProject.id}
             projectName={activeProject.name}
             currentUser={currentUser}
+            onMembersChange={() => loadProjectMembers(activeProjectId)}
           />
         </div>
       ) : null}
@@ -3888,9 +3941,9 @@ export default function App() {
             </div>
 
             {/* 第二行：組別多選 */}
-            {formattedGroups.length > 0 && (
+            {projectMemberGroups.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {formattedGroups.map((g) => {
+                {projectMemberGroups.map((g) => {
                   const active = filterGroups.includes(g.id);
                   return (
                     <button key={g.id}
@@ -3898,7 +3951,7 @@ export default function App() {
                         if (active) {
                           const newGroups = filterGroups.filter((x) => x !== g.id);
                           setFilterGroups(newGroups);
-                          const remainingMemberIds = formattedGroups
+                          const remainingMemberIds = projectMemberGroups
                             .filter((gr) => newGroups.includes(gr.id))
                             .flatMap((gr) => gr.members || [])
                             .map((m) => m.id);
@@ -3944,7 +3997,7 @@ export default function App() {
 
             {/* 第四行：人員篩選 - 依選中組別動態顯示 */}
             {filterGroups.length > 0 && (() => {
-              const selectedGroups = formattedGroups.filter((g) => filterGroups.includes(g.id));
+              const selectedGroups = projectMemberGroups.filter((g) => filterGroups.includes(g.id));
               const memberMap = new Map<string, Member>();
               selectedGroups.flatMap((g) => g.members || []).forEach((m) => memberMap.set(m.id, m));
               const availableMembers = Array.from(memberMap.values());
@@ -3978,19 +4031,19 @@ export default function App() {
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
               <div className="board">
                 {filteredColumns.map((col) => (
-                  <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={formattedGroups} />
+                  <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={projectMemberGroups} />
                 ))}
               </div>
-              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={formattedGroups} />}</DragOverlay>
+              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={projectMemberGroups} />}</DragOverlay>
             </DndContext>
           ) : view === "gantt" ? (
-            <GanttView columns={filteredColumns} groups={formattedGroups} onEditTask={setEditingTask} />
+            <GanttView columns={filteredColumns} groups={projectMemberGroups} onEditTask={setEditingTask} />
           ) : view === "dashboard" ? (
-            <DashboardView columns={columns} groups={formattedGroups} />
+            <DashboardView columns={columns} groups={projectMemberGroups} />
           ) : view === "meetings" ? (
             <MeetingsView
               meetings={meetings}
-              groups={formattedGroups}
+              groups={projectMemberGroups}
               onCreateSeries={handleCreateMeetingSeries}
               onDeleteSeries={handleDeleteMeetingSeries}
               onCreateRecord={handleCreateMeetingRecord}
@@ -4009,7 +4062,7 @@ export default function App() {
           ) : (
             <WeeklyReportView
               columns={columns}
-              groups={formattedGroups}
+              groups={projectMemberGroups}
               risks={risks}
               weeklyReports={weeklyReports}
               onSaveNotes={handleSaveWeeklyNotes}
@@ -4020,7 +4073,7 @@ export default function App() {
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={formattedGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
+        <TaskModal task={editingTask} groups={projectMemberGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
       )}
 
       {showProjectModal && (
