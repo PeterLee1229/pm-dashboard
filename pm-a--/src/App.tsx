@@ -8,6 +8,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   addGroupMember, removeGroupMember, getUsers, getGroups,
   getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
   getNotifications, getUnreadCount, markAsRead, markAllAsRead,
+  getComments, addComment, deleteComment,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
   createMeetingRecord as apiCreateMeetingRecord,
@@ -302,9 +303,46 @@ function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentU
   currentUser: any;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
+  const [comments, setComments] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+
   const canEdit = hasPermission(currentProjectRole, "edit_all_tasks") ||
     (hasPermission(currentProjectRole, "edit_own_task") && task.assignee === currentUser?.memberId);
-  console.log("TaskModal groups:", groups);
+
+  useEffect(() => { loadComments(); }, [task.id]);
+
+  const loadComments = async () => {
+    try {
+      setLoadingComments(true);
+      const data = await getComments(task.id);
+      setComments(data);
+    } catch (err) {
+      console.error("載入評論失敗:", err);
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+    try {
+      const comment = await addComment(task.id, newComment.trim());
+      setComments(prev => [...prev, comment]);
+      setNewComment("");
+    } catch (err) {
+      console.error("新增評論失敗:", err);
+    }
+  };
+
+  const handleDeleteComment = async (id: string) => {
+    try {
+      await deleteComment(id);
+      setComments(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      console.error("刪除評論失敗:", err);
+    }
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -550,6 +588,57 @@ function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentU
               />
             </div>
           )}
+
+          {/* 評論區 */}
+          <div className="field" style={{ borderTop: "1px solid #ffffff08", paddingTop: 16 }}>
+            <label className="field-label" style={{ fontSize: 13 }}>💬 評論討論</label>
+            <div style={{ maxHeight: 250, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+              {loadingComments ? (
+                <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>載入中...</p>
+              ) : comments.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>尚無評論</p>
+              ) : comments.map((c: any) => (
+                <div key={c.id} style={{ background: "#0f1117", borderRadius: 8, padding: "10px 12px", border: "1px solid #ffffff08" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{c.user?.name || "未知"}</span>
+                      {c.user?.group && (
+                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 99, background: c.user.group.color + "22", color: c.user.group.color }}>{c.user.group.name}</span>
+                      )}
+                      <span style={{ fontSize: 10, color: "#475569" }}>{new Date(c.createdAt).toLocaleString("zh-TW")}</span>
+                    </div>
+                    {(c.userId === currentUser?.id || currentUser?.role === "admin") && (
+                      <button onClick={() => handleDeleteComment(c.id)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{c.content}</p>
+                </div>
+              ))}
+            </div>
+            {hasPermission(currentProjectRole, "edit_own_task") && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <textarea
+                  className="field-input"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="輸入評論..."
+                  rows={2}
+                  style={{ flex: 1, resize: "none" }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }}
+                />
+                <button onClick={handleAddComment} style={{
+                  background: "#6366f1", border: "none", borderRadius: 8,
+                  color: "#fff", fontSize: 12, fontWeight: 600,
+                  padding: "0 16px", cursor: "pointer", alignSelf: "flex-end",
+                  height: 36, whiteSpace: "nowrap"
+                }}>
+                  發送
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="modal-footer">
@@ -3834,6 +3923,7 @@ export default function App() {
                         const NOTIF_ICONS: Record<string, string> = {
                           task_assigned: "📋", task_moved: "🔄",
                           project_invited: "👋", risk_updated: "⚠️", meeting_created: "📅",
+                          comment_added: "💬",
                         };
                         return (
                           <div key={n.id} onClick={async () => {

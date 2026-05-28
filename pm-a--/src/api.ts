@@ -309,3 +309,18 @@ export async function markAsRead(id: string) {
 export async function markAllAsRead() {
   return apiFetch("/notifications/read-all", { method: "PUT" });
 }
+
+export async function getComments(taskId: string) {
+  return apiFetch(`/tasks/${taskId}/comments`);
+}
+
+export async function addComment(taskId: string, content: string) {
+  return apiFetch(`/tasks/${taskId}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function deleteComment(id: string) {
+  return apiFetch(`/comments/${id}`, { method: "DELETE" });
+}
