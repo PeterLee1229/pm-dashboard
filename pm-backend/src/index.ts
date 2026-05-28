@@ -830,6 +830,62 @@ app.delete("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
   res.json({ success: true });
 });
 
+// ── 評論 API ──────────────────────────────────────────────────────────
+
+app.get("/api/tasks/:taskId/comments", authMiddleware, async (req: any, res) => {
+  const comments = await prisma.comment.findMany({
+    where: { taskId: req.params.taskId },
+    include: {
+      user: {
+        select: { id: true, name: true, memberId: true, group: { select: { name: true, color: true } } }
+      }
+    },
+    orderBy: { createdAt: "asc" }
+  });
+  res.json(comments);
+});
+
+app.post("/api/tasks/:taskId/comments", authMiddleware, async (req: any, res) => {
+  const comment = await prisma.comment.create({
+    data: {
+      content: req.body.content,
+      taskId: req.params.taskId,
+      userId: req.user.userId,
+    },
+    include: {
+      user: {
+        select: { id: true, name: true, memberId: true, group: { select: { name: true, color: true } } }
+      }
+    }
+  });
+
+  const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+  if (task && task.assignee) {
+    const assigneeUser = await prisma.user.findFirst({ where: { memberId: task.assignee } });
+    if (assigneeUser && assigneeUser.id !== req.user.userId) {
+      await createNotification(
+        assigneeUser.id, "comment_added", "新評論",
+        `在任務「${task.title}」中有新的評論`,
+        task.projectId, task.id
+      );
+    }
+  }
+
+  res.status(201).json(comment);
+});
+
+app.delete("/api/comments/:id", authMiddleware, async (req: any, res) => {
+  const comment = await prisma.comment.findUnique({ where: { id: req.params.id } });
+  if (!comment) return res.status(404).json({ error: "找不到評論" });
+
+  if (comment.userId !== req.user.userId && !(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "只能刪除自己的評論" });
+  }
+
+  await prisma.comment.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
 // ── 通知 API ──────────────────────────────────────────────────────────
 
 app.get("/api/notifications", authMiddleware, async (req: any, res) => {

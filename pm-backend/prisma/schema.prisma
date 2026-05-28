@@ -19,6 +19,7 @@ model User {
   ownedProjects      Project[]
   createdAt          DateTime @default(now())
   notifications      Notification[]
+  comments           Comment[]
 }
 
 model Task {
@@ -38,6 +39,7 @@ model Task {
   subtasks    SubTask[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  comments    Comment[]
 }
 
 model SubTask {
@@ -149,4 +151,15 @@ model Notification {
   taskId    String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
