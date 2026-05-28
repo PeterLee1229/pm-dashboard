@@ -168,35 +168,40 @@ app.get("/api/groups", async (_req, res) => {
 // ── 專案 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects", authMiddleware, async (req: any, res) => {
-  const isAdminUser = await isAdmin(req.user.userId);
+  try {
+    const isAdminUser = await isAdmin(req.user.userId);
 
-  const projects = await prisma.project.findMany({
-    where: isAdminUser ? {} : {
-      members: { some: { userId: req.user.userId } }
-    },
-    include: {
-      groups: {
-        include: {
-          members: {
-            include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
+    const projects = await prisma.project.findMany({
+      where: isAdminUser ? {} : {
+        members: { some: { userId: req.user.userId } }
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true, name: true, memberId: true, email: true,
+                group: { select: { id: true, name: true, color: true } }
+              }
+            }
           }
         }
-      },
-      members: {
-        include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
       }
-    }
-  });
+    });
 
-  const result = projects.map((p: any) => {
-    const myMembership = p.members.find((m: any) => m.userId === req.user.userId);
-    return {
-      ...p,
-      userRole: isAdminUser ? "admin" : (myMembership?.role || "viewer"),
-    };
-  });
+    const result = projects.map(p => {
+      const myMembership = p.members.find(m => m.userId === req.user.userId);
+      return {
+        ...p,
+        userRole: isAdminUser ? "admin" : (myMembership?.role || "viewer"),
+      };
+    });
 
-  res.json(result);
+    res.json(result);
+  } catch (err) {
+    console.error("取得專案錯誤:", err);
+    res.status(500).json({ error: "取得專案失敗" });
+  }
 });
 
 app.post("/api/projects", authMiddleware, async (req: any, res) => {
