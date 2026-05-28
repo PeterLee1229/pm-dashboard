@@ -7,6 +7,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   getProjectGroups, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup,
   addGroupMember, removeGroupMember, getUsers, getGroups,
   getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
+  getNotifications, getUnreadCount, markAsRead, markAllAsRead,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
   createMeetingRecord as apiCreateMeetingRecord,
@@ -3039,6 +3040,10 @@ export default function App() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
   const handleCreateMeetingSeries = async (name: string, type: string) => {
     try {
       const series = await apiCreateMeetingSeries(activeProjectId, { name, type });
@@ -3534,6 +3539,32 @@ export default function App() {
     }
   }, [showExportMenu]);
 
+  const loadNotifications = async () => {
+    try {
+      const [notifs, countData] = await Promise.all([getNotifications(), getUnreadCount()]);
+      setNotifications(notifs);
+      setUnreadCount(countData.count);
+    } catch (err) {
+      console.error("載入通知失敗:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (loggedIn) {
+      loadNotifications();
+      const interval = setInterval(loadNotifications, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [loggedIn]);
+
+  useEffect(() => {
+    const handleClick = () => setShowNotifications(false);
+    if (showNotifications) {
+      setTimeout(() => document.addEventListener("click", handleClick), 0);
+      return () => document.removeEventListener("click", handleClick);
+    }
+  }, [showNotifications]);
+
   const totalTasks = columns.reduce((s, c) => s + c.tasks.length, 0);
   const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
 
@@ -3699,6 +3730,89 @@ export default function App() {
                 <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
               </div>
               <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
+
+              {/* 通知鈴鐺 */}
+              <div style={{ position: "relative" }}>
+                <button onClick={() => setShowNotifications(!showNotifications)} style={{
+                  background: "none", border: "none", color: "#94a3b8",
+                  cursor: "pointer", padding: 8, borderRadius: 8, position: "relative",
+                  display: "flex", alignItems: "center"
+                }}>
+                  🔔
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: "absolute", top: 2, right: 2,
+                      background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 700,
+                      width: 16, height: 16, borderRadius: 99,
+                      display: "flex", alignItems: "center", justifyContent: "center"
+                    }}>{unreadCount > 9 ? "9+" : unreadCount}</span>
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div onClick={(e) => e.stopPropagation()} style={{
+                    position: "absolute", top: "100%", right: 0, marginTop: 8,
+                    background: "#1a2030", border: "1px solid #ffffff12", borderRadius: 12,
+                    width: 360, maxHeight: 480, overflow: "hidden",
+                    boxShadow: "0 16px 48px #000a", zIndex: 200
+                  }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "14px 16px", borderBottom: "1px solid #ffffff08"
+                    }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>通知</span>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {unreadCount > 0 && (
+                          <button onClick={async () => { await markAllAsRead(); loadNotifications(); }} style={{
+                            background: "none", border: "none", color: "#6366f1",
+                            fontSize: 11, cursor: "pointer"
+                          }}>全部已讀</button>
+                        )}
+                        <button onClick={() => setShowNotifications(false)} style={{
+                          background: "none", border: "none", color: "#64748b",
+                          cursor: "pointer", padding: 2, display: "flex"
+                        }}><X size={14} /></button>
+                      </div>
+                    </div>
+
+                    <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                      {notifications.length === 0 ? (
+                        <div style={{ padding: 32, textAlign: "center", color: "#475569", fontSize: 13 }}>暫無通知</div>
+                      ) : notifications.map((n: any) => {
+                        const NOTIF_ICONS: Record<string, string> = {
+                          task_assigned: "📋", task_moved: "🔄",
+                          project_invited: "👋", risk_updated: "⚠️", meeting_created: "📅",
+                        };
+                        return (
+                          <div key={n.id} onClick={async () => {
+                            if (!n.isRead) { await markAsRead(n.id); loadNotifications(); }
+                          }} style={{
+                            padding: "12px 16px", borderBottom: "1px solid #ffffff06",
+                            cursor: n.isRead ? "default" : "pointer",
+                            background: n.isRead ? "transparent" : "#6366f108",
+                          }}>
+                            <div style={{ display: "flex", gap: 10 }}>
+                              <span style={{ fontSize: 18, flexShrink: 0 }}>{NOTIF_ICONS[n.type] || "📌"}</span>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: n.isRead ? "#94a3b8" : "#e2e8f0" }}>{n.title}</span>
+                                  {!n.isRead && (
+                                    <div style={{ width: 6, height: 6, borderRadius: 99, background: "#6366f1", flexShrink: 0 }} />
+                                  )}
+                                </div>
+                                <p style={{ fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>{n.message}</p>
+                                <span style={{ fontSize: 10, color: "#475569", marginTop: 4, display: "block" }}>
+                                  {new Date(n.createdAt).toLocaleString("zh-TW")}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {hasPermission(currentProjectRole, "export") && <div style={{ position: "relative" }}>
                 <button onClick={() => setShowExportMenu((prev) => !prev)}

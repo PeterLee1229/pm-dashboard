@@ -293,3 +293,19 @@ export async function updateProjectMemberRole(projectId: string, userId: string,
     body: JSON.stringify({ role }),
   });
 }
+
+export async function getNotifications() {
+  return apiFetch("/notifications");
+}
+
+export async function getUnreadCount() {
+  return apiFetch("/notifications/unread-count");
+}
+
+export async function markAsRead(id: string) {
+  return apiFetch(`/notifications/${id}/read`, { method: "PUT" });
+}
+
+export async function markAllAsRead() {
+  return apiFetch("/notifications/read-all", { method: "PUT" });
+}
