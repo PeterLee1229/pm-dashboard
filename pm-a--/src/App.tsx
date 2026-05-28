@@ -210,6 +210,27 @@ const initialProjects: Project[] = [
   },
 ];
 
+function hasPermission(userRole: string, action: string): boolean {
+  const permissions: Record<string, string[]> = {
+    "delete_project":  ["owner"],
+    "manage_groups":   ["owner", "pm"],
+    "create_task":     ["owner", "pm", "group_leader"],
+    "delete_task":     ["owner", "pm", "group_leader"],
+    "edit_all_tasks":  ["owner", "pm", "group_leader"],
+    "edit_own_task":   ["owner", "pm", "group_leader", "member"],
+    "drag_to_done":    ["owner", "pm"],
+    "drag_task":       ["owner", "pm", "group_leader", "member"],
+    "manage_meetings": ["owner", "pm", "group_leader"],
+    "manage_risks":    ["owner", "pm", "group_leader", "member"],
+    "manage_weekly":   ["owner", "pm"],
+    "export":          ["owner", "pm", "group_leader", "member"],
+    "manage_members":  ["owner"],
+    "invite_members":  ["owner", "pm", "group_leader"],
+  };
+  const allowed = permissions[action] || [];
+  return allowed.includes(userRole) || userRole === "admin";
+}
+
 function getTotalHours(logs: TimeLog[]): number {
   return Math.round(logs.reduce((sum, l) => sum + l.hours, 0) * 10) / 10;
 }
@@ -270,13 +291,17 @@ function formatDateStr(d: Date): string {
 }
 
 // ── Task Edit Modal ──────────────────────────────────────────────────
-function TaskModal({ task, groups, onSave, onClose }: {
+function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentUser }: {
   task: Task;
   groups: Group[];
   onSave: (updated: Task) => void;
   onClose: () => void;
+  currentProjectRole: string;
+  currentUser: any;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
+  const canEdit = hasPermission(currentProjectRole, "edit_all_tasks") ||
+    (hasPermission(currentProjectRole, "edit_own_task") && task.assignee === currentUser?.memberId);
   console.log("TaskModal groups:", groups);
 
   return (
@@ -288,16 +313,21 @@ function TaskModal({ task, groups, onSave, onClose }: {
         </div>
 
         <div className="modal-body">
+          {!canEdit && (
+            <div style={{ background: "#f59e0b18", border: "1px solid #f59e0b33", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#f59e0b", marginBottom: 4 }}>
+              你只有檢視權限，無法編輯此任務
+            </div>
+          )}
           <div className="field">
             <label className="field-label"><Flag size={13} /> 任務名稱</label>
-            <input className="field-input" value={form.title}
+            <input className="field-input" value={form.title} disabled={!canEdit}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               placeholder="輸入任務名稱..." />
           </div>
 
           <div className="field">
             <label className="field-label"><AlignLeft size={13} /> 描述</label>
-            <textarea className="field-input field-textarea" value={form.description}
+            <textarea className="field-input field-textarea" value={form.description} disabled={!canEdit}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="輸入任務描述..." rows={4} />
           </div>
@@ -521,8 +551,10 @@ function TaskModal({ task, groups, onSave, onClose }: {
         </div>
 
         <div className="modal-footer">
-          <button className="btn-cancel" onClick={onClose}>取消</button>
-          <button className="btn-save" onClick={() => { onSave(form); onClose(); }}>儲存變更</button>
+          <button className="btn-cancel" onClick={onClose}>關閉</button>
+          {canEdit && (
+            <button className="btn-save" onClick={() => { onSave(form); onClose(); }}>儲存變更</button>
+          )}
         </div>
       </div>
     </div>
@@ -530,8 +562,8 @@ function TaskModal({ task, groups, onSave, onClose }: {
 }
 
 // ── Task Card ────────────────────────────────────────────────────────
-function TaskCard({ task, isDragging = false, onClick, groups = [] }: {
-  task: Task; isDragging?: boolean; onClick?: () => void; groups?: Group[];
+function TaskCard({ task, isDragging = false, onClick, groups = [], canDrag = true }: {
+  task: Task; isDragging?: boolean; onClick?: () => void; groups?: Group[]; canDrag?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging: isSortableDragging } =
     useSortable({ id: task.id });
@@ -545,9 +577,11 @@ function TaskCard({ task, isDragging = false, onClick, groups = [] }: {
         <span className="priority-badge" style={{ background: p.color + "22", color: p.color, border: `1px solid ${p.color}44` }}>
           {p.label}優先
         </span>
-        <button className="drag-handle" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
-          <GripVertical size={14} />
-        </button>
+        {canDrag && (
+          <button className="drag-handle" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
+            <GripVertical size={14} />
+          </button>
+        )}
       </div>
       <p className="task-title">{task.title}</p>
       {task.description && <p className="task-desc">{task.description}</p>}
@@ -578,8 +612,10 @@ function TaskCard({ task, isDragging = false, onClick, groups = [] }: {
 }
 
 // ── Column ───────────────────────────────────────────────────────────
-function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }: {
+function ColumnComponent({ column, canAdd, canDrag, onAddTask, onDeleteTask, onEditTask, groups }: {
   column: Column;
+  canAdd: boolean;
+  canDrag: boolean;
   onAddTask: (colId: string, title: string) => void;
   onDeleteTask: (colId: string, taskId: string) => void;
   onEditTask: (task: Task) => void;
@@ -589,7 +625,7 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }
   const [newTitle, setNewTitle] = useState("");
   const color = COLUMN_COLORS[column.id] || "#6366f1";
   const icon = COLUMN_ICONS[column.id];
-  const canAdd = column.id === "todo" || column.id === "inprogress";
+  const isAddableColumn = column.id === "todo" || column.id === "inprogress";
   const { setNodeRef: setDropRef } = useDroppable({ id: column.id });
 
   const handleAdd = () => {
@@ -604,7 +640,7 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }
           <span className="column-title">{column.title}</span>
           <span className="task-count" style={{ background: color + "22", color }}>{column.tasks.length}</span>
         </div>
-        {canAdd && (
+        {canAdd && isAddableColumn && (
           <button className="add-btn" onClick={() => setAdding(true)} style={{ color }}><Plus size={15} /></button>
         )}
       </div>
@@ -613,16 +649,18 @@ function ColumnComponent({ column, onAddTask, onDeleteTask, onEditTask, groups }
         <div className="task-list" ref={setDropRef}>
           {column.tasks.map((task) => (
             <div key={task.id} style={{ position: "relative" }}>
-              <TaskCard task={task} onClick={() => onEditTask(task)} groups={groups} />
-              <button className="delete-task" onClick={(e) => { e.stopPropagation(); onDeleteTask(column.id, task.id); }}>
-                <X size={11} />
-              </button>
+              <TaskCard task={task} onClick={() => onEditTask(task)} groups={groups} canDrag={canDrag} />
+              {canAdd && (
+                <button className="delete-task" onClick={(e) => { e.stopPropagation(); onDeleteTask(column.id, task.id); }}>
+                  <X size={11} />
+                </button>
+              )}
             </div>
           ))}
         </div>
       </SortableContext>
 
-      {canAdd && adding && (
+      {canAdd && isAddableColumn && adding && (
         <div className="add-form">
           <input autoFocus className="add-input" placeholder="輸入任務名稱..."
             value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
@@ -895,7 +933,7 @@ function GroupModal({ groups, onSave, onClose }: {
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject }: {
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject, currentProjectRole }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members";
   setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members") => void;
   projects: Project[];
@@ -907,15 +945,25 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   onLogout: () => void;
   currentUser: any;
   activeProject: Project | undefined;
+  currentProjectRole: string;
 }) {
-  const items = [
-    { id: "kanban",    label: "看板",     icon: <Circle size={16} /> },
-    { id: "gantt",     label: "甘特圖",   icon: <Clock size={16} /> },
-    { id: "dashboard", label: "儀表板",   icon: <BarChart2 size={16} /> },
-    { id: "meetings",  label: "會議記錄", icon: <AlignLeft size={16} /> },
-    { id: "risks",     label: "風險管理", icon: <AlertCircle size={16} /> },
-    { id: "weekly",    label: "週報",     icon: <CheckCircle2 size={16} /> },
-  ] as const;
+  const sidebarBtn = (id: typeof view, label: string, icon: React.ReactNode) => {
+    const active = view === id;
+    return (
+      <button key={id} onClick={() => setView(id)} style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "10px 12px", borderRadius: 8, border: "none",
+        background: active ? "#6366f122" : "transparent",
+        color: active ? "#6366f1" : "#64748b",
+        fontSize: 13, fontWeight: active ? 600 : 400,
+        cursor: "pointer", textAlign: "left",
+        borderLeft: active ? "3px solid #6366f1" : "3px solid transparent",
+        width: "100%",
+      }}>
+        {icon}{label}
+      </button>
+    );
+  };
 
   return (
     <div style={{
@@ -977,27 +1025,16 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
         <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
 
         {/* 視圖切換 */}
-        {items.map((item) => {
-          const active = view === item.id;
-          return (
-            <button key={item.id} onClick={() => setView(item.id)} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px", borderRadius: 8, border: "none",
-              background: active ? "#6366f122" : "transparent",
-              color: active ? "#6366f1" : "#64748b",
-              fontSize: 13, fontWeight: active ? 600 : 400,
-              cursor: "pointer", textAlign: "left",
-              borderLeft: active ? "3px solid #6366f1" : "3px solid transparent",
-              width: "100%",
-            }}>
-              {item.icon}{item.label}
-            </button>
-          );
-        })}
+        {sidebarBtn("kanban",    "看板",   <Circle size={16} />)}
+        {sidebarBtn("gantt",     "甘特圖", <Clock size={16} />)}
+        {sidebarBtn("dashboard", "儀表板", <BarChart2 size={16} />)}
+        {hasPermission(currentProjectRole, "manage_meetings") && sidebarBtn("meetings", "會議記錄", <AlignLeft size={16} />)}
+        {hasPermission(currentProjectRole, "manage_risks")    && sidebarBtn("risks",    "風險管理", <AlertCircle size={16} />)}
+        {hasPermission(currentProjectRole, "manage_weekly")   && sidebarBtn("weekly",   "週報",     <CheckCircle2 size={16} />)}
 
         {/* 專案成員 + 管理功能 */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
-          {(currentUser?.role === "admin" || activeProject?.userRole === "owner") && (
+          {hasPermission(currentProjectRole, "manage_members") && (
             <button onClick={() => setView("project_members")} style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "10px 12px", borderRadius: 8, border: "none",
@@ -3129,6 +3166,8 @@ export default function App() {
   const [loggedIn, setLoggedIn] = useState(isLoggedIn());
   const [currentUser, setCurrentUser] = useState(getCurrentUser());
 
+  const currentProjectRole = currentUser?.role === "admin" ? "admin" : (activeProject?.userRole || "viewer");
+
   const handleLogout = () => {
     clearToken();
     setLoggedIn(false);
@@ -3265,12 +3304,19 @@ export default function App() {
   const handleDragOver = (e: DragOverEvent) => {
     const { active, over } = e;
     if (!over) return;
+
+    if (!hasPermission(currentProjectRole, "drag_task")) return;
+
     const activeCol = findColumn(active.id as string);
     let overCol = columns.find((c) => c.id === over.id);
     if (!overCol) overCol = findColumn(over.id as string);
     if (!activeCol || !overCol || activeCol.id === overCol.id) return;
 
     if (overCol.id === "done") {
+      if (!hasPermission(currentProjectRole, "drag_to_done")) {
+        setToast("只有 PM 以上可以將任務移至已完成");
+        return;
+      }
       const task = activeCol.tasks.find((t) => t.id === active.id);
       if (task) {
         const completion = getCompletion(task);
@@ -3601,6 +3647,7 @@ export default function App() {
         onLogout={handleLogout}
         currentUser={currentUser}
         activeProject={activeProject}
+        currentProjectRole={currentProjectRole}
       />
 
       {view === "admin" && currentUser?.role === "admin" ? (
@@ -3631,7 +3678,7 @@ export default function App() {
               </div>
               <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
 
-              <div style={{ position: "relative" }}>
+              {hasPermission(currentProjectRole, "export") && <div style={{ position: "relative" }}>
                 <button onClick={() => setShowExportMenu((prev) => !prev)}
                   style={{
                     background: "#6366f122", border: "1px solid #6366f144",
@@ -3679,7 +3726,7 @@ export default function App() {
                     </button>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
           </div>
 
@@ -3795,7 +3842,7 @@ export default function App() {
             <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
               <div className="board">
                 {filteredColumns.map((col) => (
-                  <ColumnComponent key={col.id} column={col} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={activeProject?.groups || []} />
+                  <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={activeProject?.groups || []} />
                 ))}
               </div>
               <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={activeProject?.groups || []} />}</DragOverlay>
@@ -3836,7 +3883,7 @@ export default function App() {
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={activeProject?.groups ?? []} onSave={handleSaveTask} onClose={() => setEditingTask(null)} />
+        <TaskModal task={editingTask} groups={activeProject?.groups ?? []} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
       )}
 
       {showProjectModal && (
