@@ -1030,6 +1030,64 @@ app.get("/api/projects/:projectId/activities", authMiddleware, async (req: any, 
   res.json(activities);
 });
 
+// ── 搜尋 API ──────────────────────────────────────────────────────────
+
+app.get("/api/projects/:projectId/search", authMiddleware, async (req: any, res) => {
+  const query = (req.query.q as string || "").trim();
+  if (!query) return res.json({ tasks: [], risks: [], meetings: [] });
+
+  const tasks = await prisma.task.findMany({
+    where: {
+      projectId: req.params.projectId,
+      OR: [
+        { title: { contains: query, mode: "insensitive" } },
+        { description: { contains: query, mode: "insensitive" } },
+        { assignee: { contains: query, mode: "insensitive" } },
+      ]
+    },
+    include: { subtasks: true },
+    take: 20,
+  });
+
+  const subtasks = await prisma.subTask.findMany({
+    where: {
+      task: { projectId: req.params.projectId },
+      OR: [
+        { title: { contains: query, mode: "insensitive" } },
+        { description: { contains: query, mode: "insensitive" } },
+        { assignee: { contains: query, mode: "insensitive" } },
+      ]
+    },
+    include: { task: { select: { id: true, title: true } } },
+    take: 20,
+  });
+
+  const risks = await prisma.risk.findMany({
+    where: {
+      projectId: req.params.projectId,
+      OR: [
+        { title: { contains: query, mode: "insensitive" } },
+        { description: { contains: query, mode: "insensitive" } },
+        { countermeasure: { contains: query, mode: "insensitive" } },
+      ]
+    },
+    take: 20,
+  });
+
+  const meetingRecords = await prisma.meetingRecord.findMany({
+    where: {
+      series: { projectId: req.params.projectId },
+      OR: [
+        { summary: { contains: query, mode: "insensitive" } },
+      ]
+    },
+    include: { series: { select: { id: true, name: true } } },
+    take: 20,
+  });
+
+  res.json({ tasks, subtasks, risks, meetings: meetingRecords });
+});
+
 // ── 啟動伺服器 ────────────────────────────────────────────────────────
 
 app.listen(3000, () => {
