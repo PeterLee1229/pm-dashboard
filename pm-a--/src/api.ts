@@ -328,3 +328,20 @@ export async function deleteComment(id: string) {
 export async function getActivities(projectId: string) {
   return apiFetch(`/projects/${projectId}/activities`);
 }
+
+export async function getAttachments(taskId: string) {
+  return apiFetch(`/tasks/${taskId}/attachments`);
+}
+
+export async function addAttachment(taskId: string, name: string, url: string) {
+  return apiFetch(`/tasks/${taskId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify({ name, url }),
+  });
+}
+
+export async function deleteAttachment(id: string) {
+  return apiFetch(`/attachments/${id}`, {
+    method: "DELETE",
+  });
+}

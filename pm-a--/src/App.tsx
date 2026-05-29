@@ -9,6 +9,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
   getNotifications, getUnreadCount, markAsRead, markAllAsRead,
   getComments, addComment, deleteComment,
+  getAttachments, addAttachment, deleteAttachment,
   getActivities,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
@@ -307,11 +308,47 @@ function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentU
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [newAttachName, setNewAttachName] = useState("");
+  const [newAttachUrl, setNewAttachUrl] = useState("");
 
   const canEdit = hasPermission(currentProjectRole, "edit_all_tasks") ||
     (hasPermission(currentProjectRole, "edit_own_task") && task.assignee === currentUser?.memberId);
 
-  useEffect(() => { loadComments(); }, [task.id]);
+  useEffect(() => {
+    loadComments();
+    loadAttachments();
+  }, [task.id]);
+
+  const loadAttachments = async () => {
+    try {
+      const data = await getAttachments(task.id);
+      setAttachments(data);
+    } catch (err) {
+      console.error("載入附件失敗:", err);
+    }
+  };
+
+  const handleAddAttachment = async () => {
+    if (!newAttachName.trim() || !newAttachUrl.trim()) return;
+    try {
+      const attachment = await addAttachment(task.id, newAttachName.trim(), newAttachUrl.trim());
+      setAttachments(prev => [attachment, ...prev]);
+      setNewAttachName("");
+      setNewAttachUrl("");
+    } catch (err) {
+      console.error("新增附件失敗:", err);
+    }
+  };
+
+  const handleDeleteAttachment = async (id: string) => {
+    try {
+      await deleteAttachment(id);
+      setAttachments(prev => prev.filter(a => a.id !== id));
+    } catch (err) {
+      console.error("刪除附件失敗:", err);
+    }
+  };
 
   const loadComments = async () => {
     try {
@@ -589,6 +626,75 @@ function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentU
               />
             </div>
           )}
+
+          {/* 附件 */}
+          <div className="field" style={{ borderTop: "1px solid #ffffff08", paddingTop: 16 }}>
+            <label className="field-label" style={{ fontSize: 13 }}>📎 附件連結</label>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              {attachments.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 8 }}>尚無附件</p>
+              ) : attachments.map((a: any) => (
+                <div key={a.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: "#0f1117", borderRadius: 8, padding: "8px 12px",
+                  border: "1px solid #ffffff08"
+                }}>
+                  <span style={{ fontSize: 16 }}>📄</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <a href={a.url} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, fontWeight: 600, color: "#6366f1", textDecoration: "none" }}>
+                      {a.name}
+                    </a>
+                    <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, color: "#475569" }}>
+                        {a.uploader?.name || ""}（{a.uploader?.memberId || ""}）
+                      </span>
+                      <span style={{ fontSize: 10, color: "#475569" }}>
+                        {new Date(a.createdAt).toLocaleDateString("zh-TW")}
+                      </span>
+                    </div>
+                  </div>
+                  {(a.uploaderId === currentUser?.id || currentUser?.role === "admin" ||
+                    hasPermission(currentProjectRole, "edit_all_tasks")) && (
+                    <button onClick={() => handleDeleteAttachment(a.id)} style={{
+                      background: "none", border: "none", color: "#ef4444",
+                      cursor: "pointer", padding: 2, display: "flex"
+                    }}>
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {canEdit && (
+              <div style={{
+                background: "#0f1117", borderRadius: 8, padding: 10,
+                border: "1px solid #ffffff08"
+              }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                  <input className="field-input" value={newAttachName}
+                    onChange={(e) => setNewAttachName(e.target.value)}
+                    placeholder="附件名稱（例如：需求規格書 v2）"
+                    style={{ flex: 1, fontSize: 12 }} />
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input className="field-input" value={newAttachUrl}
+                    onChange={(e) => setNewAttachUrl(e.target.value)}
+                    placeholder="貼上 Google Drive / OneDrive / Notion 連結..."
+                    style={{ flex: 1, fontSize: 12 }}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddAttachment(); }} />
+                  <button onClick={handleAddAttachment} style={{
+                    background: "#6366f1", border: "none", borderRadius: 8,
+                    color: "#fff", fontSize: 12, fontWeight: 600,
+                    padding: "0 16px", cursor: "pointer", whiteSpace: "nowrap",
+                    height: 36, opacity: (newAttachName.trim() && newAttachUrl.trim()) ? 1 : 0.4
+                  }}>新增</button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 評論區 */}
           <div className="field" style={{ borderTop: "1px solid #ffffff08", paddingTop: 16 }}>
@@ -1229,7 +1335,7 @@ function CalendarView({ columns, meetings, groups }: {
               </div>
             )}
 
-            <p style={{ fontSize: 12, fontWeight: 600, color: "#10b981", marginBottom: 8 }}>📅 會議（{selectedMeetings.length}）</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: "#10b981", marginBottom: 8 }}>📅 會議紀錄（{selectedMeetings.length}）</p>
             {selectedMeetings.length === 0 ? (
               <p style={{ fontSize: 11, color: "#475569" }}>無會議</p>
             ) : (
