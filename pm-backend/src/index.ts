@@ -81,6 +81,12 @@ async function createNotification(userId: string, type: string, title: string, m
   });
 }
 
+async function logActivity(userId: string, action: string, target: string, detail: string, projectId?: string, targetId?: string) {
+  return prisma.activityLog.create({
+    data: { userId, action, target, detail, projectId, targetId }
+  });
+}
+
 // ── 認證 API ──────────────────────────────────────────────────────────
 
 app.post("/api/auth/register", async (req, res) => {
@@ -228,6 +234,7 @@ app.post("/api/projects", authMiddleware, async (req: any, res) => {
     }
   });
 
+  await logActivity(req.user.userId, "create", "project", project.name, project.id, project.id);
   res.status(201).json(project);
 });
 
@@ -323,6 +330,8 @@ app.post("/api/projects/:projectId/members", authMiddleware, async (req: any, re
       projectId
     );
 
+    const invitedUser = await prisma.user.findUnique({ where: { id: req.body.userId }, select: { name: true } });
+    await logActivity(req.user.userId, "invite", "member", invitedUser?.name || req.body.userId, projectId, req.body.userId);
     res.status(201).json(member);
   } catch {
     res.status(400).json({ error: "新增成員失敗（可能已是成員）" });
@@ -349,6 +358,8 @@ app.delete("/api/projects/:projectId/members/:userId", authMiddleware, async (re
     if (["member", "viewer"].includes(role)) return res.status(403).json({ error: "權限不足" });
   }
 
+  const removedUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+  await logActivity(req.user.userId, "remove", "member", removedUser?.name || userId, projectId, userId);
   await prisma.projectMember.deleteMany({ where: { projectId, userId } });
   res.json({ success: true });
 });
@@ -430,6 +441,7 @@ app.post("/api/projects/:projectId/tasks", authMiddleware, requireProjectRole("o
     }
   }
 
+  await logActivity(req.user.userId, "create", "task", task.title, req.params.projectId, task.id);
   res.status(201).json(task);
 });
 
@@ -497,6 +509,13 @@ app.put("/api/tasks/:id", authMiddleware, async (req: any, res) => {
       where: { id: req.params.id },
       include: { subtasks: true }
     });
+
+    if (req.body.columnId && req.body.columnId !== task.columnId) {
+      await logActivity(req.user.userId, "move", "task", `${task.title} → ${req.body.columnId}`, task.projectId, task.id);
+    } else {
+      await logActivity(req.user.userId, "update", "task", task.title, task.projectId, task.id);
+    }
+
     res.json(updated);
   } catch {
     res.status(404).json({ error: "找不到任務" });
@@ -515,6 +534,7 @@ app.delete("/api/tasks/:id", authMiddleware, async (req: any, res) => {
       }
     }
 
+    await logActivity(req.user.userId, "delete", "task", task.title, task.projectId, task.id);
     await prisma.task.delete({ where: { id: req.params.id } });
     res.json({ success: true });
   } catch {
@@ -595,6 +615,7 @@ app.post("/api/projects/:projectId/meetings", authMiddleware, requireProjectRole
     },
     include: { records: true }
   });
+  await logActivity(req.user.userId, "create", "meeting_series", series.name, req.params.projectId, series.id);
   res.status(201).json(series);
 });
 
@@ -624,6 +645,8 @@ app.post("/api/meetings/:seriesId/records", authMiddleware, async (req: any, res
       seriesId: req.params.seriesId,
     }
   });
+  const seriesForLog = await prisma.meetingSeries.findUnique({ where: { id: req.params.seriesId } });
+  await logActivity(req.user.userId, "create", "meeting_record", record.date, seriesForLog?.projectId, record.id);
   res.status(201).json(record);
 });
 
@@ -669,6 +692,7 @@ app.post("/api/projects/:projectId/risks", authMiddleware, requireProjectRole("o
       projectId: req.params.projectId,
     }
   });
+  await logActivity(req.user.userId, "create", "risk", risk.title, req.params.projectId, risk.id);
   res.status(201).json(risk);
 });
 
@@ -715,6 +739,7 @@ app.put("/api/risks/:id", authMiddleware, async (req: any, res) => {
     }
   }
 
+  await logActivity(req.user.userId, "update", "risk", risk.title, risk.projectId, risk.id);
   res.json(updated);
 });
 
@@ -871,6 +896,9 @@ app.post("/api/tasks/:taskId/comments", authMiddleware, async (req: any, res) =>
     }
   }
 
+  if (task) {
+    await logActivity(req.user.userId, "comment", "task", task.title, task.projectId, task.id);
+  }
   res.status(201).json(comment);
 });
 
@@ -918,6 +946,27 @@ app.put("/api/notifications/:id/read", authMiddleware, async (req: any, res) => 
     data: { isRead: true }
   });
   res.json({ success: true });
+});
+
+// ── 活動紀錄 API ──────────────────────────────────────────────────────
+
+app.get("/api/projects/:projectId/activities", authMiddleware, async (req: any, res) => {
+  const { projectId } = req.params;
+
+  if (!(await isAdmin(req.user.userId))) {
+    const role = await getProjectRole(req.user.userId, projectId);
+    if (!role) return res.status(403).json({ error: "權限不足" });
+  }
+
+  const activities = await prisma.activityLog.findMany({
+    where: { projectId },
+    include: {
+      user: { select: { id: true, name: true, memberId: true } }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  res.json(activities);
 });
 
 // ── 啟動伺服器 ────────────────────────────────────────────────────────

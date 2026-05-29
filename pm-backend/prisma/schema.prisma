@@ -20,6 +20,7 @@ model User {
   createdAt          DateTime @default(now())
   notifications      Notification[]
   comments           Comment[]
+  activityLogs       ActivityLog[]
 }
 
 model Task {
@@ -162,4 +163,16 @@ model Comment {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  target    String
+  targetId  String?
+  detail    String   @default("")
+  projectId String?
+  createdAt DateTime @default(now())
 }
