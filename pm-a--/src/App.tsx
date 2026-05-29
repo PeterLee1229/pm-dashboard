@@ -13,6 +13,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   searchProject,
   getOKRs, createObjective, updateObjective, deleteObjective,
   createKeyResult, updateKeyResult, deleteKeyResult,
+  importTasks,
   getActivities,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
@@ -1127,6 +1128,197 @@ function GroupModal({ groups, onSave, onClose }: {
         <div className="modal-footer">
           <button className="btn-cancel" onClick={onClose}>取消</button>
           <button className="btn-save" onClick={() => { onSave(editGroups); onClose(); }}>儲存變更</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ImportModal ───────────────────────────────────────────────────────
+function ImportModal({ projectId, onClose, onSuccess }: {
+  projectId: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [step, setStep] = useState<"upload" | "preview" | "result">("upload");
+  const [csvText, setCsvText] = useState("");
+  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      setCsvText(text);
+      parsePreview(text);
+    };
+    reader.readAsText(file, "utf-8");
+  };
+
+  const parsePreview = (text: string) => {
+    try {
+      const cleanText = text.replace(/^﻿/, "");
+      const rows = cleanText.trim().split("\n").map(line => {
+        const result: string[] = [];
+        let current = "";
+        let inQuotes = false;
+        for (const char of line) {
+          if (char === '"') { inQuotes = !inQuotes; }
+          else if (char === "," && !inQuotes) { result.push(current.trim()); current = ""; }
+          else { current += char; }
+        }
+        result.push(current.trim());
+        return result;
+      });
+      if (rows.length < 2) { setError("CSV 至少需要標題列和一筆資料"); return; }
+      setHeaders(rows[0]);
+      setPreviewRows(rows.slice(1).filter(r => r.some(cell => cell)));
+      setError("");
+      setStep("preview");
+    } catch {
+      setError("CSV 格式解析失敗");
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      setImporting(true);
+      setError("");
+      const res = await importTasks(projectId, csvText);
+      setResult(res);
+      setStep("result");
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || "匯入失敗");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 680 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">
+            {step === "upload" ? "匯入任務" : step === "preview" ? "預覽匯入資料" : "匯入結果"}
+          </span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="modal-body" style={{ maxHeight: "65vh", overflowY: "auto" }}>
+
+          {step === "upload" && (
+            <>
+              <div style={{ border: "2px dashed #ffffff15", borderRadius: 12, padding: 40, textAlign: "center" }}>
+                <p style={{ fontSize: 32, marginBottom: 12 }}>📄</p>
+                <p style={{ fontSize: 14, color: "#e2e8f0", marginBottom: 8 }}>上傳 CSV 檔案</p>
+                <p style={{ fontSize: 12, color: "#64748b", marginBottom: 16 }}>支援 UTF-8 編碼的 CSV 檔案</p>
+                <input type="file" accept=".csv" onChange={handleFileUpload}
+                  style={{ display: "none" }} id="csv-upload" />
+                <label htmlFor="csv-upload" style={{
+                  display: "inline-block", background: "#6366f1", border: "none",
+                  borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600,
+                  padding: "10px 24px", cursor: "pointer"
+                }}>選擇檔案</label>
+              </div>
+
+              <div style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <button onClick={() => window.open("http://localhost:3000/api/templates/tasks", "_blank")} style={{
+                  background: "#10b98122", border: "1px solid #10b98144",
+                  borderRadius: 8, color: "#10b981", fontSize: 12, fontWeight: 600,
+                  padding: "8px 16px", cursor: "pointer"
+                }}>📥 下載匯入模板</button>
+                <p style={{ fontSize: 11, color: "#475569" }}>
+                  模板欄位：類型、任務名稱、組別、指派人編號、優先級、開始日期、結束日期、完成度
+                </p>
+              </div>
+            </>
+          )}
+
+          {step === "preview" && (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 4 }}>共 {previewRows.length} 筆資料待匯入</p>
+                <p style={{ fontSize: 11, color: "#475569" }}>請確認資料正確後按「確認匯入」</p>
+              </div>
+              <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #ffffff08" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      {headers.map((h, i) => (
+                        <th key={i} style={{
+                          background: "#1a2030", color: "#94a3b8", fontWeight: 600,
+                          padding: "8px 10px", textAlign: "left", borderBottom: "1px solid #ffffff08",
+                          whiteSpace: "nowrap"
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, i) => (
+                      <tr key={i}>
+                        {row.map((cell: string, j: number) => (
+                          <td key={j} style={{
+                            padding: "6px 10px", borderBottom: "1px solid #ffffff06",
+                            color: row[0] === "子工項" ? "#64748b" : "#e2e8f0",
+                            paddingLeft: row[0] === "子工項" && j === 1 ? 24 : 10,
+                          }}>{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {step === "result" && result && (
+            <div style={{ textAlign: "center", padding: 20 }}>
+              <p style={{ fontSize: 48, marginBottom: 12 }}>✅</p>
+              <p style={{ fontSize: 16, fontWeight: 600, color: "#10b981", marginBottom: 8 }}>匯入成功！</p>
+              <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 20 }}>共匯入 {result.imported} 筆資料</p>
+              <div style={{ textAlign: "left", maxHeight: 200, overflowY: "auto" }}>
+                {result.details?.map((d: any, i: number) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12, color: "#94a3b8" }}>
+                    <span style={{
+                      fontSize: 9, padding: "1px 6px", borderRadius: 99,
+                      background: d.type === "task" ? "#6366f122" : "#10b98122",
+                      color: d.type === "task" ? "#6366f1" : "#10b981"
+                    }}>{d.type === "task" ? "主工項" : "子工項"}</span>
+                    <span>{d.title}</span>
+                    {d.parentTask && <span style={{ fontSize: 10, color: "#475569" }}>← {d.parentTask}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              background: "#ef444418", border: "1px solid #ef444433", borderRadius: 8,
+              color: "#ef4444", fontSize: 12, padding: "10px 14px", marginTop: 12
+            }}>{error}</div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          {step === "upload" && <button className="btn-cancel" onClick={onClose}>取消</button>}
+          {step === "preview" && (
+            <>
+              <button className="btn-cancel" onClick={() => setStep("upload")}>返回</button>
+              <button className="btn-save" onClick={handleImport} disabled={importing}>
+                {importing ? "匯入中..." : "確認匯入"}
+              </button>
+            </>
+          )}
+          {step === "result" && (
+            <button className="btn-save" style={{ flex: 1 }} onClick={onClose}>完成</button>
+          )}
         </div>
       </div>
     </div>
@@ -4007,6 +4199,7 @@ export default function App() {
   const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const handleAddProject = () => setShowProjectModal(true);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -4903,6 +5096,14 @@ export default function App() {
                 )}
               </div>
 
+              {hasPermission(currentProjectRole, "create_task") && (
+                <button onClick={() => setShowImportModal(true)} style={{
+                  background: "#10b98122", border: "1px solid #10b98144",
+                  borderRadius: 8, color: "#10b981", fontSize: 13, fontWeight: 600,
+                  padding: "6px 16px", cursor: "pointer"
+                }}>匯入</button>
+              )}
+
               {hasPermission(currentProjectRole, "export") && <div style={{ position: "relative" }}>
                 <button onClick={() => setShowExportMenu((prev) => !prev)}
                   style={{
@@ -5110,6 +5311,14 @@ export default function App() {
 
       {editingTask && (
         <TaskModal task={editingTask} groups={projectMemberGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
+      )}
+
+      {showImportModal && (
+        <ImportModal
+          projectId={activeProjectId}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => loadProjects()}
+        />
       )}
 
       {showProjectModal && (
