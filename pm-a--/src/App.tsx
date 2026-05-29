@@ -324,6 +324,37 @@ function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentU
     loadAttachments();
   }, [task.id]);
 
+  useEffect(() => {
+    if (form.assignee && !form.groupId) {
+      for (const g of groups) {
+        const found = g.members?.find((m: any) => m.id === form.assignee);
+        if (found) {
+          setForm(prev => ({ ...prev, groupId: g.id }));
+          break;
+        }
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    let changed = false;
+    const updatedSubtasks = form.subtasks.map(sub => {
+      if (sub.assignee && !sub.groupId) {
+        for (const g of groups) {
+          const found = g.members?.find((m: any) => m.id === sub.assignee);
+          if (found) {
+            changed = true;
+            return { ...sub, groupId: g.id };
+          }
+        }
+      }
+      return sub;
+    });
+    if (changed) {
+      setForm(prev => ({ ...prev, subtasks: updatedSubtasks }));
+    }
+  }, []);
+
   const loadAttachments = async () => {
     try {
       const data = await getAttachments(task.id);
@@ -1147,6 +1178,7 @@ function ImportModal({ projectId, onClose, onSuccess }: {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1175,9 +1207,48 @@ function ImportModal({ projectId, onClose, onSuccess }: {
         result.push(current.trim());
         return result;
       });
+
       if (rows.length < 2) { setError("CSV 至少需要標題列和一筆資料"); return; }
-      setHeaders(rows[0]);
-      setPreviewRows(rows.slice(1).filter(r => r.some(cell => cell)));
+
+      const hdrs = rows[0];
+      const dataRows = rows.slice(1).filter(r => r.some(cell => cell));
+
+      const typeIdx = hdrs.findIndex(h => h === "類型" || h === "type");
+      const titleIdx = hdrs.findIndex(h => h === "任務名稱" || h === "title");
+
+      if (typeIdx === -1 || titleIdx === -1) {
+        setError("CSV 缺少必要欄位：「類型」和「任務名稱」");
+        return;
+      }
+
+      const warns: string[] = [];
+      let hasParent = false;
+
+      dataRows.forEach((row, i) => {
+        const type = row[typeIdx] || "";
+        const title = row[titleIdx] || "";
+        const rowNum = i + 2;
+
+        if (!type) {
+          warns.push(`第 ${rowNum} 列：缺少「類型」，請填入「主工項」或「子工項」`);
+        } else if (!["主工項", "子工項", "subtask", "子任務"].includes(type)) {
+          warns.push(`第 ${rowNum} 列：「類型」必須是「主工項」或「子工項」，目前是「${type}」`);
+        }
+
+        if (!title) {
+          warns.push(`第 ${rowNum} 列：缺少「任務名稱」`);
+        }
+
+        if (type === "子工項" || type === "subtask" || type === "子任務") {
+          if (!hasParent) warns.push(`第 ${rowNum} 列：子工項「${title}」前面沒有主工項`);
+        } else if (type === "主工項") {
+          hasParent = true;
+        }
+      });
+
+      setHeaders(hdrs);
+      setPreviewRows(dataRows);
+      setWarnings(warns);
       setError("");
       setStep("preview");
     } catch {
@@ -1199,6 +1270,8 @@ function ImportModal({ projectId, onClose, onSuccess }: {
       setImporting(false);
     }
   };
+
+  const hasBlockingErrors = warnings.some(w => w.includes("缺少"));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -1234,7 +1307,7 @@ function ImportModal({ projectId, onClose, onSuccess }: {
                   padding: "8px 16px", cursor: "pointer"
                 }}>📥 下載匯入模板</button>
                 <p style={{ fontSize: 11, color: "#475569" }}>
-                  模板欄位：類型、任務名稱、組別、指派人編號、優先級、開始日期、結束日期、完成度
+                  模板欄位：類型、任務名稱、優先級、開始日期、結束日期、完成度
                 </p>
               </div>
             </>
@@ -1243,8 +1316,24 @@ function ImportModal({ projectId, onClose, onSuccess }: {
           {step === "preview" && (
             <>
               <div style={{ marginBottom: 12 }}>
-                <p style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 4 }}>共 {previewRows.length} 筆資料待匯入</p>
-                <p style={{ fontSize: 11, color: "#475569" }}>請確認資料正確後按「確認匯入」</p>
+                <p style={{ fontSize: 13, color: "#e2e8f0", marginBottom: 4 }}>
+                  共 {previewRows.length} 筆資料待匯入
+                </p>
+                {warnings.length === 0 ? (
+                  <p style={{ fontSize: 11, color: "#10b981" }}>✅ 資料檢查通過，請確認後按「確認匯入」</p>
+                ) : (
+                  <div style={{
+                    background: "#f59e0b18", border: "1px solid #f59e0b33", borderRadius: 8,
+                    padding: "10px 14px", marginTop: 8
+                  }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#f59e0b", marginBottom: 6 }}>
+                      ⚠️ 發現 {warnings.length} 個問題，建議修正後再匯入：
+                    </p>
+                    {warnings.map((w, i) => (
+                      <p key={i} style={{ fontSize: 11, color: "#f59e0b", lineHeight: 1.6 }}>• {w}</p>
+                    ))}
+                  </div>
+                )}
               </div>
               <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #ffffff08" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
@@ -1310,9 +1399,11 @@ function ImportModal({ projectId, onClose, onSuccess }: {
           {step === "upload" && <button className="btn-cancel" onClick={onClose}>取消</button>}
           {step === "preview" && (
             <>
-              <button className="btn-cancel" onClick={() => setStep("upload")}>返回</button>
-              <button className="btn-save" onClick={handleImport} disabled={importing}>
-                {importing ? "匯入中..." : "確認匯入"}
+              <button className="btn-cancel" onClick={() => { setStep("upload"); setWarnings([]); }}>返回</button>
+              <button className="btn-save" onClick={handleImport}
+                disabled={importing || hasBlockingErrors}
+                style={{ opacity: hasBlockingErrors ? 0.4 : 1 }}>
+                {importing ? "匯入中..." : hasBlockingErrors ? "請先修正錯誤" : "確認匯入"}
               </button>
             </>
           )}
