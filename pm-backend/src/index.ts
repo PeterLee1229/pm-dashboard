@@ -1182,6 +1182,17 @@ app.delete("/api/key-results/:id", authMiddleware, async (req: any, res) => {
 
 // ── 匯入 API ──────────────────────────────────────────────────────────
 
+function normalizeDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const cleaned = dateStr.replace(/\//g, "-");
+  const parts = cleaned.split("-");
+  if (parts.length !== 3) return dateStr;
+  const year = parts[0];
+  const month = parts[1].padStart(2, "0");
+  const day = parts[2].padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
   try {
     const csvText = req.body.csv;
@@ -1200,12 +1211,11 @@ app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProject
     for (const row of records) {
       const type = row["類型"] || row["type"] || "";
       const title = row["任務名稱"] || row["title"] || "";
-      const group = row["組別"] || row["group"] || "";
-      const assignee = row["指派人編號"] || row["assignee"] || "";
       const priority = row["優先級"] || row["priority"] || "medium";
       const startDate = row["開始日期"] || row["startDate"] || "";
       const endDate = row["結束日期"] || row["endDate"] || "";
-      const completion = parseInt(row["完成度"] || row["completion"] || "0") || 0;
+      const completionStr = (row["完成度"] || row["completion"] || "0").replace("%", "").trim();
+      const completion = parseInt(completionStr) || 0;
 
       if (!title) continue;
 
@@ -1218,10 +1228,8 @@ app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProject
           const subtask = await prisma.subTask.create({
             data: {
               title,
-              assignee,
-              groupId: group,
-              startDate,
-              endDate,
+              startDate: normalizeDate(startDate),
+              endDate: normalizeDate(endDate),
               completion: Math.min(completion, 100),
               timeLogs: [],
               taskId: currentParentTask.id,
@@ -1234,11 +1242,9 @@ app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProject
           data: {
             title,
             priority: normalizedPriority,
-            assignee,
-            groupId: group,
             columnId: "todo",
-            startDate,
-            endDate,
+            startDate: normalizeDate(startDate),
+            endDate: normalizeDate(endDate),
             completion: Math.min(completion, 100),
             timeLogs: [],
             projectId: req.params.projectId,
@@ -1260,12 +1266,12 @@ app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProject
 
 app.get("/api/templates/tasks", (_req, res) => {
   const BOM = "﻿";
-  const csv = BOM + "類型,任務名稱,組別,指派人編號,優先級,開始日期,結束日期,完成度\n" +
-    "主工項,買電腦,專管組,A001,高優先,2026-06-01,2026-07-01,0%\n" +
-    "子工項,估價,,A001,,2026-06-01,2026-06-10,0%\n" +
-    "子工項,採購,,A002,,2026-06-11,2026-06-20,0%\n" +
-    "子工項,驗收,,B001,,2026-06-21,2026-07-01,0%\n" +
-    "主工項,網路建置,軟體組,C001,中優先,2026-06-10,2026-07-15,0%\n";
+  const csv = BOM + "類型,任務名稱,優先級,開始日期,結束日期,完成度\n" +
+    "主工項,買電腦,高優先,2026-06-01,2026-07-01,0%\n" +
+    "子工項,估價,,2026-06-01,2026-06-10,0%\n" +
+    "子工項,採購,,2026-06-11,2026-06-20,0%\n" +
+    "子工項,驗收,,2026-06-21,2026-07-01,0%\n" +
+    "主工項,網路建置,中優先,2026-06-10,2026-07-15,0%\n";
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=task_import_template.csv");
