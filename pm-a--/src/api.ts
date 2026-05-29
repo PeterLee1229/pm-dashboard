@@ -324,3 +324,7 @@ export async function addComment(taskId: string, content: string) {
 export async function deleteComment(id: string) {
   return apiFetch(`/comments/${id}`, { method: "DELETE" });
 }
+
+export async function getActivities(projectId: string) {
+  return apiFetch(`/projects/${projectId}/activities`);
+}

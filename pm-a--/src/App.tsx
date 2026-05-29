@@ -9,6 +9,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
   getNotifications, getUnreadCount, markAsRead, markAllAsRead,
   getComments, addComment, deleteComment,
+  getActivities,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
   createMeetingRecord as apiCreateMeetingRecord,
@@ -1023,10 +1024,167 @@ function GroupModal({ groups, onSave, onClose }: {
   );
 }
 
+// ── ActivityView ──────────────────────────────────────────────────────
+function ActivityView({ projectId }: { projectId: string }) {
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+
+  useEffect(() => {
+    loadActivities();
+  }, [projectId]);
+
+  const loadActivities = async () => {
+    try {
+      setLoading(true);
+      const data = await getActivities(projectId);
+      setActivities(data);
+    } catch (err) {
+      console.error("載入活動紀錄失敗:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ACTION_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
+    create: { icon: "➕", color: "#10b981", label: "建立" },
+    update: { icon: "✏️", color: "#6366f1", label: "更新" },
+    delete: { icon: "🗑️", color: "#ef4444", label: "刪除" },
+    move:   { icon: "🔄", color: "#f59e0b", label: "移動" },
+    invite: { icon: "👋", color: "#8b5cf6", label: "邀請" },
+    remove: { icon: "🚫", color: "#ef4444", label: "移除" },
+    comment: { icon: "💬", color: "#06b6d4", label: "評論" },
+  };
+
+  const TARGET_LABELS: Record<string, string> = {
+    project: "專案",
+    task: "任務",
+    risk: "風險",
+    meeting: "會議",
+    meeting_series: "會議系列",
+    meeting_record: "會議紀錄",
+    member: "成員",
+    comment: "評論",
+  };
+
+  const filteredActivities = filter === "all"
+    ? activities
+    : activities.filter(a => a.target === filter);
+
+  const groupedByDate: Record<string, any[]> = {};
+  filteredActivities.forEach(a => {
+    const date = new Date(a.createdAt).toLocaleDateString("zh-TW");
+    if (!groupedByDate[date]) groupedByDate[date] = [];
+    groupedByDate[date].push(a);
+  });
+
+  if (loading) {
+    return <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>載入中...</div>;
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* 篩選 */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[
+          { id: "all", label: "全部" },
+          { id: "task", label: "任務" },
+          { id: "risk", label: "風險" },
+          { id: "meeting_series", label: "會議" },
+          { id: "member", label: "成員" },
+          { id: "comment", label: "評論" },
+        ].map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)} style={{
+            background: filter === f.id ? "#6366f122" : "transparent",
+            border: `1px solid ${filter === f.id ? "#6366f1" : "#ffffff15"}`,
+            color: filter === f.id ? "#6366f1" : "#64748b",
+            borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer"
+          }}>{f.label}</button>
+        ))}
+      </div>
+
+      {/* 統計 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+        <div style={{ background: "#161b27", borderRadius: 10, padding: "14px 18px", border: "1px solid #10b98122" }}>
+          <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>今日活動</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: "#10b981" }}>
+            {activities.filter(a => new Date(a.createdAt).toDateString() === new Date().toDateString()).length}
+          </p>
+        </div>
+        <div style={{ background: "#161b27", borderRadius: 10, padding: "14px 18px", border: "1px solid #6366f122" }}>
+          <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>本週活動</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: "#6366f1" }}>
+            {activities.filter(a => {
+              const d = new Date(a.createdAt);
+              const now = new Date();
+              const weekAgo = new Date(now.getTime() - 7 * 86400000);
+              return d >= weekAgo;
+            }).length}
+          </p>
+        </div>
+        <div style={{ background: "#161b27", borderRadius: 10, padding: "14px 18px", border: "1px solid #f59e0b22" }}>
+          <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>總活動數</p>
+          <p style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b" }}>{activities.length}</p>
+        </div>
+      </div>
+
+      {/* 時間線 */}
+      <div style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
+        {Object.keys(groupedByDate).length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center", color: "#475569", fontSize: 13 }}>
+            尚無活動紀錄
+          </div>
+        ) : Object.entries(groupedByDate).map(([date, acts]) => (
+          <div key={date}>
+            <div style={{
+              padding: "10px 20px", background: "#1a2030",
+              borderBottom: "1px solid #ffffff08",
+              fontSize: 12, fontWeight: 600, color: "#94a3b8"
+            }}>{date}</div>
+
+            {acts.map((a: any) => {
+              const actionCfg = ACTION_CONFIG[a.action] || { icon: "📌", color: "#64748b", label: a.action };
+              return (
+                <div key={a.id} style={{
+                  display: "flex", gap: 12, padding: "12px 20px",
+                  borderBottom: "1px solid #ffffff06", alignItems: "flex-start"
+                }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 99, flexShrink: 0,
+                    background: actionCfg.color + "18",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 13
+                  }}>{actionCfg.icon}</div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{a.user?.name || "系統"}</span>
+                      <span style={{
+                        fontSize: 10, padding: "1px 6px", borderRadius: 99,
+                        background: actionCfg.color + "18", color: actionCfg.color
+                      }}>{actionCfg.label}{TARGET_LABELS[a.target] || a.target}</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>{a.detail}</p>
+                  </div>
+
+                  <span style={{ fontSize: 10, color: "#475569", flexShrink: 0, marginTop: 2 }}>
+                    {new Date(a.createdAt).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Sidebar ──────────────────────────────────────────────────────────
 function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject, currentProjectRole }: {
-  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members";
-  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members") => void;
+  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities";
+  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities") => void;
   projects: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
@@ -1138,6 +1296,17 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
               <User size={16} /> 專案成員
             </button>
           )}
+          <button onClick={() => setView("activities")} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px", borderRadius: 8, border: "none",
+            background: view === "activities" ? "#6366f122" : "transparent",
+            color: view === "activities" ? "#6366f1" : "#64748b",
+            fontSize: 13, fontWeight: view === "activities" ? 600 : 400,
+            cursor: "pointer", textAlign: "left", width: "100%",
+            borderLeft: view === "activities" ? "3px solid #6366f1" : "3px solid transparent"
+          }}>
+            <Clock size={16} /> 活動紀錄
+          </button>
         </div>
 
         {/* 系統管理（僅 admin） */}
@@ -3124,7 +3293,7 @@ export default function App() {
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members">("kanban");
+  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -3856,9 +4025,16 @@ export default function App() {
             onMembersChange={() => loadProjectMembers(activeProjectId)}
           />
         </div>
+      ) : view === "activities" && activeProject ? (
+        <div style={{ marginLeft: 200, padding: "32px 40px" }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
+            活動紀錄 · {activeProject.name}
+          </h2>
+          <ActivityView projectId={activeProject.id} />
+        </div>
       ) : null}
 
-      <div style={{ marginLeft: 200, display: (view === "admin" || view === "project_members") ? "none" : undefined }}>
+      <div style={{ marginLeft: 200, display: (view === "admin" || view === "project_members" || view === "activities") ? "none" : undefined }}>
         <div className="app">
           <div className="topbar">
             <div className="topbar-left">
