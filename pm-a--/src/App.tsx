@@ -10,6 +10,7 @@ import { isLoggedIn, clearToken, getCurrentUser,
   getNotifications, getUnreadCount, markAsRead, markAllAsRead,
   getComments, addComment, deleteComment,
   getAttachments, addAttachment, deleteAttachment,
+  searchProject,
   getActivities,
   getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries,
   deleteMeetingSeries as apiDeleteMeetingSeries,
@@ -3654,6 +3655,44 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any>(null);
+  const [searching, setSearching] = useState(false);
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    try {
+      setSearching(true);
+      const results = await searchProject(activeProjectId, query.trim());
+      setSearchResults(results);
+    } catch (err) {
+      console.error("搜尋失敗:", err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+      if (e.key === "Escape" && showSearch) {
+        setShowSearch(false);
+        setSearchQuery("");
+        setSearchResults(null);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [showSearch]);
+
   const handleCreateMeetingSeries = async (name: string, type: string) => {
     try {
       const series = await apiCreateMeetingSeries(activeProjectId, { name, type });
@@ -4404,6 +4443,14 @@ export default function App() {
               </div>
               <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
 
+              {/* 搜尋按鈕 */}
+              <button onClick={() => setShowSearch(true)} style={{
+                background: "none", border: "none", color: "#94a3b8",
+                cursor: "pointer", padding: 8, borderRadius: 8, display: "flex", alignItems: "center"
+              }}>
+                🔍
+              </button>
+
               {/* 通知鈴鐺 */}
               <div style={{ position: "relative" }}>
                 <button onClick={() => setShowNotifications(!showNotifications)} style={{
@@ -4710,6 +4757,166 @@ export default function App() {
           onSave={() => getGroups().then(setSystemGroups).catch(console.error)}
           onClose={() => setShowGroupModal(false)}
         />
+      )}
+
+      {showSearch && (
+        <div style={{
+          position: "fixed", inset: 0, background: "#00000088",
+          display: "flex", alignItems: "flex-start", justifyContent: "center",
+          zIndex: 300, paddingTop: 80, backdropFilter: "blur(4px)"
+        }} onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults(null); }}>
+          <div style={{
+            background: "#1a2030", borderRadius: 14, border: "1px solid #ffffff12",
+            width: 600, maxWidth: "95vw", maxHeight: "70vh",
+            boxShadow: "0 24px 64px #000a", overflow: "hidden",
+            animation: "modal-in .18s ease"
+          }} onClick={(e) => e.stopPropagation()}>
+
+            {/* 搜尋輸入 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 20px", borderBottom: "1px solid #ffffff08" }}>
+              <span style={{ fontSize: 18 }}>🔍</span>
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="搜尋任務、風險、會議紀錄..."
+                style={{
+                  flex: 1, background: "transparent", border: "none",
+                  color: "#e2e8f0", fontSize: 15, outline: "none", fontFamily: "inherit"
+                }}
+              />
+              {searchQuery && (
+                <button onClick={() => { setSearchQuery(""); setSearchResults(null); }} style={{
+                  background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 4, display: "flex"
+                }}><X size={16} /></button>
+              )}
+              <button onClick={() => { setShowSearch(false); setSearchQuery(""); setSearchResults(null); }} style={{
+                background: "#ffffff10", border: "none", borderRadius: 6,
+                color: "#94a3b8", fontSize: 11, padding: "4px 10px", cursor: "pointer"
+              }}>ESC</button>
+            </div>
+
+            {/* 搜尋結果 */}
+            <div style={{ maxHeight: "calc(70vh - 60px)", overflowY: "auto", padding: "12px 20px" }}>
+              {searching ? (
+                <p style={{ textAlign: "center", color: "#475569", padding: 20, fontSize: 13 }}>搜尋中...</p>
+              ) : !searchResults ? (
+                <p style={{ textAlign: "center", color: "#475569", padding: 20, fontSize: 13 }}>輸入關鍵字開始搜尋</p>
+              ) : (
+                <>
+                  {searchResults.tasks?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "#6366f1", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        📋 任務（{searchResults.tasks.length}）
+                      </p>
+                      {searchResults.tasks.map((t: any) => (
+                        <div key={t.id} onClick={() => {
+                          setEditingTask(t);
+                          setShowSearch(false);
+                          setSearchQuery("");
+                          setSearchResults(null);
+                        }} style={{
+                          padding: "10px 12px", borderRadius: 8, marginBottom: 4,
+                          background: "#0f1117", border: "1px solid #ffffff08", cursor: "pointer"
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0" }}>{t.title}</span>
+                            <span style={{ fontSize: 10, color: "#6366f1" }}>{t.completion || 0}%</span>
+                          </div>
+                          {t.description && (
+                            <p style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                              {t.description.slice(0, 80)}{t.description.length > 80 ? "..." : ""}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {searchResults.subtasks?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "#8b5cf6", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        📎 子任務（{searchResults.subtasks.length}）
+                      </p>
+                      {searchResults.subtasks.map((s: any) => (
+                        <div key={s.id} style={{
+                          padding: "10px 12px", borderRadius: 8, marginBottom: 4,
+                          background: "#0f1117", border: "1px solid #ffffff08"
+                        }}>
+                          <span style={{ fontSize: 12, color: "#e2e8f0" }}>{s.title}</span>
+                          {s.task && (
+                            <span style={{ fontSize: 10, color: "#475569", marginLeft: 8 }}>
+                              屬於「{s.task.title}」
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {searchResults.risks?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "#ef4444", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        ⚠️ 風險（{searchResults.risks.length}）
+                      </p>
+                      {searchResults.risks.map((r: any) => (
+                        <div key={r.id} style={{
+                          padding: "10px 12px", borderRadius: 8, marginBottom: 4,
+                          background: "#0f1117", border: "1px solid #ffffff08"
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{r.title}</span>
+                            <span style={{
+                              fontSize: 9, padding: "1px 6px", borderRadius: 99,
+                              background: r.status === "occurred" ? "#ef444422" : r.status === "resolved" ? "#10b98122" : "#f59e0b22",
+                              color: r.status === "occurred" ? "#ef4444" : r.status === "resolved" ? "#10b981" : "#f59e0b"
+                            }}>{r.status === "monitoring" ? "監控中" : r.status === "occurred" ? "已發生" : "已解除"}</span>
+                          </div>
+                          {r.description && (
+                            <p style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                              {r.description.slice(0, 80)}{r.description.length > 80 ? "..." : ""}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {searchResults.meetings?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "#10b981", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        📅 會議紀錄（{searchResults.meetings.length}）
+                      </p>
+                      {searchResults.meetings.map((m: any) => (
+                        <div key={m.id} style={{
+                          padding: "10px 12px", borderRadius: 8, marginBottom: 4,
+                          background: "#0f1117", border: "1px solid #ffffff08"
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>{m.series?.name || ""}</span>
+                            <span style={{ fontSize: 10, color: "#475569" }}>{m.date}</span>
+                          </div>
+                          {m.summary && (
+                            <p style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                              {m.summary.slice(0, 80)}{m.summary.length > 80 ? "..." : ""}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(!searchResults.tasks?.length && !searchResults.subtasks?.length &&
+                    !searchResults.risks?.length && !searchResults.meetings?.length) && (
+                    <p style={{ textAlign: "center", color: "#475569", padding: 20, fontSize: 13 }}>
+                      找不到「{searchQuery}」的相關結果
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

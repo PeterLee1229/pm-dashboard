@@ -329,6 +329,10 @@ export async function getActivities(projectId: string) {
   return apiFetch(`/projects/${projectId}/activities`);
 }
 
+export async function searchProject(projectId: string, query: string) {
+  return apiFetch(`/projects/${projectId}/search?q=${encodeURIComponent(query)}`);
+}
+
 export async function getAttachments(taskId: string) {
   return apiFetch(`/tasks/${taskId}/attachments`);
 }
