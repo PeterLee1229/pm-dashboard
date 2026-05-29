@@ -405,7 +405,13 @@ app.post("/api/projects/:projectId/transfer-owner", authMiddleware, async (req: 
 app.get("/api/projects/:projectId/tasks", authMiddleware, async (req: any, res) => {
   const tasks = await prisma.task.findMany({
     where: { projectId: req.params.projectId },
-    include: { subtasks: true },
+    include: {
+      subtasks: true,
+      attachments: {
+        include: { uploader: { select: { id: true, name: true, memberId: true } } },
+        orderBy: { createdAt: "desc" }
+      }
+    },
     orderBy: { createdAt: "asc" }
   });
   res.json(tasks);
@@ -852,6 +858,61 @@ app.delete("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
     return res.status(403).json({ error: "需要管理員權限" });
   }
   await prisma.group.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
+// ── 附件 API ──────────────────────────────────────────────────────────
+
+app.get("/api/tasks/:taskId/attachments", authMiddleware, async (req: any, res) => {
+  const attachments = await prisma.attachment.findMany({
+    where: { taskId: req.params.taskId },
+    include: {
+      uploader: { select: { id: true, name: true, memberId: true } }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json(attachments);
+});
+
+app.post("/api/tasks/:taskId/attachments", authMiddleware, async (req: any, res) => {
+  const attachment = await prisma.attachment.create({
+    data: {
+      name: req.body.name,
+      url: req.body.url,
+      type: req.body.type || "link",
+      taskId: req.params.taskId,
+      uploaderId: req.user.userId,
+    },
+    include: {
+      uploader: { select: { id: true, name: true, memberId: true } }
+    }
+  });
+
+  const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
+  if (task) {
+    await logActivity(req.user.userId, "create", "attachment", `在任務「${task.title}」新增附件「${req.body.name}」`, task.projectId, attachment.id);
+  }
+
+  res.status(201).json(attachment);
+});
+
+app.delete("/api/attachments/:id", authMiddleware, async (req: any, res) => {
+  const attachment = await prisma.attachment.findUnique({
+    where: { id: req.params.id },
+    include: { task: true }
+  });
+  if (!attachment) return res.status(404).json({ error: "找不到附件" });
+
+  if (attachment.uploaderId !== req.user.userId && !(await isAdmin(req.user.userId))) {
+    const role = await getProjectRole(req.user.userId, attachment.task.projectId);
+    if (!role || !["owner", "pm"].includes(role)) {
+      return res.status(403).json({ error: "權限不足" });
+    }
+  }
+
+  await prisma.attachment.delete({ where: { id: req.params.id } });
+  await logActivity(req.user.userId, "delete", "attachment", `刪除附件「${attachment.name}」`, attachment.task.projectId, req.params.id);
+
   res.json({ success: true });
 });
 

@@ -21,6 +21,7 @@ model User {
   notifications      Notification[]
   comments           Comment[]
   activityLogs       ActivityLog[]
+  attachments        Attachment[]
 }
 
 model Task {
@@ -41,6 +42,7 @@ model Task {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   comments    Comment[]
+  attachments Attachment[]
 }
 
 model SubTask {
@@ -174,5 +176,17 @@ model ActivityLog {
   targetId  String?
   detail    String   @default("")
   projectId String?
+  createdAt DateTime @default(now())
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  type      String   @default("link")
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader  User     @relation(fields: [uploaderId], references: [id])
   createdAt DateTime @default(now())
 }
