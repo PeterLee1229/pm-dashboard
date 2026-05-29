@@ -1088,6 +1088,97 @@ app.get("/api/projects/:projectId/search", authMiddleware, async (req: any, res)
   res.json({ tasks, subtasks, risks, meetings: meetingRecords });
 });
 
+// ── OKR API ───────────────────────────────────────────────────────────
+
+app.get("/api/projects/:projectId/okrs", authMiddleware, async (req: any, res) => {
+  const objectives = await prisma.objective.findMany({
+    where: { projectId: req.params.projectId },
+    include: { keyResults: { orderBy: { createdAt: "asc" } } },
+    orderBy: { createdAt: "asc" }
+  });
+  res.json(objectives);
+});
+
+app.post("/api/projects/:projectId/okrs", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
+  const objective = await prisma.objective.create({
+    data: {
+      title: req.body.title,
+      description: req.body.description || "",
+      startDate: req.body.startDate || "",
+      endDate: req.body.endDate || "",
+      projectId: req.params.projectId,
+    },
+    include: { keyResults: true }
+  });
+
+  await logActivity(req.user.userId, "create", "okr", `建立目標「${objective.title}」`, req.params.projectId, objective.id);
+
+  res.status(201).json(objective);
+});
+
+app.put("/api/okrs/:id", authMiddleware, async (req: any, res) => {
+  const objective = await prisma.objective.findUnique({ where: { id: req.params.id } });
+  if (!objective) return res.status(404).json({ error: "找不到目標" });
+
+  const updated = await prisma.objective.update({
+    where: { id: req.params.id },
+    data: {
+      title: req.body.title,
+      description: req.body.description,
+      startDate: req.body.startDate,
+      endDate: req.body.endDate,
+    },
+    include: { keyResults: true }
+  });
+
+  await logActivity(req.user.userId, "update", "okr", `更新目標「${updated.title}」`, objective.projectId, updated.id);
+
+  res.json(updated);
+});
+
+app.delete("/api/okrs/:id", authMiddleware, async (req: any, res) => {
+  const objective = await prisma.objective.findUnique({ where: { id: req.params.id } });
+  if (!objective) return res.status(404).json({ error: "找不到目標" });
+
+  await prisma.keyResult.deleteMany({ where: { objectiveId: req.params.id } });
+  await prisma.objective.delete({ where: { id: req.params.id } });
+
+  await logActivity(req.user.userId, "delete", "okr", `刪除目標「${objective.title}」`, objective.projectId, req.params.id);
+
+  res.json({ success: true });
+});
+
+app.post("/api/okrs/:objectiveId/key-results", authMiddleware, async (req: any, res) => {
+  const kr = await prisma.keyResult.create({
+    data: {
+      title: req.body.title,
+      targetValue: req.body.targetValue || 100,
+      currentValue: req.body.currentValue || 0,
+      unit: req.body.unit || "%",
+      objectiveId: req.params.objectiveId,
+    }
+  });
+  res.status(201).json(kr);
+});
+
+app.put("/api/key-results/:id", authMiddleware, async (req: any, res) => {
+  const kr = await prisma.keyResult.update({
+    where: { id: req.params.id },
+    data: {
+      title: req.body.title,
+      targetValue: req.body.targetValue,
+      currentValue: req.body.currentValue,
+      unit: req.body.unit,
+    }
+  });
+  res.json(kr);
+});
+
+app.delete("/api/key-results/:id", authMiddleware, async (req: any, res) => {
+  await prisma.keyResult.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+});
+
 // ── 啟動伺服器 ────────────────────────────────────────────────────────
 
 app.listen(3000, () => {

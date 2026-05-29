@@ -60,18 +60,19 @@ model SubTask {
 }
 
 model Project {
-  id          String           @id @default(cuid())
-  name        String
-  description String           @default("")
-  color       String           @default("#6366f1")
-  ownerId     String?
-  owner       User?            @relation(fields: [ownerId], references: [id])
-  tasks       Task[]
-  members     ProjectMember[]
+  id            String           @id @default(cuid())
+  name          String
+  description   String           @default("")
+  color         String           @default("#6366f1")
+  ownerId       String?
+  owner         User?            @relation(fields: [ownerId], references: [id])
+  tasks         Task[]
+  members       ProjectMember[]
   meetingSeries MeetingSeries[]
-  risks       Risk[]
+  risks         Risk[]
   weeklyReports WeeklyReport[]
-  createdAt   DateTime         @default(now())
+  createdAt     DateTime         @default(now())
+  objectives    Objective[]
 }
 
 // Group 不再綁專案，改成系統層級（公司組織架構）
@@ -189,4 +190,27 @@ model Attachment {
   uploaderId String
   uploader  User     @relation(fields: [uploaderId], references: [id])
   createdAt DateTime @default(now())
+}
+
+model Objective {
+  id          String      @id @default(cuid())
+  title       String
+  description String      @default("")
+  startDate   String      @default("")
+  endDate     String      @default("")
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyResults  KeyResult[]
+  createdAt   DateTime    @default(now())
+}
+
+model KeyResult {
+  id          String    @id @default(cuid())
+  title       String
+  targetValue Float     @default(100)
+  currentValue Float    @default(0)
+  unit        String    @default("%")
+  objectiveId String
+  objective   Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
 }
