@@ -333,6 +333,46 @@ export async function searchProject(projectId: string, query: string) {
   return apiFetch(`/projects/${projectId}/search?q=${encodeURIComponent(query)}`);
 }
 
+export async function getOKRs(projectId: string) {
+  return apiFetch(`/projects/${projectId}/okrs`);
+}
+
+export async function createObjective(projectId: string, data: any) {
+  return apiFetch(`/projects/${projectId}/okrs`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateObjective(id: string, data: any) {
+  return apiFetch(`/okrs/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteObjective(id: string) {
+  return apiFetch(`/okrs/${id}`, { method: "DELETE" });
+}
+
+export async function createKeyResult(objectiveId: string, data: any) {
+  return apiFetch(`/okrs/${objectiveId}/key-results`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateKeyResult(id: string, data: any) {
+  return apiFetch(`/key-results/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteKeyResult(id: string) {
+  return apiFetch(`/key-results/${id}`, { method: "DELETE" });
+}
+
 export async function getAttachments(taskId: string) {
   return apiFetch(`/tasks/${taskId}/attachments`);
 }
