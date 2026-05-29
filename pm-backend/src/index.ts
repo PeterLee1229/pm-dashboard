@@ -6,6 +6,7 @@ import pg from "pg";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
+import { parse } from "csv-parse/sync";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -1177,6 +1178,98 @@ app.put("/api/key-results/:id", authMiddleware, async (req: any, res) => {
 app.delete("/api/key-results/:id", authMiddleware, async (req: any, res) => {
   await prisma.keyResult.delete({ where: { id: req.params.id } });
   res.json({ success: true });
+});
+
+// ── 匯入 API ──────────────────────────────────────────────────────────
+
+app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
+  try {
+    const csvText = req.body.csv;
+    if (!csvText) return res.status(400).json({ error: "缺少 CSV 資料" });
+
+    const records = parse(csvText, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      bom: true,
+    });
+
+    const results: any[] = [];
+    let currentParentTask: any = null;
+
+    for (const row of records) {
+      const type = row["類型"] || row["type"] || "";
+      const title = row["任務名稱"] || row["title"] || "";
+      const group = row["組別"] || row["group"] || "";
+      const assignee = row["指派人編號"] || row["assignee"] || "";
+      const priority = row["優先級"] || row["priority"] || "medium";
+      const startDate = row["開始日期"] || row["startDate"] || "";
+      const endDate = row["結束日期"] || row["endDate"] || "";
+      const completion = parseInt(row["完成度"] || row["completion"] || "0") || 0;
+
+      if (!title) continue;
+
+      let normalizedPriority = "medium";
+      if (priority.includes("高") || priority.toLowerCase() === "high") normalizedPriority = "high";
+      else if (priority.includes("低") || priority.toLowerCase() === "low") normalizedPriority = "low";
+
+      if (type === "子工項" || type === "subtask" || type === "子任務") {
+        if (currentParentTask) {
+          const subtask = await prisma.subTask.create({
+            data: {
+              title,
+              assignee,
+              groupId: group,
+              startDate,
+              endDate,
+              completion: Math.min(completion, 100),
+              timeLogs: [],
+              taskId: currentParentTask.id,
+            }
+          });
+          results.push({ type: "subtask", title, parentTask: currentParentTask.title, id: subtask.id });
+        }
+      } else {
+        const task = await prisma.task.create({
+          data: {
+            title,
+            priority: normalizedPriority,
+            assignee,
+            groupId: group,
+            columnId: "todo",
+            startDate,
+            endDate,
+            completion: Math.min(completion, 100),
+            timeLogs: [],
+            projectId: req.params.projectId,
+          }
+        });
+        currentParentTask = task;
+        results.push({ type: "task", title, id: task.id });
+
+        await logActivity(req.user.userId, "create", "task", `匯入任務「${title}」`, req.params.projectId, task.id);
+      }
+    }
+
+    res.json({ success: true, imported: results.length, details: results });
+  } catch (err: any) {
+    console.error("匯入錯誤:", err);
+    res.status(400).json({ error: "CSV 格式錯誤：" + (err.message || "") });
+  }
+});
+
+app.get("/api/templates/tasks", (_req, res) => {
+  const BOM = "﻿";
+  const csv = BOM + "類型,任務名稱,組別,指派人編號,優先級,開始日期,結束日期,完成度\n" +
+    "主工項,買電腦,專管組,A001,高優先,2026-06-01,2026-07-01,0%\n" +
+    "子工項,估價,,A001,,2026-06-01,2026-06-10,0%\n" +
+    "子工項,採購,,A002,,2026-06-11,2026-06-20,0%\n" +
+    "子工項,驗收,,B001,,2026-06-21,2026-07-01,0%\n" +
+    "主工項,網路建置,軟體組,C001,中優先,2026-06-10,2026-07-15,0%\n";
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=task_import_template.csv");
+  res.send(csv);
 });
 
 // ── 啟動伺服器 ────────────────────────────────────────────────────────
