@@ -218,6 +218,15 @@ const initialProjects: Project[] = [
   },
 ];
 
+function normalizeDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const cleaned = dateStr.replace(/\//g, "-");
+  const parts = cleaned.split("-");
+  if (parts.length !== 3) return dateStr;
+  const [year, month, day] = parts;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
 function hasPermission(userRole: string, action: string): boolean {
   const permissions: Record<string, string[]> = {
     "delete_project":  ["owner"],
@@ -308,6 +317,9 @@ function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentU
   currentProjectRole: string;
   currentUser: any;
 }) {
+  console.log("TaskModal 收到的 task:", JSON.stringify(task, null, 2));
+  console.log("TaskModal 收到的 groups:", groups);
+
   const [form, setForm] = useState<Task>({ ...task });
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -4539,8 +4551,12 @@ export default function App() {
             if (!columnMap[col]) columnMap[col] = [];
             columnMap[col].push({
               ...t,
+              startDate: normalizeDate(t.startDate || ""),
+              endDate: normalizeDate(t.endDate || ""),
               subtasks: (t.subtasks || []).map((s: any) => ({
                 ...s,
+                startDate: normalizeDate(s.startDate || ""),
+                endDate: normalizeDate(s.endDate || ""),
                 timeLogs: s.timeLogs || [],
               })),
               timeLogs: t.timeLogs || [],
