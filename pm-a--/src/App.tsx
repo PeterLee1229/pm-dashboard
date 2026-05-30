@@ -1271,7 +1271,7 @@ function ImportModal({ projectId, onClose, onSuccess }: {
               </div>
 
               <div style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <button onClick={() => window.open("http://localhost:3000/api/templates/tasks", "_blank")} style={{
+                <button onClick={() => window.open(`${import.meta.env.VITE_API_URL || "http://localhost:3000/api"}/templates/tasks`, "_blank")} style={{
                   background: "#10b98122", border: "1px solid #10b98144",
                   borderRadius: 8, color: "#10b981", fontSize: 12, fontWeight: 600,
                   padding: "8px 16px", cursor: "pointer"
