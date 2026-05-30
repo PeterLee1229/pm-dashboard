@@ -21,7 +21,12 @@ const app = express();
 app.use(express.json());
 
 app.use(cors({
-  origin: ["http://localhost:5173", "https://pm-dashboard-delta-eight.vercel.app"],
+  origin: [
+    "http://localhost:5173",
+    "https://pm-dashboard-delta-eight.vercel.app",
+    /\.vercel\.app$/,
+    /\.railway\.app$/,
+  ],
   credentials: true,
 }));
 
@@ -1280,8 +1285,9 @@ app.get("/api/templates/tasks", (_req, res) => {
 
 // ── 啟動伺服器 ────────────────────────────────────────────────────────
 
-app.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 }).on("error", (err) => {
   console.error("Server error:", err);
 });
