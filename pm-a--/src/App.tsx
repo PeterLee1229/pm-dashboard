@@ -3,10 +3,10 @@ import { t, getLanguage, setLanguage, type Language } from "./i18n";
 import LoginPage from "./LoginPage";
 import { isLoggedIn, clearToken, getCurrentUser,
   getAdminUsers, updateAdminUser,
-  getProjects, createProject as apiCreateProject, updateProject as apiUpdateProject, deleteProject as apiDeleteProject,
+  getProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject,
   getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask,
-  getProjectGroups, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup,
-  addGroupMember, removeGroupMember, getUsers, getGroups,
+  createGroup as apiCreateGroup,
+  getUsers, getGroups,
   getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole,
   getNotifications, getUnreadCount, markAsRead, markAllAsRead,
   getComments, addComment, deleteComment,
@@ -171,60 +171,10 @@ const RISK_STATUS_CONFIG: Record<RiskStatus, { label: string; color: string }> =
   resolved:   { label: "已解除", color: "#10b981" },
 };
 
-const initialColumns: Column[] = [
-  {
-    id: "todo", title: "待處理",
-    tasks: [
-      { id: "t1", title: "需求分析文件", description: "整理客戶訪談結果，輸出需求規格書", priority: "high", assignee: "Peter", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-      { id: "t2", title: "UI 原型設計", description: "使用 Figma 製作低保真原型", priority: "medium", assignee: "Amy", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-    ],
-  },
-  {
-    id: "inprogress", title: "進行中",
-    tasks: [
-      { id: "t3", title: "後端 API 開發", description: "實作任務管理 CRUD endpoints", priority: "high", assignee: "John", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-      { id: "t4", title: "資料庫設計", description: "設計 PostgreSQL schema 與索引", priority: "medium", assignee: "Peter", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-    ],
-  },
-  {
-    id: "review", title: "審查中",
-    tasks: [
-      { id: "t5", title: "前端看板元件", description: "實作拖拉排序看板介面", priority: "medium", assignee: "Amy", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-    ],
-  },
-  {
-    id: "done", title: "已完成",
-    tasks: [
-      { id: "t6", title: "專案環境建置", description: "完成 Vite + React + TS 環境設定", priority: "low", assignee: "Peter", timeLogs: [], startDate: "", endDate: "", completion: 0, subtasks: [], groupId: "" },
-    ],
-  },
-];
 
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#8b5cf6", "#06b6d4"];
 
-const DEFAULT_GROUPS: Group[] = [
-  { id: "g1", name: "專管組", color: "#6366f1", members: [{ id: "A001", name: "Peter" }] },
-  { id: "g2", name: "美術組", color: "#f59e0b", members: [] },
-  { id: "g3", name: "設計組", color: "#8b5cf6", members: [] },
-  { id: "g4", name: "硬體組", color: "#10b981", members: [] },
-  { id: "g5", name: "軟體組", color: "#06b6d4", members: [] },
-  { id: "g6", name: "維運組", color: "#f43f5e", members: [] },
-  { id: "g7", name: "費曼圖", color: "#facc15", members: [] },
-];
 
-const initialProjects: Project[] = [
-  {
-    id: "p1",
-    name: "專案管理軟體開發",
-    description: "PM Dashboard 系統開發專案",
-    color: "#6366f1",
-    groups: DEFAULT_GROUPS,
-    columns: initialColumns,
-    meetings: [],
-    risks: [],
-    weeklyReports: [],
-  },
-];
 
 function normalizeDate(dateStr: string): string {
   if (!dateStr) return "";
@@ -2174,7 +2124,7 @@ function ActivityView({ projectId }: { projectId: string }) {
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject, currentProjectRole, language, onLanguageChange }: {
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr";
   setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr") => void;
   projects: Project[];
@@ -2184,8 +2134,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   onDeleteProject: (id: string) => void;
   onManageGroups: () => void;
   onLogout: () => void;
-  currentUser: any;
-  activeProject: Project | undefined;
+  currentUser: any;
   currentProjectRole: string;
   language: Language;
   onLanguageChange: (lang: Language) => void;
@@ -5087,8 +5036,7 @@ export default function App() {
         onDeleteProject={handleDeleteProject}
         onManageGroups={() => setShowGroupModal(true)}
         onLogout={handleLogout}
-        currentUser={currentUser}
-        activeProject={activeProject}
+        currentUser={currentUser}
         currentProjectRole={currentProjectRole}
         language={language}
         onLanguageChange={handleLanguageChange}
