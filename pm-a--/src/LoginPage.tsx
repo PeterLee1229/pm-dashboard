@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { login, register, getGroups } from "./api";
+import { t } from "./i18n";
 
 export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [isRegister, setIsRegister] = useState(false);
@@ -23,7 +24,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     try {
       if (isRegister) {
         if (!email || !password || !name || !memberId || !groupId) {
-          setError("請填寫所有欄位");
+          setError(t("login.fillAll"));
           setLoading(false);
           return;
         }
@@ -34,7 +35,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
         setRegisterSuccess(true);
       } else {
         if (!email || !password) {
-          setError("請輸入帳號密碼");
+          setError(t("login.fillLogin"));
           setLoading(false);
           return;
         }
@@ -109,9 +110,9 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
       <div className="login-bg">
         <div className="login-card">
           <div className="login-logo">📋</div>
-          <div className="login-title">PM Dashboard</div>
+          <div className="login-title">{t("login.title")}</div>
           <div className="login-subtitle">
-            {isRegister ? "建立新帳號" : "登入您的帳號"}
+            {isRegister ? t("login.createAccount") : t("login.loginAccount")}
           </div>
 
           {error && <div className="login-error">{error}</div>}
@@ -121,30 +122,30 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
               background: "#10b98118", border: "1px solid #10b98133", borderRadius: 8,
               color: "#10b981", fontSize: 12, padding: "10px 14px", marginBottom: 16
             }}>
-              註冊成功！請使用帳號密碼登入
+              {t("login.registerSuccess")}
             </div>
           )}
 
           {isRegister && (
             <>
               <div className="login-field">
-                <label className="login-label">姓名</label>
+                <label className="login-label">{t("login.name")}</label>
                 <input className="login-input" value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="輸入姓名" />
+                  placeholder={t("login.name")} />
               </div>
               <div className="login-field">
-                <label className="login-label">員工編號</label>
+                <label className="login-label">{t("login.memberId")}</label>
                 <input className="login-input" value={memberId}
                   onChange={(e) => setMemberId(e.target.value)}
-                  placeholder="例如 A001" />
+                  placeholder="A001" />
               </div>
               <div className="login-field">
-                <label className="login-label">所屬組別</label>
+                <label className="login-label">{t("login.group")}</label>
                 <select className="login-input" value={groupId}
                   onChange={(e) => setGroupId(e.target.value)}
                   style={{ cursor: "pointer" }}>
-                  <option value="">請選擇組別</option>
+                  <option value="">{t("login.selectGroup")}</option>
                   {groups.map((g: any) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
@@ -154,7 +155,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
           )}
 
           <div className="login-field">
-            <label className="login-label">電子信箱</label>
+            <label className="login-label">{t("login.email")}</label>
             <input className="login-input" type="email" value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
@@ -162,21 +163,21 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
           </div>
 
           <div className="login-field">
-            <label className="login-label">密碼</label>
+            <label className="login-label">{t("login.password")}</label>
             <input className="login-input" type="password" value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="輸入密碼"
+              placeholder={t("login.password")}
               onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} />
           </div>
 
           <button className="login-btn" onClick={handleSubmit} disabled={loading}>
-            {loading ? "處理中..." : isRegister ? "註冊" : "登入"}
+            {loading ? t("login.processing") : isRegister ? t("login.registerBtn") : t("login.loginBtn")}
           </button>
 
           <div className="login-switch">
-            {isRegister ? "已有帳號？" : "還沒有帳號？"}
+            {isRegister ? t("login.hasAccount") : t("login.noAccount")}
             <button onClick={() => { setIsRegister(!isRegister); setError(""); setRegisterSuccess(false); }}>
-              {isRegister ? "登入" : "註冊"}
+              {isRegister ? t("login.loginBtn") : t("login.registerBtn")}
             </button>
           </div>
         </div>

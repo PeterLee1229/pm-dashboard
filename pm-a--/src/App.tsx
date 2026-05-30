@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactElement } from "react";
+import { t, getLanguage, setLanguage, type Language } from "./i18n";
 import LoginPage from "./LoginPage";
 import { isLoggedIn, clearToken, getCurrentUser,
   getAdminUsers, updateAdminUser,
@@ -147,6 +148,13 @@ const COLUMN_ICONS: Record<string, ReactElement> = {
 
 const COLUMN_COLORS: Record<string, string> = {
   todo: "#6366f1", inprogress: "#f59e0b", review: "#8b5cf6", done: "#10b981",
+};
+
+const COLUMN_TITLES: Record<string, () => string> = {
+  todo:       () => t("kanban.todo"),
+  inprogress: () => t("kanban.inprogress"),
+  review:     () => t("kanban.review"),
+  done:       () => t("kanban.done"),
 };
 
 const RISK_LEVELS: { id: RiskLevel; label: string; color: string; value: number }[] = [
@@ -882,7 +890,7 @@ function ColumnComponent({ column, canAdd, canDrag, onAddTask, onDeleteTask, onE
       <div className="column-header" style={{ borderTop: `3px solid ${color}` }}>
         <div className="column-title-row">
           <span style={{ color }}>{icon}</span>
-          <span className="column-title">{column.title}</span>
+          <span className="column-title">{COLUMN_TITLES[column.id]?.() || column.title}</span>
           <span className="task-count" style={{ background: color + "22", color }}>{column.tasks.length}</span>
         </div>
         {canAdd && isAddableColumn && (
@@ -2166,7 +2174,7 @@ function ActivityView({ projectId }: { projectId: string }) {
 }
 
 // ── Sidebar ──────────────────────────────────────────────────────────
-function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject, currentProjectRole }: {
+function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, activeProject, currentProjectRole, language, onLanguageChange }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr";
   setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr") => void;
   projects: Project[];
@@ -2179,6 +2187,8 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
   currentUser: any;
   activeProject: Project | undefined;
   currentProjectRole: string;
+  language: Language;
+  onLanguageChange: (lang: Language) => void;
 }) {
   const sidebarBtn = (id: typeof view, label: string, icon: React.ReactNode) => {
     const active = view === id;
@@ -2209,14 +2219,14 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 12px 12px" }}>
         {/* Logo */}
         <div style={{ padding: "0 8px 20px" }}>
-          <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>專案管理</p>
-          <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>PM Dashboard</p>
+          <p style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", letterSpacing: -0.5 }}>{t("app.title")}</p>
+          <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>{t("app.subtitle")}</p>
         </div>
 
         {/* 專案列表 */}
         <div style={{ paddingBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px 10px" }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>專案</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em" }}>{t("sidebar.projects")}</span>
             <button onClick={onAddProject} style={{
               background: "none", border: "none", color: "#475569", cursor: "pointer",
               padding: 2, display: "flex", borderRadius: 4,
@@ -2258,12 +2268,12 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
         <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
 
         {/* 視圖切換 */}
-        {sidebarBtn("kanban",    "看板",   <Circle size={16} />)}
-        {sidebarBtn("gantt",     "甘特圖", <Clock size={16} />)}
-        {sidebarBtn("dashboard", "儀表板", <BarChart2 size={16} />)}
-        {hasPermission(currentProjectRole, "manage_meetings") && sidebarBtn("meetings", "會議記錄", <AlignLeft size={16} />)}
-        {hasPermission(currentProjectRole, "view_risks")       && sidebarBtn("risks",    "風險管理", <AlertCircle size={16} />)}
-        {hasPermission(currentProjectRole, "manage_weekly")   && sidebarBtn("weekly",   "週報",     <CheckCircle2 size={16} />)}
+        {sidebarBtn("kanban",    t("sidebar.kanban"),    <Circle size={16} />)}
+        {sidebarBtn("gantt",     t("sidebar.gantt"),     <Clock size={16} />)}
+        {sidebarBtn("dashboard", t("sidebar.dashboard"), <BarChart2 size={16} />)}
+        {hasPermission(currentProjectRole, "manage_meetings") && sidebarBtn("meetings", t("sidebar.meetings"), <AlignLeft size={16} />)}
+        {hasPermission(currentProjectRole, "view_risks")       && sidebarBtn("risks",    t("sidebar.risks"),    <AlertCircle size={16} />)}
+        {hasPermission(currentProjectRole, "manage_weekly")   && sidebarBtn("weekly",   t("sidebar.weekly"),   <CheckCircle2 size={16} />)}
         <button onClick={() => setView("okr")} style={{
           display: "flex", alignItems: "center", gap: 10,
           padding: "10px 12px", borderRadius: 8, border: "none",
@@ -2273,7 +2283,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
           cursor: "pointer", textAlign: "left", width: "100%",
           borderLeft: view === "okr" ? "3px solid #6366f1" : "3px solid transparent"
         }}>
-          🎯 OKR
+          🎯 {t("sidebar.okr")}
         </button>
 
         {/* 專案成員 + 管理功能 */}
@@ -2288,7 +2298,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
               cursor: "pointer", textAlign: "left", width: "100%",
               borderLeft: view === "project_members" ? "3px solid #6366f1" : "3px solid transparent"
             }}>
-              <User size={16} /> 專案成員
+              <User size={16} /> {t("sidebar.projectMembers")}
             </button>
           )}
           <button onClick={() => setView("activities")} style={{
@@ -2300,7 +2310,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
             cursor: "pointer", textAlign: "left", width: "100%",
             borderLeft: view === "activities" ? "3px solid #6366f1" : "3px solid transparent"
           }}>
-            <Clock size={16} /> 活動紀錄
+            <Clock size={16} /> {t("sidebar.activities")}
           </button>
           <button onClick={() => setView("calendar")} style={{
             display: "flex", alignItems: "center", gap: 10,
@@ -2311,7 +2321,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
             cursor: "pointer", textAlign: "left", width: "100%",
             borderLeft: view === "calendar" ? "3px solid #6366f1" : "3px solid transparent"
           }}>
-            <Calendar size={16} /> 行事曆
+            <Calendar size={16} /> {t("sidebar.calendar")}
           </button>
         </div>
 
@@ -2326,7 +2336,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
                 fontSize: 13, cursor: "pointer", textAlign: "left",
                 borderLeft: "3px solid transparent"
               }}>
-                <User size={16} /> 管理組別
+                <User size={16} /> {t("sidebar.manageGroups")}
               </button>
             )}
             <button onClick={() => setView("admin")} style={{
@@ -2338,7 +2348,7 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
               cursor: "pointer", textAlign: "left", width: "100%",
               borderLeft: view === "admin" ? "3px solid #ef4444" : "3px solid transparent"
             }}>
-              ⚙️ 系統管理
+              ⚙️ {t("sidebar.admin")}
             </button>
           </div>
         )}
@@ -2346,13 +2356,28 @@ function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId,
 
       {/* 下半部：固定底部 */}
       <div style={{ padding: "12px", borderTop: "1px solid #ffffff08" }}>
+        {/* 語言切換 */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          <button onClick={() => onLanguageChange("zh")} style={{
+            flex: 1, background: language === "zh" ? "#6366f122" : "transparent",
+            border: `1px solid ${language === "zh" ? "#6366f1" : "#ffffff15"}`,
+            color: language === "zh" ? "#6366f1" : "#64748b",
+            borderRadius: 6, padding: "4px", fontSize: 11, cursor: "pointer"
+          }}>中文</button>
+          <button onClick={() => onLanguageChange("en")} style={{
+            flex: 1, background: language === "en" ? "#6366f122" : "transparent",
+            border: `1px solid ${language === "en" ? "#6366f1" : "#ffffff15"}`,
+            color: language === "en" ? "#6366f1" : "#64748b",
+            borderRadius: 6, padding: "4px", fontSize: 11, cursor: "pointer"
+          }}>EN</button>
+        </div>
         <button onClick={onLogout} style={{
           display: "flex", alignItems: "center", gap: 8,
           width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
           background: "transparent", color: "#ef4444",
           fontSize: 12, cursor: "pointer", textAlign: "left",
         }}>
-          <X size={14} /> 登出
+          <X size={14} /> {t("app.logout")}
         </button>
       </div>
     </div>
@@ -4317,6 +4342,12 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<any>(null);
   const [searching, setSearching] = useState(false);
 
+  const [language, setLang] = useState<Language>(getLanguage());
+  const handleLanguageChange = (lang: Language) => {
+    setLanguage(lang);
+    setLang(lang);
+  };
+
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
@@ -4940,7 +4971,7 @@ export default function App() {
         <div style={{ textAlign: "center" }}>
           <p style={{ fontSize: 32, marginBottom: 12 }}>📋</p>
           <p style={{ fontSize: 15, color: "#e2e8f0", marginBottom: 4 }}>PM Dashboard</p>
-          <p style={{ fontSize: 13, color: "#64748b" }}>載入中...</p>
+          <p style={{ fontSize: 13, color: "#64748b" }}>{t("app.loading")}</p>
         </div>
       </div>
     );
@@ -5059,6 +5090,8 @@ export default function App() {
         currentUser={currentUser}
         activeProject={activeProject}
         currentProjectRole={currentProjectRole}
+        language={language}
+        onLanguageChange={handleLanguageChange}
       />
 
       {view === "admin" && currentUser?.role === "admin" ? (
@@ -5101,11 +5134,11 @@ export default function App() {
         <div className="app">
           <div className="topbar">
             <div className="topbar-left">
-              <h1>{activeProject?.name || "專案管理"}</h1>
-              <p>共 {totalTasks} 項任務 · {doneTasks} 項已完成</p>
+              <h1>{activeProject?.name || t("app.title")}</h1>
+              <p>{totalTasks} {t("kanban.totalTasks")} · {doneTasks} {t("kanban.completed")}</p>
             </div>
             <div className="progress-wrap">
-              <span className="progress-label">進度</span>
+              <span className="progress-label">{t("kanban.progress")}</span>
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
               </div>
@@ -5148,13 +5181,13 @@ export default function App() {
                       display: "flex", alignItems: "center", justifyContent: "space-between",
                       padding: "14px 16px", borderBottom: "1px solid #ffffff08"
                     }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>通知</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>{t("notifications.title")}</span>
                       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         {unreadCount > 0 && (
                           <button onClick={async () => { await markAllAsRead(); loadNotifications(); }} style={{
                             background: "none", border: "none", color: "#6366f1",
                             fontSize: 11, cursor: "pointer"
-                          }}>全部已讀</button>
+                          }}>{t("notifications.readAll")}</button>
                         )}
                         <button onClick={() => setShowNotifications(false)} style={{
                           background: "none", border: "none", color: "#64748b",
@@ -5165,7 +5198,7 @@ export default function App() {
 
                     <div style={{ maxHeight: 400, overflowY: "auto" }}>
                       {notifications.length === 0 ? (
-                        <div style={{ padding: 32, textAlign: "center", color: "#475569", fontSize: 13 }}>暫無通知</div>
+                        <div style={{ padding: 32, textAlign: "center", color: "#475569", fontSize: 13 }}>{t("notifications.empty")}</div>
                       ) : notifications.map((n: any) => {
                         const NOTIF_ICONS: Record<string, string> = {
                           task_assigned: "📋", task_moved: "🔄",
@@ -5208,7 +5241,7 @@ export default function App() {
                   background: "#10b98122", border: "1px solid #10b98144",
                   borderRadius: 8, color: "#10b981", fontSize: 13, fontWeight: 600,
                   padding: "6px 16px", cursor: "pointer"
-                }}>匯入</button>
+                }}>{t("app.import")}</button>
               )}
 
               {hasPermission(currentProjectRole, "export") && <div style={{ position: "relative" }}>
@@ -5218,7 +5251,7 @@ export default function App() {
                     borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
                     padding: "6px 16px", cursor: "pointer"
                   }}>
-                  匯出 ▾
+                  {t("app.export")} ▾
                 </button>
 
                 {showExportMenu && (
@@ -5228,34 +5261,34 @@ export default function App() {
                     padding: 6, zIndex: 100, minWidth: 200,
                     boxShadow: "0 12px 32px #000a"
                   }}>
-                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>任務清單</p>
+                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>{t("export.taskList")}</p>
                     <button className="dropdown-item" onClick={() => { exportTaskListCSV(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
                       style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
-                      📄 CSV 格式
+                      {t("export.taskListCsv")}
                     </button>
                     <button className="dropdown-item" onClick={() => { exportTaskListPDF(activeProject.name, prepareTaskExportData()); setShowExportMenu(false); }}
                       style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
-                      📑 PDF 格式
+                      {t("export.taskListPdf")}
                     </button>
 
                     <div style={{ height: 1, background: "#ffffff08", margin: "4px 0" }} />
 
-                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>工時報表</p>
+                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>{t("export.timeReport")}</p>
                     <button className="dropdown-item" onClick={() => { exportTimeReportCSV(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
                       style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
-                      📄 CSV 格式
+                      {t("export.timeReportCsv")}
                     </button>
                     <button className="dropdown-item" onClick={() => { exportTimeReportPDF(activeProject.name, prepareTimeReportData()); setShowExportMenu(false); }}
                       style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
-                      📑 PDF 格式
+                      {t("export.timeReportPdf")}
                     </button>
 
                     <div style={{ height: 1, background: "#ffffff08", margin: "4px 0" }} />
 
-                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>甘特圖</p>
+                    <p style={{ fontSize: 10, color: "#475569", padding: "4px 10px", textTransform: "uppercase", letterSpacing: ".05em" }}>{t("export.gantt")}</p>
                     <button className="dropdown-item" onClick={() => { exportGanttPNG("gantt-container", activeProject.name); setShowExportMenu(false); }}
                       style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: "#e2e8f0", fontSize: 12, padding: "8px 10px", borderRadius: 6, cursor: "pointer" }}>
-                      🖼️ PNG 圖片
+                      {t("export.ganttPng")}
                     </button>
                   </div>
                 )}
@@ -5270,7 +5303,7 @@ export default function App() {
                 <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#475569" }} />
                 <input
                   className="field-input"
-                  placeholder="搜尋任務或指派人..."
+                  placeholder={t("filter.search")}
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   style={{ paddingLeft: 32, fontSize: 13 }}
@@ -5279,7 +5312,7 @@ export default function App() {
               {(searchText || filterPriorities.length > 0 || filterAssignees.length > 0 || filterGroups.length > 0) && (
                 <button onClick={() => { setSearchText(""); setFilterPriorities([]); setFilterAssignees([]); setFilterGroups([]); }}
                   style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 8, color: "#ef4444", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>
-                  清除篩選
+                  {t("filter.clear")}
                 </button>
               )}
             </div>
