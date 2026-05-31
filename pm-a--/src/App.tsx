@@ -71,6 +71,8 @@ export default function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any>(null);
@@ -809,7 +811,32 @@ export default function App() {
           from { opacity: 0; transform: translateX(-50%) translateY(12px); }
           to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
+
+        /* 手機版 RWD */
+        @media (max-width: 768px) {
+          .hamburger-btn { display: flex !important; }
+          .sidebar { transform: translateX(-100%); transition: transform .2s ease; }
+          .sidebar.open { transform: translateX(0); }
+          .app { padding: 12px !important; margin-left: 0 !important; }
+          .board { grid-template-columns: 1fr !important; gap: 12px !important; }
+          .topbar { flex-direction: column !important; gap: 12px !important; align-items: flex-start !important; }
+        }
       `}</style>
+
+      {/* 漢堡按鈕（手機版） */}
+      <button className="hamburger-btn" onClick={() => setSidebarOpen(!sidebarOpen)} style={{
+        display: "none",
+        position: "fixed", top: 12, left: 12, zIndex: 60,
+        background: "#161b27", border: "1px solid #ffffff12",
+        borderRadius: 8, color: "#e2e8f0", fontSize: 20,
+        padding: "8px 12px", cursor: "pointer",
+      }}>☰</button>
+
+      {/* Sidebar 背景遮罩（手機版） */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "#00000066", zIndex: 40 }} />
+      )}
 
       <Sidebar
         view={view}
@@ -825,6 +852,8 @@ export default function App() {
         currentProjectRole={currentProjectRole}
         language={language}
         onLanguageChange={handleLanguageChange}
+        sidebarOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       {<Suspense fallback={

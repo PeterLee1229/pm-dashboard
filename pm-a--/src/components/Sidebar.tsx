@@ -3,7 +3,7 @@ import { Plus, X, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Cal
 import type { Project } from "../types";
 import { hasPermission } from "../helpers";
 
-export default function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange }: {
+export default function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange, sidebarOpen, onClose }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr";
   setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr") => void;
   projects: Project[];
@@ -17,11 +17,13 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
   currentProjectRole: string;
   language: Language;
   onLanguageChange: (lang: Language) => void;
+  sidebarOpen: boolean;
+  onClose: () => void;
 }) {
-  const sidebarBtn = (id: typeof view, label: string, icon: React.ReactNode) => {
+  const nav = (id: typeof view, label: string, icon: React.ReactNode) => {
     const active = view === id;
     return (
-      <button key={id} onClick={() => setView(id)} style={{
+      <button key={id} onClick={() => { setView(id); onClose(); }} style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "10px 12px", borderRadius: 8, border: "none",
         background: active ? "#6366f122" : "transparent",
@@ -37,7 +39,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
   };
 
   return (
-    <div style={{
+    <div className={`sidebar${sidebarOpen ? " open" : ""}`} style={{
       width: 200, height: "100vh", background: "#111827",
       borderRight: "1px solid #ffffff08",
       display: "flex", flexDirection: "column",
@@ -65,7 +67,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
             const active = p.id === activeProjectId;
             return (
               <div key={p.id} style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                <button onClick={() => setActiveProjectId(p.id)} style={{
+                <button onClick={() => { setActiveProjectId(p.id); onClose(); }} style={{
                   flex: 1, display: "flex", alignItems: "center", gap: 8,
                   padding: "8px 12px", borderRadius: 8, border: "none",
                   background: active ? p.color + "18" : "transparent",
@@ -96,13 +98,13 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
         <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
 
         {/* 視圖切換 */}
-        {sidebarBtn("kanban",    t("sidebar.kanban"),    <Circle size={16} />)}
-        {sidebarBtn("gantt",     t("sidebar.gantt"),     <Clock size={16} />)}
-        {sidebarBtn("dashboard", t("sidebar.dashboard"), <BarChart2 size={16} />)}
-        {hasPermission(currentProjectRole, "manage_meetings") && sidebarBtn("meetings", t("sidebar.meetings"), <AlignLeft size={16} />)}
-        {hasPermission(currentProjectRole, "view_risks")       && sidebarBtn("risks",    t("sidebar.risks"),    <AlertCircle size={16} />)}
-        {hasPermission(currentProjectRole, "manage_weekly")   && sidebarBtn("weekly",   t("sidebar.weekly"),   <CheckCircle2 size={16} />)}
-        <button onClick={() => setView("okr")} style={{
+        {nav("kanban",    t("sidebar.kanban"),    <Circle size={16} />)}
+        {nav("gantt",     t("sidebar.gantt"),     <Clock size={16} />)}
+        {nav("dashboard", t("sidebar.dashboard"), <BarChart2 size={16} />)}
+        {hasPermission(currentProjectRole, "manage_meetings") && nav("meetings", t("sidebar.meetings"), <AlignLeft size={16} />)}
+        {hasPermission(currentProjectRole, "view_risks")       && nav("risks",    t("sidebar.risks"),    <AlertCircle size={16} />)}
+        {hasPermission(currentProjectRole, "manage_weekly")   && nav("weekly",   t("sidebar.weekly"),   <CheckCircle2 size={16} />)}
+        <button onClick={() => { setView("okr"); onClose(); }} style={{
           display: "flex", alignItems: "center", gap: 10,
           padding: "10px 12px", borderRadius: 8, border: "none",
           background: view === "okr" ? "#6366f122" : "transparent",
@@ -117,7 +119,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
         {/* 專案成員 + 管理功能 */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
           {hasPermission(currentProjectRole, "manage_members") && (
-            <button onClick={() => setView("project_members")} style={{
+            <button onClick={() => { setView("project_members"); onClose(); }} style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "10px 12px", borderRadius: 8, border: "none",
               background: view === "project_members" ? "#6366f122" : "transparent",
@@ -129,7 +131,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
               <User size={16} /> {t("sidebar.projectMembers")}
             </button>
           )}
-          <button onClick={() => setView("activities")} style={{
+          <button onClick={() => { setView("activities"); onClose(); }} style={{
             display: "flex", alignItems: "center", gap: 10,
             padding: "10px 12px", borderRadius: 8, border: "none",
             background: view === "activities" ? "#6366f122" : "transparent",
@@ -140,7 +142,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
           }}>
             <Clock size={16} /> {t("sidebar.activities")}
           </button>
-          <button onClick={() => setView("calendar")} style={{
+          <button onClick={() => { setView("calendar"); onClose(); }} style={{
             display: "flex", alignItems: "center", gap: 10,
             padding: "10px 12px", borderRadius: 8, border: "none",
             background: view === "calendar" ? "#6366f122" : "transparent",
@@ -156,18 +158,16 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
         {/* 系統管理（僅 admin） */}
         {currentUser?.role === "admin" && (
           <div style={{ marginTop: 4 }}>
-            {currentUser?.role === "admin" && (
-              <button onClick={onManageGroups} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
-                background: "transparent", color: "#64748b",
-                fontSize: 13, cursor: "pointer", textAlign: "left",
-                borderLeft: "3px solid transparent"
-              }}>
-                <User size={16} /> {t("sidebar.manageGroups")}
-              </button>
-            )}
-            <button onClick={() => setView("admin")} style={{
+            <button onClick={onManageGroups} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+              background: "transparent", color: "#64748b",
+              fontSize: 13, cursor: "pointer", textAlign: "left",
+              borderLeft: "3px solid transparent"
+            }}>
+              <User size={16} /> {t("sidebar.manageGroups")}
+            </button>
+            <button onClick={() => { setView("admin"); onClose(); }} style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "10px 12px", borderRadius: 8, border: "none",
               background: view === "admin" ? "#ef444422" : "transparent",
@@ -211,5 +211,3 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
     </div>
   );
 }
-
-// ── Meetings View ────────────────────────────────────────────────────
