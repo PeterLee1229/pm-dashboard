@@ -81,7 +81,7 @@ export default function ActivityView({ projectId }: { projectId: string }) {
       </div>
 
       {/* 統計 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div className="stats-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         <div style={{ background: "#161b27", borderRadius: 10, padding: "14px 18px", border: "1px solid #10b98122" }}>
           <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>今日活動</p>
           <p style={{ fontSize: 24, fontWeight: 700, color: "#10b981" }}>

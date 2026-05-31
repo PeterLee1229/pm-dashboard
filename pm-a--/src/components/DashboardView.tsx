@@ -60,7 +60,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+      <div className="stats-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
         {[
           { label: "總任務數", value: allTasks.length, color: "#6366f1" },
           { label: "已完成", value: doneTasks, color: "#10b981" },
@@ -77,7 +77,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      <div className="charts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各階段任務數</p>
           <ResponsiveContainer width="100%" height={200}>

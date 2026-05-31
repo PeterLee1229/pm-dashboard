@@ -813,13 +813,55 @@ export default function App() {
         }
 
         /* 手機版 RWD */
+        /* 手機版適配 */
         @media (max-width: 768px) {
           .hamburger-btn { display: flex !important; }
-          .sidebar { transform: translateX(-100%); transition: transform .2s ease; }
+          .sidebar {
+            transform: translateX(-100%);
+            transition: transform .2s ease;
+            z-index: 55 !important;
+          }
           .sidebar.open { transform: translateX(0); }
           .app { padding: 12px !important; margin-left: 0 !important; }
+          .main-content { margin-left: 0 !important; }
+          .sidebar-overlay { display: block !important; }
+          .topbar {
+            flex-direction: column !important;
+            gap: 8px !important;
+            align-items: stretch !important;
+            padding-bottom: 12px !important;
+          }
+          .topbar-left h1 { font-size: 18px !important; }
+          .topbar-left p { font-size: 12px !important; }
+          .progress-wrap { justify-content: flex-start !important; }
           .board { grid-template-columns: 1fr !important; gap: 12px !important; }
-          .topbar { flex-direction: column !important; gap: 12px !important; align-items: flex-start !important; }
+          .filter-row {
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+          }
+          .filter-row .field-input { min-width: 100% !important; }
+          .topbar-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+          .stats-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+          .stats-grid-3 { grid-template-columns: 1fr !important; }
+          .stats-grid-5 { grid-template-columns: repeat(2, 1fr) !important; }
+          .charts-grid { grid-template-columns: 1fr !important; }
+          .modal {
+            width: 95vw !important;
+            max-height: 85vh !important;
+          }
+          .gantt-frozen { width: 140px !important; min-width: 140px !important; }
+          .calendar-layout { flex-direction: column !important; }
+          .calendar-detail { width: 100% !important; }
+          .desktop-only { display: none !important; }
+        }
+
+        @media (min-width: 769px) {
+          .hamburger-btn { display: none !important; }
+          .sidebar-overlay { display: none !important; }
         }
       `}</style>
 
@@ -835,7 +877,7 @@ export default function App() {
       {/* Sidebar 背景遮罩（手機版） */}
       {sidebarOpen && (
         <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "#00000066", zIndex: 40 }} />
+          style={{ display: "none", position: "fixed", inset: 0, background: "#00000066", zIndex: 50 }} />
       )}
 
       <Sidebar
@@ -861,11 +903,11 @@ export default function App() {
                 載入中...
               </div>
             }>{view === "admin" && currentUser?.role === "admin" ? (
-        <div style={{ marginLeft: 200 }}>
+        <div className="main-content" style={{ marginLeft: 200 }}>
           <AdminView currentUser={currentUser} />
         </div>
       ) : view === "project_members" && activeProject ? (
-        <div style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <ProjectMembersView
             projectId={activeProject.id}
             projectName={activeProject.name}
@@ -874,21 +916,21 @@ export default function App() {
           />
         </div>
       ) : view === "activities" && activeProject ? (
-        <div style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             活動紀錄 · {activeProject.name}
           </h2>
           <ActivityView projectId={activeProject.id} />
         </div>
       ) : view === "calendar" && activeProject ? (
-        <div style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             行事曆 · {activeProject.name}
           </h2>
           <CalendarView columns={columns} meetings={meetings} groups={projectMemberGroups} />
         </div>
       ) : view === "okr" && activeProject ? (
-        <div style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             OKR · {activeProject.name}
           </h2>
@@ -896,14 +938,14 @@ export default function App() {
         </div>
       ) : null}</Suspense>}
 
-      <div style={{ marginLeft: 200, display: (view === "admin" || view === "project_members" || view === "activities" || view === "calendar" || view === "okr") ? "none" : undefined }}>
+      <div className="main-content" style={{ marginLeft: 200, display: (view === "admin" || view === "project_members" || view === "activities" || view === "calendar" || view === "okr") ? "none" : undefined }}>
         <div className="app">
           <div className="topbar">
             <div className="topbar-left">
               <h1>{activeProject?.name || t("app.title")}</h1>
               <p>{totalTasks} {t("kanban.totalTasks")} · {doneTasks} {t("kanban.completed")}</p>
             </div>
-            <div className="progress-wrap">
+            <div className="progress-wrap topbar-actions">
               <span className="progress-label">{t("kanban.progress")}</span>
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
@@ -1064,7 +1106,7 @@ export default function App() {
 
           {(view === "kanban" || view === "gantt") && <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
             {/* 第一行：搜尋 + 清除 */}
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="filter-row" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
                 <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#475569" }} />
                 <input
@@ -1085,7 +1127,7 @@ export default function App() {
 
             {/* 第二行：組別多選 */}
             {projectMemberGroups.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div className="filter-row" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {projectMemberGroups.map((g) => {
                   const active = filterGroups.includes(g.id);
                   return (
@@ -1118,7 +1160,7 @@ export default function App() {
             )}
 
             {/* 第三行：優先級多選 */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <div className="filter-row" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {(["high", "medium", "low"] as Priority[]).map((p) => {
                 const active = filterPriorities.includes(p);
                 const cfg = PRIORITY_CONFIG[p];
@@ -1146,7 +1188,7 @@ export default function App() {
               const availableMembers = Array.from(memberMap.values());
               if (availableMembers.length === 0) return null;
               return (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div className="filter-row" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {availableMembers.map((m) => {
                     const active = filterAssignees.includes(m.id);
                     return (

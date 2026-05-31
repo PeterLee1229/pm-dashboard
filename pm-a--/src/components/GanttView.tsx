@@ -64,7 +64,7 @@ export default function GanttView({ columns, groups, onEditTask }: {
     <div id="gantt-container" style={{ display: "flex", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
 
       {/* 凍結左側面板 */}
-      <div style={{ minWidth: frozenWidth, flexShrink: 0, zIndex: 1, borderRight: "1px solid #ffffff12" }}>
+      <div className="gantt-frozen" style={{ minWidth: frozenWidth, flexShrink: 0, zIndex: 1, borderRight: "1px solid #ffffff12" }}>
         {/* 月份列佔位 */}
         <div style={{ height: 37, background: "#1a2030", borderBottom: "1px solid #ffffff08", display: "flex", alignItems: "center", paddingLeft: 14 }}>
           <span style={{ fontSize: 11, color: "#475569" }}>組別 / 任務名稱</span>

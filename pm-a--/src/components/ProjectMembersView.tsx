@@ -189,7 +189,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
       <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, margin: 0 }}>專案成員管理</h2>
 
       {/* 統計卡片 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+      <div className="stats-grid-5" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
         {PROJECT_ROLES.map(r => (
           <div key={r.value} style={{
             background: "#161b27", borderRadius: 10, padding: "14px 18px",

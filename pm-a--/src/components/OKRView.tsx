@@ -197,7 +197,7 @@ export default function OKRView({ projectId, canManage }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* 頂部統計 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div className="stats-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         <div style={{ background: "#161b27", borderRadius: 10, padding: "16px 20px", border: "1px solid #6366f122" }}>
           <p style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>目標數</p>
           <p style={{ fontSize: 28, fontWeight: 700, color: "#6366f1" }}>{objectives.length}</p>

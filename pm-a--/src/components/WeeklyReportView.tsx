@@ -175,7 +175,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
       </div>
 
       {/* 統計卡片 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+      <div className="stats-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {[
           { label: "本週完成", value: completedTasks.length, unit: "項", color: "#10b981" },
           { label: "進行中",   value: inProgressTasks.length, unit: "項", color: "#f59e0b" },
@@ -194,7 +194,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      <div className="charts-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
 
         {/* 本週完成 */}
         <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>

@@ -75,7 +75,7 @@ export default function CalendarView({ columns, meetings, groups }: {
   const selectedMeetings = selectedDate ? getMeetingsForDate(selectedDate) : [];
 
   return (
-    <div style={{ display: "flex", gap: 16 }}>
+    <div className="calendar-layout" style={{ display: "flex", gap: 16 }}>
 
       {/* 左側月曆 */}
       <div style={{ flex: 1 }}>
@@ -161,7 +161,7 @@ export default function CalendarView({ columns, meetings, groups }: {
       </div>
 
       {/* 右側詳情面板 */}
-      <div style={{
+      <div className="calendar-detail" style={{
         width: 320, background: "#161b27", borderRadius: 12,
         border: "1px solid #ffffff08", padding: 16, alignSelf: "flex-start"
       }}>
