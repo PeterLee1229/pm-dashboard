@@ -31,7 +31,7 @@ export function OKRModal({ objective, onSave, onClose }: {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="描述這個目標的背景和期望..." rows={3} />
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
+          <div className="mobile-form-row" style={{ display: "flex", gap: 12 }}>
             <div className="field" style={{ flex: 1 }}>
               <label className="field-label">開始日期</label>
               <input type="date" className="field-input" value={startDate}
@@ -194,7 +194,7 @@ export default function OKRView({ projectId, canManage }: {
     : 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
 
       {/* 頂部統計 */}
       <div className="stats-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
@@ -218,7 +218,7 @@ export default function OKRView({ projectId, canManage }: {
 
       {/* 新增按鈕 */}
       {canManage && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div className="okr-actions" style={{ display: "flex", justifyContent: "flex-end" }}>
           <button onClick={() => setShowAddObj(true)} style={{
             background: "#6366f122", border: "1px solid #6366f144",
             borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
@@ -242,12 +242,12 @@ export default function OKRView({ projectId, canManage }: {
           <div key={obj.id} style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
             {/* Objective 標題 */}
             <div style={{ padding: "16px 20px", background: "#1a2030", borderBottom: "1px solid #ffffff08" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="okr-objective-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div className="okr-objective-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 18 }}>🎯</span>
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>{obj.title}</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="okr-objective-controls" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: progressColor }}>{progress}%</span>
                   {canManage && (
                     <>
@@ -284,12 +284,12 @@ export default function OKRView({ projectId, canManage }: {
                 const krProgress = kr.targetValue > 0 ? Math.min(Math.round((kr.currentValue / kr.targetValue) * 100), 100) : 0;
                 const krColor = krProgress >= 70 ? "#10b981" : krProgress >= 40 ? "#f59e0b" : "#ef4444";
                 return (
-                  <div key={kr.id} style={{
+                  <div key={kr.id} className="okr-kr-row" style={{
                     display: "flex", alignItems: "center", gap: 12,
                     padding: "10px 0", borderBottom: "1px solid #ffffff06"
                   }}>
                     <span style={{ fontSize: 12, color: "#475569", flexShrink: 0 }}>🔑</span>
-                    <div style={{ flex: 1 }}>
+                    <div className="okr-kr-body" style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                         <span style={{ fontSize: 12, color: "#e2e8f0" }}>{kr.title}</span>
                         <span style={{ fontSize: 11, color: krColor, fontWeight: 600 }}>
@@ -301,7 +301,7 @@ export default function OKRView({ projectId, canManage }: {
                       </div>
                     </div>
                     {canManage && (
-                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <div className="okr-kr-controls" style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                         <input type="number" value={kr.currentValue} min={0} max={kr.targetValue}
                           onChange={(e) => handleUpdateKR(kr.id, obj.id, { ...kr, currentValue: parseFloat(e.target.value) || 0 })}
                           style={{

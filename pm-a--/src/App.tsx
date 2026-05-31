@@ -717,7 +717,7 @@ export default function App() {
     <>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0f1117; font-family: 'Segoe UI', system-ui, sans-serif; color: #e2e8f0; }
+        body { background: #0f1117; font-family: 'Segoe UI', system-ui, sans-serif; color: #e2e8f0; overflow-x: hidden; }
         .app { min-height: 100vh; padding: 24px; }
 
         .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #ffffff10; }
@@ -823,7 +823,15 @@ export default function App() {
           }
           .sidebar.open { transform: translateX(0); }
           .app { padding: 12px !important; margin-left: 0 !important; }
-          .main-content { margin-left: 0 !important; }
+          .main-content {
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: hidden !important;
+          }
+          .page-content {
+            padding: 84px 12px 24px !important;
+          }
           .sidebar-overlay { display: block !important; }
           .topbar {
             flex-direction: column !important;
@@ -848,7 +856,86 @@ export default function App() {
           .stats-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
           .stats-grid-3 { grid-template-columns: 1fr !important; }
           .stats-grid-5 { grid-template-columns: repeat(2, 1fr) !important; }
+          .stats-grid-3,
+          .stats-grid-4,
+          .stats-grid-5,
+          .charts-grid {
+            min-width: 0 !important;
+          }
+          .stats-grid-3 > *,
+          .stats-grid-4 > *,
+          .stats-grid-5 > *,
+          .charts-grid > * {
+            min-width: 0 !important;
+          }
           .charts-grid { grid-template-columns: 1fr !important; }
+          .weekly-toolbar {
+            flex-wrap: wrap !important;
+            justify-content: center !important;
+            gap: 10px !important;
+            padding: 14px 12px !important;
+          }
+          .weekly-toolbar-title {
+            order: -1;
+            width: 100% !important;
+          }
+          .weekly-toolbar button {
+            flex: 1 1 calc(50% - 8px);
+            min-width: 0;
+          }
+          .okr-actions {
+            justify-content: stretch !important;
+          }
+          .okr-actions button {
+            width: 100% !important;
+          }
+          .okr-objective-head {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 10px !important;
+          }
+          .okr-objective-title {
+            min-width: 0 !important;
+            overflow-wrap: anywhere;
+          }
+          .okr-objective-controls {
+            justify-content: space-between !important;
+            flex-wrap: wrap !important;
+          }
+          .okr-kr-row {
+            align-items: flex-start !important;
+            flex-wrap: wrap !important;
+          }
+          .okr-kr-body {
+            min-width: 0 !important;
+            flex: 1 1 180px !important;
+          }
+          .okr-kr-controls {
+            width: 100% !important;
+            justify-content: flex-end !important;
+          }
+          .mobile-form-row {
+            flex-direction: column !important;
+          }
+          .admin-page {
+            max-width: none !important;
+          }
+          .admin-stats {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+          .admin-table-wrap {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+          }
+          .admin-table-wrap table {
+            min-width: 720px !important;
+          }
+          .admin-table-wrap th,
+          .admin-table-wrap td {
+            white-space: nowrap !important;
+          }
           .modal {
             width: 95vw !important;
             max-height: 85vh !important;
@@ -903,11 +990,11 @@ export default function App() {
                 載入中...
               </div>
             }>{view === "admin" && currentUser?.role === "admin" ? (
-        <div className="main-content" style={{ marginLeft: 200 }}>
+        <div className="main-content page-content" style={{ marginLeft: 200 }}>
           <AdminView currentUser={currentUser} />
         </div>
       ) : view === "project_members" && activeProject ? (
-        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <ProjectMembersView
             projectId={activeProject.id}
             projectName={activeProject.name}
@@ -916,21 +1003,21 @@ export default function App() {
           />
         </div>
       ) : view === "activities" && activeProject ? (
-        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             活動紀錄 · {activeProject.name}
           </h2>
           <ActivityView projectId={activeProject.id} />
         </div>
       ) : view === "calendar" && activeProject ? (
-        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             行事曆 · {activeProject.name}
           </h2>
           <CalendarView columns={columns} meetings={meetings} groups={projectMemberGroups} />
         </div>
       ) : view === "okr" && activeProject ? (
-        <div className="main-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+        <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             OKR · {activeProject.name}
           </h2>

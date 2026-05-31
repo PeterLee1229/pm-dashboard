@@ -109,7 +109,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* 週次選擇 */}
-      <div style={{
+      <div className="weekly-toolbar" style={{
         display: "flex", alignItems: "center", justifyContent: "center", gap: 20,
         background: "#161b27", borderRadius: 12, padding: "14px 20px", border: "1px solid #ffffff08"
       }}>
@@ -117,7 +117,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
           style={{ background: "#ffffff10", border: "none", borderRadius: 8, color: "#e2e8f0", fontSize: 18, padding: "4px 14px", cursor: "pointer" }}>
           ◀
         </button>
-        <div style={{ textAlign: "center" }}>
+        <div className="weekly-toolbar-title" style={{ textAlign: "center" }}>
           <p style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0" }}>
             {toROCDate(weekStartStr)} ~ {toROCDate(weekEndStr)}
           </p>

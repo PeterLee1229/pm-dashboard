@@ -28,11 +28,11 @@ export default function AdminView({ currentUser }: { currentUser: any }) {
   if (loading) return <div style={{ padding: 40, color: "#94a3b8" }}>載入中…</div>;
 
   return (
-    <div style={{ padding: "32px 40px", maxWidth: 900 }}>
+    <div className="admin-page" style={{ padding: "32px 40px", maxWidth: 900 }}>
       <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, marginBottom: 24 }}>系統管理</h2>
 
       {/* 統計卡片 */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 32 }}>
+      <div className="admin-stats" style={{ display: "flex", gap: 16, marginBottom: 32 }}>
         {[
           { label: "總使用者", value: users.length, color: "#6366f1" },
           { label: "管理員",   value: adminCount,   color: "#ef4444" },
@@ -49,7 +49,7 @@ export default function AdminView({ currentUser }: { currentUser: any }) {
       </div>
 
       {/* 使用者表格 */}
-      <div style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
+      <div className="admin-table-wrap" style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#0f172a" }}>
