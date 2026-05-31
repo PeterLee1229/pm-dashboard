@@ -2,7 +2,7 @@ import { useState, useEffect, Suspense, lazy } from "react";
 import { t, getLanguage, setLanguage, type Language } from "./i18n";
 import LoginPage from "./LoginPage";
 import {
-  isLoggedIn, clearToken, getCurrentUser, getProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject, getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask, createGroup as apiCreateGroup, getGroups, getProjectMembers, getNotifications, getUnreadCount, markAsRead, markAllAsRead, searchProject, getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries, deleteMeetingSeries as apiDeleteMeetingSeries, createMeetingRecord as apiCreateMeetingRecord, updateMeetingRecord as apiUpdateMeetingRecord, deleteMeetingRecord as apiDeleteMeetingRecord, getProjectRisks, createRisk as apiCreateRisk, updateRisk as apiUpdateRisk, deleteRisk as apiDeleteRisk, getWeeklyReports, saveWeeklyReport as apiSaveWeeklyReport,
+  isLoggedIn, clearToken, getCurrentUser, getProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject, getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup, getGroups, getProjectMembers, getNotifications, getUnreadCount, markAsRead, markAllAsRead, searchProject, getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries, deleteMeetingSeries as apiDeleteMeetingSeries, createMeetingRecord as apiCreateMeetingRecord, updateMeetingRecord as apiUpdateMeetingRecord, deleteMeetingRecord as apiDeleteMeetingRecord, getProjectRisks, createRisk as apiCreateRisk, updateRisk as apiUpdateRisk, deleteRisk as apiDeleteRisk, getWeeklyReports, saveWeeklyReport as apiSaveWeeklyReport,
 } from "./api";
 import { exportTaskListCSV, exportTaskListPDF, exportTimeReportCSV, exportTimeReportPDF, exportGanttPNG } from "./exportUtils";
 import {
@@ -222,8 +222,9 @@ export default function App() {
         { name: "費曼圖", color: "#facc15" },
       ];
       for (const group of defaultGroups) {
-        await apiCreateGroup(newProject.id, group);
+        try { await apiCreateGroup(newProject.id, group); } catch { /* 組別已存在則跳過 */ }
       }
+      getGroups().then(setSystemGroups).catch(console.error);
 
       await loadProjects();
       setActiveProjectId(newProject.id);
@@ -1370,7 +1371,23 @@ export default function App() {
       {showGroupModal && (
         <GroupModal
           groups={formattedGroups}
-          onSave={() => getGroups().then(setSystemGroups).catch(console.error)}
+          onSave={async (updatedGroups) => {
+            const existingIds = new Set(formattedGroups.map((g) => g.id));
+            const newIds = new Set(updatedGroups.map((g) => g.id));
+            for (const g of updatedGroups) {
+              if (!existingIds.has(g.id)) {
+                try { await apiCreateGroup(activeProject?.id || "", { name: g.name, color: g.color }); } catch {}
+              } else {
+                try { await apiUpdateGroup(g.id, { name: g.name, color: g.color }); } catch {}
+              }
+            }
+            for (const g of formattedGroups) {
+              if (!newIds.has(g.id)) {
+                try { await apiDeleteGroup(g.id); } catch {}
+              }
+            }
+            getGroups().then(setSystemGroups).catch(console.error);
+          }}
           onClose={() => setShowGroupModal(false)}
         />
       )}

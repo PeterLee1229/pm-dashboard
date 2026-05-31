@@ -34,7 +34,7 @@ export function MemberInput({ onAdd, color }: { onAdd: (member: Member) => void;
 
 export default function GroupModal({ groups, onSave, onClose }: {
   groups: Group[];
-  onSave: (groups: Group[]) => void;
+  onSave: (groups: Group[]) => Promise<void>;
   onClose: () => void;
 }) {
   const [editGroups, setEditGroups] = useState<Group[]>(
@@ -142,7 +142,7 @@ export default function GroupModal({ groups, onSave, onClose }: {
         </div>
         <div className="modal-footer">
           <button className="btn-cancel" onClick={onClose}>取消</button>
-          <button className="btn-save" onClick={() => { onSave(editGroups); onClose(); }}>儲存變更</button>
+          <button className="btn-save" onClick={async () => { await onSave(editGroups); onClose(); }}>儲存變更</button>
         </div>
       </div>
     </div>
