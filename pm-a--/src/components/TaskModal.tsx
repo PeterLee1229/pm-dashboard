@@ -84,6 +84,10 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
   const canEdit = hasPermission(currentProjectRole, "edit_all_tasks") ||
     (hasPermission(currentProjectRole, "edit_own_task") && task.assignee === currentUser?.memberId);
 
+  const availableGroups = currentProjectRole === "group_leader"
+    ? groups.filter((g) => g.id === currentUser?.group?.id)
+    : groups;
+
   useEffect(() => {
     loadComments();
     loadAttachments();
@@ -238,7 +242,7 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
               onChange={(e) => setForm({ ...form, groupId: e.target.value, assignee: "" })}
               style={{ opacity: form.subtasks.length > 0 ? 0.4 : 1, cursor: form.subtasks.length > 0 ? "not-allowed" : "auto" }}>
               <option value="">未分組</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </div>
 
@@ -353,7 +357,7 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
                   }}
                   style={{ marginBottom: 6, fontSize: 12 }}>
                   <option value="">選擇組別</option>
-                  {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </select>
 
                 {/* 子工項指派人 */}

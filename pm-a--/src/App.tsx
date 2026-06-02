@@ -9,8 +9,9 @@ import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
-import { X, Search } from "lucide-react";
-import type { Priority, Member, Group, Task, Column, MeetingSeries, Risk, WeeklyReport, Project } from "./types";
+import { X } from "lucide-react";
+import MultiSelect from "./components/MultiSelect";
+import type { Member, Group, Task, Column, MeetingSeries, Risk, WeeklyReport, Project } from "./types";
 import { getCompletion, getEffectiveStartDate, getEffectiveEndDate, memberDisplay, findMemberById, normalizeDate, hasPermission, PRIORITY_CONFIG } from "./helpers";
 
 import Sidebar from "./components/Sidebar";
@@ -298,6 +299,30 @@ export default function App() {
   const handleLogout = () => {
     clearToken();
     setLoggedIn(false);
+    setProjects([]);
+    setProjectMembers([]);
+    setMeetings([]);
+    setRisks([]);
+    setWeeklyReports([]);
+    setNotifications([]);
+    setUnreadCount(0);
+    setSystemGroups([]);
+    setView("kanban");
+    setActiveProjectId("");
+    setSearchQuery("");
+    setSearchResults(null);
+    setShowSearch(false);
+    setShowExportMenu(false);
+    setShowImportModal(false);
+    setShowProjectModal(false);
+    setShowGroupModal(false);
+    setEditingTask(null);
+    setFilterPriorities([]);
+    setFilterAssignees([]);
+    setFilterGroups([]);
+    setSearchText("");
+    setToast(null);
+    setSidebarOpen(false);
   };
 
   const loadProjects = async () => {
@@ -1000,6 +1025,7 @@ export default function App() {
             projectId={activeProject.id}
             projectName={activeProject.name}
             currentUser={currentUser}
+            currentProjectRole={currentProjectRole}
             onMembersChange={() => loadProjectMembers(activeProjectId)}
           />
         </div>
@@ -1192,113 +1218,66 @@ export default function App() {
             </div>
           </div>
 
-          {(view === "kanban" || view === "gantt") && <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-            {/* 第一行：搜尋 + 清除 */}
-            <div className="filter-row" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ position: "relative", flex: 1, minWidth: 200 }}>
-                <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#475569" }} />
-                <input
-                  className="field-input"
-                  placeholder={t("filter.search")}
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  style={{ paddingLeft: 32, fontSize: 13 }}
-                />
+          {(view === "kanban" || view === "gantt") && (
+            <div className="filter-row" style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <input className="field-input" placeholder={t("filter.search")}
+                  value={searchText} onChange={(e) => setSearchText(e.target.value)}
+                  style={{ fontSize: 13 }} />
               </div>
+
+              <MultiSelect
+                options={projectMemberGroups.map(g => ({ id: g.id, label: g.name, color: g.color }))}
+                selected={filterGroups}
+                onChange={(newGroups) => {
+                  setFilterGroups(newGroups);
+                  const remainingMembers = projectMemberGroups
+                    .filter(g => newGroups.includes(g.id))
+                    .flatMap(g => g.members || []);
+                  setFilterAssignees(filterAssignees.filter(a => remainingMembers.some(m => m.id === a)));
+                }}
+                placeholder="所有組別"
+              />
+
+              {filterGroups.length > 0 && (() => {
+                const availableMembers = Array.from(
+                  new Map(
+                    projectMemberGroups
+                      .filter(g => filterGroups.includes(g.id))
+                      .flatMap(g => g.members || [])
+                      .map(m => [m.id, m])
+                  ).values()
+                );
+                if (availableMembers.length === 0) return null;
+                return (
+                  <MultiSelect
+                    options={availableMembers.map(m => ({ id: m.id, label: `${m.name}（${m.id}）` }))}
+                    selected={filterAssignees}
+                    onChange={setFilterAssignees}
+                    placeholder="所有成員"
+                  />
+                );
+              })()}
+
+              <MultiSelect
+                options={[
+                  { id: "high",   label: "高優先", color: "#f87171" },
+                  { id: "medium", label: "中優先", color: "#facc15" },
+                  { id: "low",    label: "低優先", color: "#4ade80" },
+                ]}
+                selected={filterPriorities}
+                onChange={setFilterPriorities}
+                placeholder="所有優先級"
+              />
+
               {(searchText || filterPriorities.length > 0 || filterAssignees.length > 0 || filterGroups.length > 0) && (
                 <button onClick={() => { setSearchText(""); setFilterPriorities([]); setFilterAssignees([]); setFilterGroups([]); }}
-                  style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 8, color: "#ef4444", fontSize: 12, padding: "6px 12px", cursor: "pointer" }}>
+                  style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 8, color: "#ef4444", fontSize: 12, padding: "8px 12px", cursor: "pointer", whiteSpace: "nowrap" }}>
                   {t("filter.clear")}
                 </button>
               )}
             </div>
-
-            {/* 第二行：組別多選 */}
-            {projectMemberGroups.length > 0 && (
-              <div className="filter-row" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {projectMemberGroups.map((g) => {
-                  const active = filterGroups.includes(g.id);
-                  return (
-                    <button key={g.id}
-                      onClick={() => {
-                        if (active) {
-                          const newGroups = filterGroups.filter((x) => x !== g.id);
-                          setFilterGroups(newGroups);
-                          const remainingMemberIds = projectMemberGroups
-                            .filter((gr) => newGroups.includes(gr.id))
-                            .flatMap((gr) => gr.members || [])
-                            .map((m) => m.id);
-                          setFilterAssignees(filterAssignees.filter((a) => remainingMemberIds.includes(a)));
-                        } else {
-                          setFilterGroups([...filterGroups, g.id]);
-                        }
-                      }}
-                      style={{
-                        background: active ? g.color + "22" : "transparent",
-                        border: `1px solid ${active ? g.color : "#ffffff15"}`,
-                        color: active ? g.color : "#64748b",
-                        borderRadius: 8, padding: "6px 12px",
-                        fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
-                      }}>
-                      {g.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 第三行：優先級多選 */}
-            <div className="filter-row" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {(["high", "medium", "low"] as Priority[]).map((p) => {
-                const active = filterPriorities.includes(p);
-                const cfg = PRIORITY_CONFIG[p];
-                return (
-                  <button key={p}
-                    onClick={() => setFilterPriorities(active ? filterPriorities.filter((x) => x !== p) : [...filterPriorities, p])}
-                    style={{
-                      background: active ? cfg.color + "22" : "transparent",
-                      border: `1px solid ${active ? cfg.color : "#ffffff15"}`,
-                      color: active ? cfg.color : "#64748b",
-                      borderRadius: 8, padding: "6px 12px",
-                      fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s"
-                    }}>
-                    {cfg.label}優先
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 第四行：人員篩選 - 依選中組別動態顯示 */}
-            {filterGroups.length > 0 && (() => {
-              const selectedGroups = projectMemberGroups.filter((g) => filterGroups.includes(g.id));
-              const memberMap = new Map<string, Member>();
-              selectedGroups.flatMap((g) => g.members || []).forEach((m) => memberMap.set(m.id, m));
-              const availableMembers = Array.from(memberMap.values());
-              if (availableMembers.length === 0) return null;
-              return (
-                <div className="filter-row" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {availableMembers.map((m) => {
-                    const active = filterAssignees.includes(m.id);
-                    return (
-                      <button key={m.id}
-                        onClick={() => setFilterAssignees(active
-                          ? filterAssignees.filter((x) => x !== m.id)
-                          : [...filterAssignees, m.id]
-                        )}
-                        style={{
-                          background: active ? "#6366f122" : "transparent",
-                          border: `1px solid ${active ? "#6366f1" : "#ffffff15"}`,
-                          color: active ? "#6366f1" : "#64748b",
-                          borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer"
-                        }}>
-                        {m.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </div>}
+          )}
 
           {<Suspense fallback={
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: "#64748b" }}>
@@ -1314,13 +1293,13 @@ export default function App() {
               <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={projectMemberGroups} />}</DragOverlay>
             </DndContext>
           ) : view === "gantt" ? (
-            <GanttView columns={filteredColumns} groups={projectMemberGroups} onEditTask={setEditingTask} />
+            <GanttView columns={filteredColumns} onEditTask={setEditingTask} />
           ) : view === "dashboard" ? (
             <DashboardView columns={columns} groups={projectMemberGroups} />
           ) : view === "meetings" ? (
             <MeetingsView
               meetings={meetings}
-              groups={projectMemberGroups}
+              projectMembers={projectMembers}
               onCreateSeries={handleCreateMeetingSeries}
               onDeleteSeries={handleDeleteMeetingSeries}
               onCreateRecord={handleCreateMeetingRecord}
@@ -1335,6 +1314,9 @@ export default function App() {
               onUpdateRisk={handleUpdateRisk}
               onDeleteRisk={handleDeleteRisk}
               canManage={hasPermission(currentProjectRole, "manage_risks")}
+              projectMembers={projectMembers}
+              currentProjectRole={currentProjectRole}
+              currentUser={currentUser}
             />
           ) : (
             <WeeklyReportView

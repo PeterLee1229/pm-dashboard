@@ -1,9 +1,8 @@
-import type { Task, Column, Group } from "../types";
+import type { Task, Column } from "../types";
 import { getCompletion, getEffectiveStartDate, getEffectiveEndDate } from "../helpers";
 
-export default function GanttView({ columns, groups, onEditTask }: {
+export default function GanttView({ columns, onEditTask }: {
   columns: Column[];
-  groups: Group[];
   onEditTask: (task: Task) => void;
 }) {
   const allTasks = columns.flatMap((col) => col.tasks);
@@ -32,9 +31,8 @@ export default function GanttView({ columns, groups, onEditTask }: {
   const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000);
   const dayWidth = Math.max(32, Math.min(60, 800 / totalDays));
   const rowHeight = 44;
-  const groupWidth = 80;
-  const labelWidth = 180;
-  const frozenWidth = groupWidth + labelWidth;
+  const labelWidth = 220;
+  const frozenWidth = labelWidth;
 
   const days: Date[] = [];
   for (let i = 0; i <= totalDays; i++) {
@@ -67,30 +65,15 @@ export default function GanttView({ columns, groups, onEditTask }: {
       <div className="gantt-frozen" style={{ minWidth: frozenWidth, flexShrink: 0, zIndex: 1, borderRight: "1px solid #ffffff12" }}>
         {/* 月份列佔位 */}
         <div style={{ height: 37, background: "#1a2030", borderBottom: "1px solid #ffffff08", display: "flex", alignItems: "center", paddingLeft: 14 }}>
-          <span style={{ fontSize: 11, color: "#475569" }}>組別 / 任務名稱</span>
+          <span style={{ fontSize: 11, color: "#475569" }}>任務名稱</span>
         </div>
         {/* 日期列佔位 */}
         <div style={{ height: 33, background: "#1a2030", borderBottom: "1px solid #ffffff10" }} />
 
         {/* 任務列 */}
-        {tasksWithDates.map((task) => {
-          const group = groups.find((g) => g.id === task.groupId);
-          return (
+        {tasksWithDates.map((task) => (
             <div key={task.id}>
               <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", height: rowHeight }}>
-                {/* 組別徽章 */}
-                <div style={{ minWidth: groupWidth, padding: "0 6px", display: "flex", justifyContent: "center" }}>
-                  {group && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 600, padding: "2px 6px",
-                      borderRadius: 4, background: group.color + "22",
-                      border: `1px solid ${group.color}55`, color: group.color,
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                      maxWidth: groupWidth - 12
-                    }}>{group.name}</span>
-                  )}
-                </div>
-                {/* 任務名稱 */}
                 <div style={{
                   minWidth: labelWidth, padding: "0 14px",
                   fontSize: 12, fontWeight: 600, color: "#cbd5e1",
@@ -103,7 +86,6 @@ export default function GanttView({ columns, groups, onEditTask }: {
                 .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
                 .map((sub) => (
                   <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", height: 36, background: "#ffffff02" }}>
-                    <div style={{ minWidth: groupWidth }} />
                     <div style={{
                       minWidth: labelWidth, padding: "0 14px 0 28px",
                       fontSize: 11, color: "#64748b",
@@ -112,8 +94,7 @@ export default function GanttView({ columns, groups, onEditTask }: {
                   </div>
                 ))}
             </div>
-          );
-        })}
+        ))}
       </div>
 
       {/* 可捲動右側面板 */}
@@ -157,8 +138,7 @@ export default function GanttView({ columns, groups, onEditTask }: {
             const offsetX = dayOffset(start);
             const width = Math.max(1, dayOffset(end) - offsetX + 1);
             const completion = getCompletion(task);
-            const group = groups.find((g) => g.id === task.groupId);
-            const barColor = group?.color || "#6366f1";
+            const barColor = "#6366f1";
 
             return (
               <div key={task.id}>

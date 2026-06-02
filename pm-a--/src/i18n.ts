@@ -45,7 +45,7 @@ const translations: Record<Language, Record<string, string>> = {
     "sidebar.kanban": "看板",
     "sidebar.gantt": "甘特圖",
     "sidebar.dashboard": "儀表板",
-    "sidebar.meetings": "會議記錄",
+    "sidebar.meetings": "會議紀錄",
     "sidebar.risks": "風險管理",
     "sidebar.weekly": "週報",
     "sidebar.calendar": "行事曆",
@@ -124,12 +124,12 @@ const translations: Record<Language, Record<string, string>> = {
     "dashboard.clickGroup": "點擊組別查看成員工項與工時",
     "dashboard.noRecord": "尚無計時紀錄",
 
-    // 會議記錄
+    // 會議紀錄
     "meetings.regular": "定期會議",
     "meetings.adhoc": "臨時會議",
     "meetings.addSeries": "+ 新增會議系列",
     "meetings.addRecord": "+ 新增紀錄",
-    "meetings.noMeetings": "尚無會議記錄",
+    "meetings.noMeetings": "尚無會議紀錄",
     "meetings.records": "筆紀錄",
     "meetings.newSeries": "新增會議系列",
     "meetings.seriesName": "會議名稱",

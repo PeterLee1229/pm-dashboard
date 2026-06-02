@@ -3,11 +3,13 @@ import { X, AlertCircle, AlignLeft, Flag, User } from "lucide-react";
 import type { RiskLevel, RiskStatus, Group, Risk } from "../types";
 import { RISK_LEVELS, RISK_STATUS_CONFIG, findMemberById, memberDisplay } from "../helpers";
 
-export function RiskModal({ risk, groups, onSave, onClose }: {
+export function RiskModal({ risk, onSave, onClose, projectMembers, currentProjectRole, currentUser }: {
   risk: Risk | null;
-  groups: Group[];
   onSave: (risk: Risk) => void;
   onClose: () => void;
+  projectMembers: any[];
+  currentProjectRole: string;
+  currentUser: any;
 }) {
   const [form, setForm] = useState<Risk>(risk || {
     id: "r" + Date.now(),
@@ -77,31 +79,21 @@ export function RiskModal({ risk, groups, onSave, onClose }: {
               placeholder="輸入因應對策..." rows={3} />
           </div>
           <div className="field">
-            <label className="field-label"><User size={13} /> 負責組別</label>
-            <select className="field-input" value={form.ownerGroupId}
-              onChange={(e) => setForm({ ...form, ownerGroupId: e.target.value, ownerId: "" })}>
-              <option value="">選擇組別</option>
-              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          </div>
-          <div className="field">
             <label className="field-label"><User size={13} /> 負責人</label>
             {(() => {
-              const ownerGroup = groups.find((g) => g.id === form.ownerGroupId);
-              const members = ownerGroup?.members || [];
-              if (form.ownerGroupId && members.length > 0) {
-                return (
-                  <select className="field-input" value={form.ownerId}
-                    onChange={(e) => setForm({ ...form, ownerId: e.target.value })}>
-                    <option value="">選擇負責人</option>
-                    {members.map((m) => <option key={m.id} value={m.id}>{m.name}（{m.id}）</option>)}
-                  </select>
-                );
-              }
+              const available = currentProjectRole === "group_leader"
+                ? projectMembers.filter((pm: any) => pm.user?.group?.id === currentUser?.group?.id)
+                : projectMembers;
               return (
-                <div className="field-input" style={{ opacity: 0.4, color: "#475569" }}>
-                  {form.ownerGroupId ? "該組別尚無成員" : "請先選擇組別"}
-                </div>
+                <select className="field-input" value={form.ownerId}
+                  onChange={(e) => setForm({ ...form, ownerId: e.target.value })}>
+                  <option value="">選擇負責人</option>
+                  {available.map((pm: any) => (
+                    <option key={pm.user?.id} value={pm.user?.memberId || pm.user?.id}>
+                      {pm.user?.name}（{pm.user?.memberId}）{pm.user?.group ? ` — ${pm.user.group.name}` : ""}
+                    </option>
+                  ))}
+                </select>
               );
             })()}
           </div>
@@ -133,13 +125,16 @@ export function RiskModal({ risk, groups, onSave, onClose }: {
 
 // ── Risk Matrix View ──────────────────────────────────────────────────
 
-export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk, canManage }: {
+export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk, canManage, projectMembers, currentProjectRole, currentUser }: {
   risks: Risk[];
   groups: Group[];
   onCreateRisk: (risk: Risk) => void;
   onUpdateRisk: (risk: Risk) => void;
   onDeleteRisk: (id: string) => void;
   canManage: boolean;
+  projectMembers: any[];
+  currentProjectRole: string;
+  currentUser: any;
 }) {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
@@ -310,7 +305,9 @@ export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRi
       {showRiskModal && (
         <RiskModal
           risk={editingRisk}
-          groups={groups}
+          projectMembers={projectMembers}
+          currentProjectRole={currentProjectRole}
+          currentUser={currentUser}
           onSave={(risk) => {
             if (editingRisk) {
               onUpdateRisk(risk);

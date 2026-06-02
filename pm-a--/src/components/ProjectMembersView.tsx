@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole, getUsers } from "../api";
 
-export function AddMemberModal({ availableUsers, onAdd, onClose }: {
+export function AddMemberModal({ availableUsers, onAdd, onClose, currentUser, currentProjectRole }: {
   availableUsers: any[];
   onAdd: (userId: string, role: string) => void;
   onClose: () => void;
+  currentUser: any;
+  currentProjectRole: string;
 }) {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
@@ -13,7 +15,10 @@ export function AddMemberModal({ availableUsers, onAdd, onClose }: {
 
   const groupMap = new Map<string, { id: string; name: string; color: string }>();
   availableUsers.forEach(u => { if (u.group) groupMap.set(u.group.id, u.group); });
-  const groups = Array.from(groupMap.values());
+  const allGroups = Array.from(groupMap.values());
+  const groups = currentProjectRole === "group_leader"
+    ? allGroups.filter(g => g.id === currentUser?.group?.id)
+    : allGroups;
 
   const filteredUsers = selectedGroupId
     ? availableUsers.filter(u => u.group?.id === selectedGroupId)
@@ -112,10 +117,11 @@ export function AddMemberModal({ availableUsers, onAdd, onClose }: {
 
 // ── AdminView ────────────────────────────────────────────────────────
 
-export default function ProjectMembersView({ projectId, projectName, currentUser, onMembersChange }: {
+export default function ProjectMembersView({ projectId, projectName, currentUser, currentProjectRole, onMembersChange }: {
   projectId: string;
   projectName: string;
   currentUser: any;
+  currentProjectRole: string;
   onMembersChange?: () => void;
 }) {
   const [members, setMembers] = useState<any[]>([]);
@@ -275,7 +281,8 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
               )}
             </div>
             <div style={{ textAlign: "center" }}>
-              {m.role !== "owner" && m.userId !== currentUser?.id && (
+              {m.role !== "owner" && m.userId !== currentUser?.id &&
+               (currentProjectRole !== "group_leader" || m.user?.group?.id === currentUser?.group?.id) && (
                 <button onClick={() => handleRemove(m.userId)} style={{
                   background: "#ef444418", border: "1px solid #ef444433",
                   borderRadius: 6, color: "#ef4444", fontSize: 10,
@@ -292,7 +299,13 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
       </div>
 
       {showAddModal && (
-        <AddMemberModal availableUsers={availableUsers} onAdd={handleAdd} onClose={() => setShowAddModal(false)} />
+        <AddMemberModal
+          availableUsers={availableUsers}
+          onAdd={handleAdd}
+          onClose={() => setShowAddModal(false)}
+          currentUser={currentUser}
+          currentProjectRole={currentProjectRole}
+        />
       )}
     </div>
   );

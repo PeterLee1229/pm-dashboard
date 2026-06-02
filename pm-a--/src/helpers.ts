@@ -92,7 +92,7 @@ export function hasPermission(userRole: string, action: string): boolean {
     "manage_risks":    ["owner", "pm", "group_leader", "member"],
     "manage_weekly":   ["owner", "pm"],
     "export":          ["owner", "pm", "group_leader", "member"],
-    "manage_members":  ["owner"],
+    "manage_members":  ["owner", "pm", "group_leader"],
     "invite_members":  ["owner", "pm", "group_leader"],
   };
   const allowed = permissions[action] || [];

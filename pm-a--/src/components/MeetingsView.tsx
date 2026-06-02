@@ -1,31 +1,139 @@
 import { useState } from "react";
 import { X, Flag } from "lucide-react";
-import type { Group, MeetingRecord, MeetingSeries, Member } from "../types";
-import { memberDisplay, findMemberById } from "../helpers";
+import type { MeetingRecord, MeetingSeries } from "../types";
 
-export function NewRecordForm({ groups, onSave, onCancel }: {
-  groups: Group[];
+function AttendeesPicker({ projectMembers, selected, onChange }: {
+  projectMembers: any[];
+  selected: string[];
+  onChange: (selected: string[]) => void;
+}) {
+  const [searchLeft, setSearchLeft] = useState("");
+
+  const unselected = projectMembers.filter(
+    (pm: any) => !selected.includes(pm.user?.id) && !selected.includes(pm.user?.memberId)
+  );
+
+  const selectedMembers = selected.map(id => {
+    const found = projectMembers.find(
+      (pm: any) => pm.user?.id === id || pm.user?.memberId === id
+    );
+    return found?.user || { id, name: id, memberId: id };
+  }).filter(Boolean);
+
+  const filteredUnselected = searchLeft
+    ? unselected.filter((pm: any) =>
+        pm.user?.name?.toLowerCase().includes(searchLeft.toLowerCase()) ||
+        pm.user?.memberId?.toLowerCase().includes(searchLeft.toLowerCase()) ||
+        pm.user?.group?.name?.toLowerCase().includes(searchLeft.toLowerCase())
+      )
+    : unselected;
+
+  const addMember = (id: string) => onChange([...selected, id]);
+  const removeMember = (id: string) => onChange(selected.filter(s => s !== id));
+
+  return (
+    <div style={{ display: "flex", gap: 12, height: 220 }}>
+      {/* 左邊：可選人員 */}
+      <div style={{
+        flex: 1, background: "#0f1117", borderRadius: 10,
+        border: "1px solid #ffffff08", display: "flex", flexDirection: "column", overflow: "hidden"
+      }}>
+        <div style={{
+          padding: "8px 10px", borderBottom: "1px solid #ffffff08",
+          fontSize: 11, fontWeight: 600, color: "#64748b"
+        }}>可選人員（{filteredUnselected.length}）</div>
+
+        <input
+          value={searchLeft}
+          onChange={(e) => setSearchLeft(e.target.value)}
+          placeholder="搜尋姓名或編號..."
+          style={{
+            background: "transparent", border: "none", borderBottom: "1px solid #ffffff08",
+            color: "#e2e8f0", fontSize: 11, padding: "6px 10px", outline: "none"
+          }}
+        />
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 4 }}>
+          {filteredUnselected.length === 0 ? (
+            <div style={{ padding: 12, textAlign: "center", fontSize: 11, color: "#475569" }}>
+              {searchLeft ? "找不到符合的人員" : "所有人員已選取"}
+            </div>
+          ) : filteredUnselected.map((pm: any) => (
+            <button key={pm.user?.id || pm.userId} onClick={() => addMember(pm.user?.memberId || pm.user?.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, width: "100%",
+                textAlign: "left", background: "transparent", border: "none",
+                borderRadius: 6, color: "#e2e8f0", fontSize: 11, padding: "6px 8px",
+                cursor: "pointer"
+              }}>
+              <span style={{ color: "#10b981", fontSize: 14, flexShrink: 0 }}>+</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ fontWeight: 600 }}>{pm.user?.name}</span>
+                  <span style={{ color: "#475569" }}>({pm.user?.memberId})</span>
+                </div>
+                {pm.user?.group && (
+                  <span style={{ fontSize: 9, color: pm.user.group.color || "#64748b" }}>
+                    {pm.user.group.name}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 中間箭頭 */}
+      <div style={{ display: "flex", alignItems: "center", color: "#475569", fontSize: 18 }}>
+        ⇄
+      </div>
+
+      {/* 右邊：已選出席人員 */}
+      <div style={{
+        flex: 1, background: "#0f1117", borderRadius: 10,
+        border: "1px solid #10b98133", display: "flex", flexDirection: "column", overflow: "hidden"
+      }}>
+        <div style={{
+          padding: "8px 10px", borderBottom: "1px solid #ffffff08",
+          fontSize: 11, fontWeight: 600, color: "#10b981"
+        }}>出席人員（{selectedMembers.length}）</div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 4 }}>
+          {selectedMembers.length === 0 ? (
+            <div style={{ padding: 12, textAlign: "center", fontSize: 11, color: "#475569" }}>
+              尚未選取出席人員
+            </div>
+          ) : selectedMembers.map((user: any) => (
+            <div key={user.id || user.memberId} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "6px 8px", borderRadius: 6, marginBottom: 2
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#e2e8f0" }}>
+                <span style={{ fontWeight: 600 }}>{user.name}</span>
+                <span style={{ color: "#475569" }}>({user.memberId})</span>
+              </div>
+              <button onClick={() => removeMember(user.memberId || user.id)}
+                style={{
+                  background: "none", border: "none", color: "#ef4444",
+                  cursor: "pointer", padding: 2, display: "flex", fontSize: 12
+                }}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NewRecordForm({ projectMembers, onSave, onCancel }: {
+  projectMembers: any[];
   onSave: (record: MeetingRecord) => void;
   onCancel: () => void;
 }) {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [attendees, setAttendees] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [summary, setSummary] = useState("");
   const [externalLink, setExternalLink] = useState("");
-
-  const toggleAttendee = (name: string) =>
-    setAttendees((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]);
-
-  const filteredMembers: Member[] = selectedGroupIds.length === 0
-    ? []
-    : (() => {
-        const map = new Map<string, Member>();
-        groups.filter((g) => selectedGroupIds.includes(g.id))
-          .flatMap((g) => g.members || [])
-          .forEach((m) => map.set(m.id, m));
-        return Array.from(map.values());
-      })();
 
   return (
     <div style={{ background: "#1a2030", borderRadius: 10, padding: 16, border: "1px solid #6366f133" }}>
@@ -34,61 +142,18 @@ export function NewRecordForm({ groups, onSave, onCancel }: {
       <div style={{ marginBottom: 12 }}>
         <label style={{ fontSize: 11, color: "#64748b", marginBottom: 4, display: "block" }}>日期</label>
         <input type="date" className="field-input" value={date}
-          onChange={(e) => setDate(e.target.value)} style={{ colorScheme: "dark" }} />
+          onChange={(e) => setDate(e.target.value)}
+          max={new Date().toISOString().split("T")[0]}
+          style={{ colorScheme: "dark" }} />
       </div>
 
-      {/* 組別篩選 */}
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ fontSize: 11, color: "#64748b", marginBottom: 6, display: "block" }}>選擇組別</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {groups.map((g) => {
-            const active = selectedGroupIds.includes(g.id);
-            return (
-              <button key={g.id} onClick={() => {
-                if (active) {
-                  const newIds = selectedGroupIds.filter((x) => x !== g.id);
-                  setSelectedGroupIds(newIds);
-                  const remainingIds = groups.filter((gr) => newIds.includes(gr.id))
-                    .flatMap((gr) => gr.members || []).map((m) => m.id);
-                  setAttendees(attendees.filter((a) => remainingIds.includes(a)));
-                } else {
-                  setSelectedGroupIds([...selectedGroupIds, g.id]);
-                }
-              }} style={{
-                background: active ? g.color + "22" : "transparent",
-                border: `1px solid ${active ? g.color : "#ffffff15"}`,
-                color: active ? g.color : "#64748b",
-                borderRadius: 8, padding: "4px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer"
-              }}>{g.name}</button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 出席人員 */}
       <div style={{ marginBottom: 12 }}>
         <label style={{ fontSize: 11, color: "#64748b", marginBottom: 6, display: "block" }}>出席人員</label>
-        {selectedGroupIds.length === 0 ? (
-          <p style={{ fontSize: 11, color: "#475569" }}>請先選擇組別</p>
-        ) : filteredMembers.length === 0 ? (
-          <p style={{ fontSize: 11, color: "#475569" }}>所選組別尚無成員</p>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {filteredMembers.map((m) => {
-              const active = attendees.includes(m.id);
-              const memberGroup = groups.find((g) => selectedGroupIds.includes(g.id) && g.members.some((gm) => gm.id === m.id));
-              const mColor = memberGroup?.color || "#6366f1";
-              return (
-                <button key={m.id} onClick={() => toggleAttendee(m.id)} style={{
-                  background: active ? mColor + "22" : "transparent",
-                  border: `1px solid ${active ? mColor : "#ffffff15"}`,
-                  color: active ? mColor : "#64748b",
-                  borderRadius: 99, padding: "4px 12px", fontSize: 11, cursor: "pointer"
-                }}>{memberDisplay(m)}</button>
-              );
-            })}
-          </div>
-        )}
+        <AttendeesPicker
+          projectMembers={projectMembers}
+          selected={attendees}
+          onChange={setAttendees}
+        />
       </div>
 
       <div style={{ marginBottom: 12 }}>
@@ -164,9 +229,9 @@ export function NewSeriesModal({ onSave, onClose }: {
   );
 }
 
-export function MeetingRecordCard({ record, groups, seriesId, onDelete, onUpdate }: {
+export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, onUpdate }: {
   record: MeetingRecord;
-  groups: Group[];
+  projectMembers: any[];
   seriesId: string;
   onDelete: (seriesId: string, recordId: string) => void;
   onUpdate?: (seriesId: string, recordId: string, data: any) => void;
@@ -208,11 +273,16 @@ export function MeetingRecordCard({ record, groups, seriesId, onDelete, onUpdate
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
         {record.attendees.map((aId: string) => {
-          const member = findMemberById(groups, aId);
+          const pm = projectMembers.find((p: any) => p.user?.memberId === aId || p.user?.id === aId);
+          const name = pm?.user?.name || aId;
+          const memberId = pm?.user?.memberId || "";
+          const groupColor = pm?.user?.group?.color || "#6366f1";
           return (
-            <span key={aId} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, background: "#6366f118", color: "#6366f1", border: "1px solid #6366f133" }}>
-              {member ? memberDisplay(member) : aId}
-            </span>
+            <span key={aId} style={{
+              fontSize: 10, padding: "2px 8px", borderRadius: 99,
+              background: groupColor + "18", color: groupColor,
+              border: `1px solid ${groupColor}33`
+            }}>{name}{memberId ? `（${memberId}）` : ""}</span>
           );
         })}
       </div>
@@ -272,9 +342,9 @@ export function MeetingRecordCard({ record, groups, seriesId, onDelete, onUpdate
   );
 }
 
-export default function MeetingsView({ meetings, groups, onCreateSeries, onDeleteSeries, onCreateRecord, onDeleteRecord, onUpdateRecord }: {
+export default function MeetingsView({ meetings, projectMembers, onCreateSeries, onDeleteSeries, onCreateRecord, onDeleteRecord, onUpdateRecord }: {
   meetings: MeetingSeries[];
-  groups: Group[];
+  projectMembers: any[];
   onCreateSeries: (name: string, type: string) => void;
   onDeleteSeries: (id: string) => void;
   onCreateRecord: (seriesId: string, record: any) => void;
@@ -289,7 +359,6 @@ export default function MeetingsView({ meetings, groups, onCreateSeries, onDelet
     setExpandedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
   const handleDeleteSeries = (id: string) => onDeleteSeries(id);
-
   const handleDeleteRecord = (seriesId: string, recordId: string) => onDeleteRecord(seriesId, recordId);
 
   const renderSeries = (series: MeetingSeries) => {
@@ -332,7 +401,7 @@ export default function MeetingsView({ meetings, groups, onCreateSeries, onDelet
           <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {addingRecordId === series.id && (
               <NewRecordForm
-                groups={groups}
+                projectMembers={projectMembers}
                 onSave={(record) => {
                   onCreateRecord(series.id, record);
                   setAddingRecordId(null);
@@ -349,7 +418,7 @@ export default function MeetingsView({ meetings, groups, onCreateSeries, onDelet
               <MeetingRecordCard
                 key={record.id}
                 record={record}
-                groups={groups}
+                projectMembers={projectMembers}
                 seriesId={series.id}
                 onDelete={handleDeleteRecord}
                 onUpdate={onUpdateRecord}
@@ -391,7 +460,7 @@ export default function MeetingsView({ meetings, groups, onCreateSeries, onDelet
       {meetings.length === 0 && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, color: "#475569", gap: 12 }}>
           <p style={{ fontSize: 48 }}>📋</p>
-          <p style={{ fontSize: 15 }}>尚無會議記錄</p>
+          <p style={{ fontSize: 15 }}>尚無會議紀錄</p>
           <p style={{ fontSize: 13 }}>點右上角「+ 新增會議系列」開始</p>
         </div>
       )}
