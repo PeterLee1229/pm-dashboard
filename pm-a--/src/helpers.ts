@@ -62,6 +62,17 @@ export function findMemberById(groups: Group[], memberId: string): Member | unde
   return undefined;
 }
 
+export function getSubtaskAssigneeLabel(task: Task, groups: Group[]): string {
+  const uniqueIds = [...new Set(
+    task.subtasks.map((s) => s.assignee).filter((a) => a && a.trim() !== "")
+  )];
+  if (uniqueIds.length === 0) return "未指派";
+  const first = findMemberById(groups, uniqueIds[0]);
+  const firstName = first ? first.name : uniqueIds[0];
+  if (uniqueIds.length === 1) return firstName;
+  return `${firstName} +${uniqueIds.length - 1}`;
+}
+
 export function normalizeDate(dateStr: string): string {
   if (!dateStr) return "";
   const cleaned = dateStr.replace(/\//g, "-");

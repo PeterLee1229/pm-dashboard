@@ -5,7 +5,7 @@ import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task, Column, Group } from "../types";
-import { PRIORITY_CONFIG, COLUMN_COLORS, getCompletion, findMemberById } from "../helpers";
+import { PRIORITY_CONFIG, COLUMN_COLORS, getCompletion, getSubtaskAssigneeLabel } from "../helpers";
 
 export const COLUMN_ICONS: Record<string, ReactElement> = {
   todo:       <Circle size={14} />,
@@ -59,12 +59,7 @@ export function TaskCard({ task, isDragging = false, onClick, groups = [], canDr
         </div>
       </div>
       <div className="task-footer">
-        <span className="assignee">
-          {(() => {
-            const member = findMemberById(groups, task.assignee);
-            return member ? member.name : task.assignee || "未指派";
-          })()}
-        </span>
+        <span className="assignee">{getSubtaskAssigneeLabel(task, groups)}</span>
       </div>
     </div>
   );
