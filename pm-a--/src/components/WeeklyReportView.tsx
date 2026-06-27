@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { Column, Group, Risk, WeeklyReport } from "../types";
+import type { Column, Group, Risk, Task, WeeklyReport } from "../types";
 import { RISK_STATUS_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getWeekRange, formatDateStr, toROCDate, findMemberById, memberDisplay } from "../helpers";
 import { exportWeeklyReportPDF } from "../exportUtils";
 
@@ -44,9 +44,14 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     t.completedAt != null && isInWeek(t.completedAt)
   );
 
+  const taskInWeek = (t: Task): boolean => {
+    if (t.subtasks.length === 0) return isInWeek(t.startDate) || isInWeek(t.endDate);
+    return t.subtasks.some((s) => isInWeek(s.startDate) || isInWeek(s.endDate));
+  };
+
   const inProgressColumn = columns.find((c) => c.id === "inprogress");
   const inProgressTasks = inProgressColumn
-    ? inProgressColumn.tasks.filter((t) => getCompletion(t) < 100)
+    ? inProgressColumn.tasks.filter((t) => getCompletion(t) < 100 && taskInWeek(t))
     : [];
 
   const weekHoursMap: Record<string, number> = {};
