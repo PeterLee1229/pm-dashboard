@@ -198,15 +198,19 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
             <p style={{ fontSize: 12, color: "#475569" }}>無</p>
           ) : completedTasks.map((t) => (
             <div key={t.id} style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.title}</div>
-              {t.subtasks.length > 0 && (
-                <div style={{ paddingLeft: 14, marginTop: 2 }}>
-                  {t.subtasks.map((sub) => (
-                    <div key={sub.id} style={{ fontSize: 11, color: "#64748b", padding: "1px 0" }}>
-                      {sub.title}
-                    </div>
-                  ))}
-                </div>
+              {t.subtasks.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.title}</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.title}</div>
+                  <div style={{ paddingLeft: 14, marginTop: 2 }}>
+                    {t.subtasks.map((sub) => (
+                      <div key={sub.id} style={{ fontSize: 11, color: "#64748b", padding: "1px 0" }}>
+                        {sub.title}
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           ))}
