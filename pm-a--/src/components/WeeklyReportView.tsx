@@ -40,16 +40,9 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     return d >= weekStart && d <= weekEnd;
   };
 
-  const doneColumn = columns.find((c) => c.id === "done");
-  const completedTasks = allTasks.filter((t) => {
-    const comp = getCompletion(t);
-    if (comp === 100) {
-      const hasWeekLog = (t.timeLogs || []).some((l) => isInWeek(l.date));
-      const subHasWeekLog = t.subtasks.some((s) => (s.timeLogs || []).some((l) => isInWeek(l.date)));
-      return hasWeekLog || subHasWeekLog || (doneColumn?.tasks.some((dt) => dt.id === t.id) ?? false);
-    }
-    return false;
-  });
+  const completedTasks = allTasks.filter((t) =>
+    t.completedAt != null && isInWeek(t.completedAt)
+  );
 
   const inProgressColumn = columns.find((c) => c.id === "inprogress");
   const inProgressTasks = inProgressColumn

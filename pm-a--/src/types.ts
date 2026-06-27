@@ -13,6 +13,7 @@ export type Task = {
   id: string; title: string; description: string; priority: Priority;
   assignee: string; groupId: string; startDate: string; endDate: string;
   completion: number; timeLogs: TimeLog[]; subtasks: SubTask[]; columnId?: string;
+  completedAt?: string | null;
 };
 export type Column = { id: string; title: string; tasks: Task[] };
 export type MeetingRecord = { id: string; date: string; attendees: string[]; summary: string; externalLink: string };
