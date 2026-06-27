@@ -63,6 +63,11 @@ export function findMemberById(groups: Group[], memberId: string): Member | unde
 }
 
 export function getSubtaskAssigneeLabel(task: Task, groups: Group[]): string {
+  if (task.subtasks.length === 0) {
+    if (!task.assignee || task.assignee.trim() === "") return "未指派";
+    const member = findMemberById(groups, task.assignee);
+    return member ? member.name : task.assignee;
+  }
   const uniqueIds = [...new Set(
     task.subtasks.map((s) => s.assignee).filter((a) => a && a.trim() !== "")
   )];

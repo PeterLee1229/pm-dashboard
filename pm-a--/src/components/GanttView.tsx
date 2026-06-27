@@ -32,7 +32,6 @@ export default function GanttView({ columns, onEditTask }: {
   const dayWidth = Math.max(32, Math.min(60, 800 / totalDays));
   const rowHeight = 44;
   const labelWidth = 220;
-  const frozenWidth = labelWidth;
 
   const days: Date[] = [];
   for (let i = 0; i <= totalDays; i++) {
@@ -58,103 +57,82 @@ export default function GanttView({ columns, onEditTask }: {
     return Math.floor((date.getTime() - minDate.getTime()) / 86400000);
   }
 
-  return (
-    <div id="gantt-container" style={{ display: "flex", background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
+  const stickyLabel = {
+    width: labelWidth, flexShrink: 0 as const,
+    position: "sticky" as const, left: 0, zIndex: 1,
+    borderRight: "1px solid #ffffff12",
+  };
 
-      {/* 凍結左側面板 */}
-      <div className="gantt-frozen" style={{ minWidth: frozenWidth, flexShrink: 0, zIndex: 1, borderRight: "1px solid #ffffff12" }}>
-        {/* 月份列佔位 */}
-        <div style={{ height: 37, background: "#1a2030", borderBottom: "1px solid #ffffff08", display: "flex", alignItems: "center", paddingLeft: 14 }}>
-          <span style={{ fontSize: 11, color: "#475569" }}>任務名稱</span>
+  return (
+    <div id="gantt-container" style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflowX: "auto", position: "relative" }}>
+      <div style={{ minWidth: labelWidth + days.length * dayWidth }}>
+
+        {/* 月份列 */}
+        <div style={{ display: "flex", borderBottom: "1px solid #ffffff08" }}>
+          <div style={{ ...stickyLabel, height: 37, background: "#1a2030", display: "flex", alignItems: "center", paddingLeft: 14 }}>
+            <span style={{ fontSize: 11, color: "#475569" }}>任務名稱</span>
+          </div>
+          {months.map((m, i) => (
+            <div key={i} style={{
+              minWidth: m.span * dayWidth, padding: "8px 0",
+              textAlign: "center", fontSize: 11, fontWeight: 600,
+              color: "#94a3b8", background: "#1a2030",
+              borderLeft: i > 0 ? "1px solid #ffffff08" : "none"
+            }}>{m.label}</div>
+          ))}
         </div>
-        {/* 日期列佔位 */}
-        <div style={{ height: 33, background: "#1a2030", borderBottom: "1px solid #ffffff10" }} />
+
+        {/* 日期列 */}
+        <div style={{ display: "flex", borderBottom: "1px solid #ffffff10" }}>
+          <div style={{ ...stickyLabel, height: 33, background: "#1a2030" }} />
+          {days.map((d, i) => {
+            const isToday = d.getTime() === today.getTime();
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            return (
+              <div key={i} style={{
+                minWidth: dayWidth, textAlign: "center",
+                padding: "6px 0", fontSize: 10,
+                color: isToday ? "#6366f1" : isWeekend ? "#475569" : "#64748b",
+                fontWeight: isToday ? 700 : 400,
+                background: isToday ? "#6366f111" : "#1a2030",
+                borderLeft: "1px solid #ffffff06"
+              }}>{d.getDate()}</div>
+            );
+          })}
+        </div>
 
         {/* 任務列 */}
-        {tasksWithDates.map((task) => (
+        {tasksWithDates.map((task) => {
+          const start = new Date(getEffectiveStartDate(task));
+          const end = new Date(getEffectiveEndDate(task));
+          const offsetX = dayOffset(start);
+          const width = Math.max(1, dayOffset(end) - offsetX + 1);
+          const completion = getCompletion(task);
+          const barColor = "#6366f1";
+
+          return (
             <div key={task.id}>
-              <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", height: rowHeight }}>
+              {/* 主任務列 */}
+              <div style={{ display: "flex", minHeight: rowHeight, borderBottom: "1px solid #ffffff06" }}>
                 <div style={{
-                  minWidth: labelWidth, padding: "0 14px",
+                  ...stickyLabel, padding: "8px 14px",
                   fontSize: 12, fontWeight: 600, color: "#cbd5e1",
-                  cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                  cursor: "pointer", wordBreak: "break-word",
+                  background: "#161b27", display: "flex", alignItems: "center"
                 }} onClick={() => onEditTask(task)}>{task.title}</div>
-              </div>
 
-              {task.subtasks
-                .filter((s) => s.startDate && s.endDate)
-                .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-                .map((sub) => (
-                  <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", height: 36, background: "#ffffff02" }}>
-                    <div style={{
-                      minWidth: labelWidth, padding: "0 14px 0 28px",
-                      fontSize: 11, color: "#64748b",
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
-                    }}>↳ {sub.title}</div>
-                  </div>
-                ))}
-            </div>
-        ))}
-      </div>
-
-      {/* 可捲動右側面板 */}
-      <div style={{ overflowX: "auto", position: "relative", flex: 1 }}>
-        <div style={{ minWidth: days.length * dayWidth }}>
-
-          {/* 月份列 */}
-          <div style={{ display: "flex", borderBottom: "1px solid #ffffff08" }}>
-            {months.map((m, i) => (
-              <div key={i} style={{
-                minWidth: m.span * dayWidth, padding: "8px 0",
-                textAlign: "center", fontSize: 11, fontWeight: 600,
-                color: "#94a3b8", background: "#1a2030",
-                borderLeft: i > 0 ? "1px solid #ffffff08" : "none"
-              }}>{m.label}</div>
-            ))}
-          </div>
-
-          {/* 日期列 */}
-          <div style={{ display: "flex", borderBottom: "1px solid #ffffff10" }}>
-            {days.map((d, i) => {
-              const isToday = d.getTime() === today.getTime();
-              const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-              return (
-                <div key={i} style={{
-                  minWidth: dayWidth, textAlign: "center",
-                  padding: "6px 0", fontSize: 10,
-                  color: isToday ? "#6366f1" : isWeekend ? "#475569" : "#64748b",
-                  fontWeight: isToday ? 700 : 400,
-                  background: isToday ? "#6366f111" : "#1a2030",
-                  borderLeft: "1px solid #ffffff06"
-                }}>{d.getDate()}</div>
-              );
-            })}
-          </div>
-
-          {/* 任務列 */}
-          {tasksWithDates.map((task) => {
-            const start = new Date(getEffectiveStartDate(task));
-            const end = new Date(getEffectiveEndDate(task));
-            const offsetX = dayOffset(start);
-            const width = Math.max(1, dayOffset(end) - offsetX + 1);
-            const completion = getCompletion(task);
-            const barColor = "#6366f1";
-
-            return (
-              <div key={task.id}>
-                <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff06", position: "relative", height: rowHeight }}>
+                <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1, minHeight: rowHeight }}>
                   {days.map((d, i) => {
                     const isToday = d.getTime() === today.getTime();
                     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                     return (
                       <div key={i} style={{
-                        minWidth: dayWidth, height: "100%",
+                        minWidth: dayWidth, alignSelf: "stretch",
                         background: isToday ? "#6366f108" : isWeekend ? "#ffffff03" : "transparent",
                         borderLeft: "1px solid #ffffff04"
                       }} />
                     );
                   })}
-
                   <div style={{
                     position: "absolute", left: offsetX * dayWidth,
                     width: width * dayWidth - 4, height: 24,
@@ -176,22 +154,31 @@ export default function GanttView({ columns, onEditTask }: {
                     }}>{completion}%</div>
                   </div>
                 </div>
+              </div>
 
-                {task.subtasks
-                  .filter((s) => s.startDate && s.endDate)
-                  .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-                  .map((sub) => {
-                    const sStart = new Date(sub.startDate);
-                    const sEnd = new Date(sub.endDate);
-                    const sOffsetX = dayOffset(sStart);
-                    const sWidth = Math.max(1, dayOffset(sEnd) - sOffsetX + 1);
+              {/* 子工項列 */}
+              {task.subtasks
+                .filter((s) => s.startDate && s.endDate)
+                .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+                .map((sub) => {
+                  const sStart = new Date(sub.startDate);
+                  const sEnd = new Date(sub.endDate);
+                  const sOffsetX = dayOffset(sStart);
+                  const sWidth = Math.max(1, dayOffset(sEnd) - sOffsetX + 1);
 
-                    return (
-                      <div key={sub.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #ffffff04", position: "relative", height: 36, background: "#ffffff02" }}>
+                  return (
+                    <div key={sub.id} style={{ display: "flex", minHeight: 36, borderBottom: "1px solid #ffffff04", background: "#ffffff02" }}>
+                      <div style={{
+                        ...stickyLabel, padding: "6px 14px 6px 28px",
+                        fontSize: 11, color: "#64748b",
+                        wordBreak: "break-word", background: "#1a1f2e",
+                        display: "flex", alignItems: "center"
+                      }}>↳ {sub.title}</div>
+
+                      <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1 }}>
                         {days.map((_, i) => (
-                          <div key={i} style={{ minWidth: dayWidth, height: "100%", borderLeft: "1px solid #ffffff03" }} />
+                          <div key={i} style={{ minWidth: dayWidth, alignSelf: "stretch", borderLeft: "1px solid #ffffff03" }} />
                         ))}
-
                         <div style={{
                           position: "absolute", left: sOffsetX * dayWidth,
                           width: sWidth * dayWidth - 4, height: 18,
@@ -206,25 +193,25 @@ export default function GanttView({ columns, onEditTask }: {
                           }}>{sub.completion}%</div>
                         </div>
                       </div>
-                    );
-                  })}
-              </div>
-            );
-          })}
+                    </div>
+                  );
+                })}
+            </div>
+          );
+        })}
 
-          {/* 今日線 */}
-          {(() => {
-            const todayOffset = dayOffset(today);
-            if (todayOffset < 0 || todayOffset > totalDays) return null;
-            return (
-              <div style={{
-                position: "absolute", top: 0, bottom: 0,
-                left: todayOffset * dayWidth + dayWidth / 2,
-                width: 2, background: "#6366f1", opacity: 0.6, pointerEvents: "none"
-              }} />
-            );
-          })()}
-        </div>
+        {/* 今日線 */}
+        {(() => {
+          const todayOffset = dayOffset(today);
+          if (todayOffset < 0 || todayOffset > totalDays) return null;
+          return (
+            <div style={{
+              position: "absolute", top: 0, bottom: 0,
+              left: labelWidth + todayOffset * dayWidth + dayWidth / 2,
+              width: 2, background: "#6366f1", opacity: 0.6, pointerEvents: "none"
+            }} />
+          );
+        })()}
       </div>
     </div>
   );

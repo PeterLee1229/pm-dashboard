@@ -51,13 +51,8 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     return false;
   });
 
-  const inProgressTasks = allTasks.filter((t) => {
-    const comp = getCompletion(t);
-    if (comp >= 100) return false;
-    const hasWeekLog = (t.timeLogs || []).some((l) => isInWeek(l.date));
-    const subHasWeekLog = t.subtasks.some((s) => (s.timeLogs || []).some((l) => isInWeek(l.date)));
-    return hasWeekLog || subHasWeekLog;
-  });
+  const inProgressColumn = columns.find((c) => c.id === "inprogress");
+  const inProgressTasks = inProgressColumn ? inProgressColumn.tasks : [];
 
   const weekHoursMap: Record<string, number> = {};
   allTasks.forEach((t) => {
