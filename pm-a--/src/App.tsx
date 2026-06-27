@@ -438,17 +438,24 @@ export default function App() {
   const filteredColumns = columns.map((col) => ({
     ...col,
     tasks: col.tasks.filter((task) => {
-      const memberName = (() => {
-        const m = findMemberById(projectMemberGroups, task.assignee);
-        return m ? m.name : task.assignee;
-      })();
-      const matchSearch = searchText === "" ||
-        task.title.toLowerCase().includes(searchText.toLowerCase()) ||
-        memberName.toLowerCase().includes(searchText.toLowerCase());
       const matchPriority = filterPriorities.length === 0 || filterPriorities.includes(task.priority);
-      const matchAssignee = filterAssignees.length === 0 || filterAssignees.includes(task.assignee);
-      const matchGroup = filterGroups.length === 0 || filterGroups.includes(task.groupId);
-      return matchSearch && matchPriority && matchAssignee && matchGroup;
+      if (!matchPriority) return false;
+
+      const entityMatches = (title: string, assigneeId: string, groupId: string) => {
+        const memberName = (() => {
+          const m = findMemberById(projectMemberGroups, assigneeId);
+          return m ? m.name : assigneeId;
+        })();
+        const matchSearch = searchText === "" ||
+          title.toLowerCase().includes(searchText.toLowerCase()) ||
+          memberName.toLowerCase().includes(searchText.toLowerCase());
+        const matchAssignee = filterAssignees.length === 0 || filterAssignees.includes(assigneeId);
+        const matchGroup = filterGroups.length === 0 || filterGroups.includes(groupId);
+        return matchSearch && matchAssignee && matchGroup;
+      };
+
+      if (entityMatches(task.title, task.assignee, task.groupId)) return true;
+      return task.subtasks.some((sub) => entityMatches(sub.title, sub.assignee, sub.groupId));
     })
   }));
 

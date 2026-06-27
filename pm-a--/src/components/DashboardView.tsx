@@ -8,8 +8,6 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
 
   const allTasks = columns.flatMap((c) => c.tasks);
-  const allSubtasks = allTasks.flatMap((t) => t.subtasks);
-
   const columnData = columns.map((c) => ({ name: c.title, 數量: c.tasks.length }));
 
   const priorityCount = { high: 0, medium: 0, low: 0 };
@@ -60,12 +58,11 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div className="stats-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+      <div className="stats-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
         {[
           { label: "總任務數", value: allTasks.length, color: "#6366f1" },
           { label: "已完成", value: doneTasks, color: "#10b981" },
           { label: "整體完成度", value: `${totalCompletion}%`, color: "#f59e0b" },
-          { label: "子工項數", value: allSubtasks.length, color: "#8b5cf6" },
         ].map((card) => (
           <div key={card.label} style={{
             background: "#161b27", borderRadius: 12, padding: "20px 24px",

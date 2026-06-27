@@ -52,7 +52,9 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
   });
 
   const inProgressColumn = columns.find((c) => c.id === "inprogress");
-  const inProgressTasks = inProgressColumn ? inProgressColumn.tasks : [];
+  const inProgressTasks = inProgressColumn
+    ? inProgressColumn.tasks.filter((t) => getCompletion(t) < 100)
+    : [];
 
   const weekHoursMap: Record<string, number> = {};
   allTasks.forEach((t) => {
@@ -196,15 +198,20 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
           <p style={{ fontSize: 13, fontWeight: 600, color: "#10b981", marginBottom: 12 }}>✅ 本週完成</p>
           {completedTasks.length === 0 ? (
             <p style={{ fontSize: 12, color: "#475569" }}>無</p>
-          ) : completedTasks.map((t) => {
-            const group = groups.find((g) => g.id === t.groupId);
-            return (
-              <div key={t.id} style={{ fontSize: 12, color: "#94a3b8", padding: "4px 0", display: "flex", gap: 8 }}>
-                {group && <span style={{ fontSize: 10, color: group.color }}>[{group.name}]</span>}
-                <span>{t.title}</span>
-              </div>
-            );
-          })}
+          ) : completedTasks.map((t) => (
+            <div key={t.id} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.title}</div>
+              {t.subtasks.length > 0 && (
+                <div style={{ paddingLeft: 14, marginTop: 2 }}>
+                  {t.subtasks.map((sub) => (
+                    <div key={sub.id} style={{ fontSize: 11, color: "#64748b", padding: "1px 0" }}>
+                      {sub.title}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
 
         {/* 進行中 */}
@@ -212,17 +219,28 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
           <p style={{ fontSize: 13, fontWeight: 600, color: "#f59e0b", marginBottom: 12 }}>🔄 進行中</p>
           {inProgressTasks.length === 0 ? (
             <p style={{ fontSize: 12, color: "#475569" }}>無</p>
-          ) : inProgressTasks.map((t) => {
-            const group = groups.find((g) => g.id === t.groupId);
-            const comp = getCompletion(t);
-            return (
-              <div key={t.id} style={{ fontSize: 12, color: "#94a3b8", padding: "4px 0", display: "flex", alignItems: "center", gap: 8 }}>
-                {group && <span style={{ fontSize: 10, color: group.color }}>[{group.name}]</span>}
-                <span style={{ flex: 1 }}>{t.title}</span>
-                <span style={{ fontSize: 11, color: "#6366f1" }}>{comp}%</span>
-              </div>
-            );
-          })}
+          ) : inProgressTasks.map((t) => (
+            <div key={t.id} style={{ marginBottom: 6 }}>
+              {t.subtasks.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", justifyContent: "space-between" }}>
+                  <span>{t.title}</span>
+                  <span style={{ fontSize: 11, color: "#6366f1", flexShrink: 0, paddingLeft: 8 }}>{t.completion}%</span>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.title}</div>
+                  <div style={{ paddingLeft: 14, marginTop: 2 }}>
+                    {t.subtasks.map((sub) => (
+                      <div key={sub.id} style={{ fontSize: 11, color: "#64748b", padding: "1px 0", display: "flex", justifyContent: "space-between" }}>
+                        <span>{sub.title}</span>
+                        <span style={{ fontSize: 10, color: "#6366f1", flexShrink: 0, paddingLeft: 8 }}>{sub.completion}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
         </div>
 
         {/* 工時統計 */}
