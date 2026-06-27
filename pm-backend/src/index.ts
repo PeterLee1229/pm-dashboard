@@ -482,6 +482,12 @@ app.put("/api/tasks/:id", authMiddleware, async (req: any, res) => {
 
     const { subtasks, ...taskData } = req.body;
 
+    if (req.body.columnId === "done" && task.columnId !== "done") {
+      taskData.completedAt = new Date();
+    } else if (req.body.columnId && req.body.columnId !== "done" && task.columnId === "done") {
+      taskData.completedAt = null;
+    }
+
     await prisma.task.update({ where: { id: req.params.id }, data: taskData });
 
     if (subtasks && Array.isArray(subtasks)) {
