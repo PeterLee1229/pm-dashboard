@@ -38,6 +38,8 @@ export default function GanttView({ columns, onEditTask }: {
 
   const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000);
   const dayWidth = Math.max(32, Math.min(60, 800 / totalDays));
+  const daysPerCell: Record<TimeScale, number> = { day: 1, week: 7, month: 30, year: 365 };
+  const pixelsPerDay = dayWidth / daysPerCell[timeScale];
   const rowHeight = 44;
   const labelWidth = 220;
 
@@ -102,7 +104,7 @@ export default function GanttView({ columns, onEditTask }: {
       <>
         {groups.map((g, i) => (
           <div key={i} style={{
-            minWidth: g.span * dayWidth, padding: "8px 0",
+            minWidth: g.span * pixelsPerDay, padding: "8px 0",
             textAlign: "center", fontSize: 11, fontWeight: 600,
             color: "#94a3b8",
             borderLeft: i > 0 ? "1px solid #ffffff08" : "none",
@@ -121,7 +123,7 @@ export default function GanttView({ columns, onEditTask }: {
           const isWeekend = d.getDay() === 0 || d.getDay() === 6;
           return (
             <div key={i} style={{
-              minWidth: dayWidth, textAlign: "center", padding: "6px 0", fontSize: 10,
+              minWidth: pixelsPerDay, textAlign: "center", padding: "6px 0", fontSize: 10,
               color: isToday ? "#6366f1" : isWeekend ? "#475569" : "#64748b",
               fontWeight: isToday ? 700 : 400,
               background: isToday ? "#6366f111" : "transparent",
@@ -166,7 +168,7 @@ export default function GanttView({ columns, onEditTask }: {
           {bottomCorner(37)}
           {weekGroups.map((w, i) => (
             <div key={i} style={{
-              minWidth: w.span * dayWidth, textAlign: "center", padding: "6px 0", fontSize: 10,
+              minWidth: w.span * pixelsPerDay, textAlign: "center", padding: "6px 0", fontSize: 10,
               color: "#64748b", borderLeft: i > 0 ? "1px solid #ffffff06" : "none",
             }}>{w.label}</div>
           ))}
@@ -184,7 +186,7 @@ export default function GanttView({ columns, onEditTask }: {
           {bottomCorner(37)}
           {monthLabels.map((m, i) => (
             <div key={i} style={{
-              minWidth: m.span * dayWidth, textAlign: "center", padding: "6px 0", fontSize: 10,
+              minWidth: m.span * pixelsPerDay, textAlign: "center", padding: "6px 0", fontSize: 10,
               color: "#64748b", borderLeft: i > 0 ? "1px solid #ffffff06" : "none",
             }}>{m.label}</div>
           ))}
@@ -203,7 +205,7 @@ export default function GanttView({ columns, onEditTask }: {
           {bottomCorner(37)}
           {yearGroups.map((y, i) => (
             <div key={i} style={{
-              minWidth: y.span * dayWidth, textAlign: "center", padding: "6px 0", fontSize: 10,
+              minWidth: y.span * pixelsPerDay, textAlign: "center", padding: "6px 0", fontSize: 10,
               color: "#64748b", borderLeft: i > 0 ? "1px solid #ffffff06" : "none",
             }}>Q1–Q4</div>
           ))}
@@ -241,7 +243,7 @@ export default function GanttView({ columns, onEditTask }: {
         maxHeight: "calc(100vh - 220px)",
         position: "relative",
       }}>
-        <div style={{ minWidth: labelWidth + days.length * dayWidth }}>
+        <div style={{ minWidth: labelWidth + days.length * pixelsPerDay }}>
 
           {renderHeaders()}
 
@@ -270,15 +272,15 @@ export default function GanttView({ columns, onEditTask }: {
                       const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                       return (
                         <div key={i} style={{
-                          minWidth: dayWidth, alignSelf: "stretch",
+                          minWidth: pixelsPerDay, alignSelf: "stretch",
                           background: isToday ? "#6366f108" : isWeekend ? "#ffffff03" : "transparent",
                           borderLeft: "1px solid #ffffff04",
                         }} />
                       );
                     })}
                     <div style={{
-                      position: "absolute", left: offsetX * dayWidth,
-                      width: width * dayWidth - 4, height: 24,
+                      position: "absolute", left: offsetX * pixelsPerDay,
+                      width: width * pixelsPerDay - 4, height: 24,
                       borderRadius: 6, background: barColor + "33",
                       border: `1px solid ${barColor}66`,
                       cursor: "pointer", overflow: "hidden",
@@ -318,11 +320,11 @@ export default function GanttView({ columns, onEditTask }: {
 
                         <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1 }}>
                           {days.map((_, i) => (
-                            <div key={i} style={{ minWidth: dayWidth, alignSelf: "stretch", borderLeft: "1px solid #ffffff03" }} />
+                            <div key={i} style={{ minWidth: pixelsPerDay, alignSelf: "stretch", borderLeft: "1px solid #ffffff03" }} />
                           ))}
                           <div style={{
-                            position: "absolute", left: sOffsetX * dayWidth,
-                            width: sWidth * dayWidth - 4, height: 18,
+                            position: "absolute", left: sOffsetX * pixelsPerDay,
+                            width: sWidth * pixelsPerDay - 4, height: 18,
                             borderRadius: 4, background: "#10b98122",
                             border: "1px solid #10b98144", overflow: "hidden",
                           }}>
@@ -348,7 +350,7 @@ export default function GanttView({ columns, onEditTask }: {
             return (
               <div style={{
                 position: "absolute", top: 0, bottom: 0,
-                left: labelWidth + todayOffset * dayWidth + dayWidth / 2,
+                left: labelWidth + todayOffset * pixelsPerDay + pixelsPerDay / 2,
                 width: 2, background: "#6366f1", opacity: 0.6, pointerEvents: "none",
               }} />
             );
