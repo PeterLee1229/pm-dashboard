@@ -38,7 +38,7 @@ export default function GanttView({ columns, onEditTask }: {
 
   const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / 86400000);
   const dayWidth = Math.max(32, Math.min(60, 800 / totalDays));
-  const daysPerCell: Record<TimeScale, number> = { day: 1, week: 7, month: 30, year: 365 };
+  const daysPerCell: Record<TimeScale, number> = { day: 1, week: 7, month: 10, year: 10 };
   const pixelsPerDay = dayWidth / daysPerCell[timeScale];
   const rowHeight = 44;
   const labelWidth = 220;
