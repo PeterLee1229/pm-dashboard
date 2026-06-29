@@ -82,17 +82,11 @@ export default function GanttView({ columns, onEditTask }: {
 
   // ── Sticky style helpers ──────────────────────────────────────────
 
-  const stickyLabel: React.CSSProperties = {
+  const stickyLabel = (extra: React.CSSProperties = {}): React.CSSProperties => ({
     width: labelWidth, flexShrink: 0,
     position: "sticky", left: 0, zIndex: 1,
     borderRight: "1px solid #ffffff12",
-  };
-
-  // Corner cell: both left + top sticky
-  const corner = (top: number): React.CSSProperties => ({
-    ...stickyLabel,
-    top, zIndex: 4,
-    background: HEADER_BG,
+    ...extra,
   });
 
   // Header row wrapper: sticky at given top offset
@@ -141,12 +135,12 @@ export default function GanttView({ columns, onEditTask }: {
 
   function renderHeaders() {
     const topLabel = (
-      <div style={{ ...corner(0), height: 37, display: "flex", alignItems: "center", paddingLeft: 14 }}>
+      <div style={{ ...stickyLabel({ top: 0, zIndex: 4, background: HEADER_BG }), height: 37, display: "flex", alignItems: "center", paddingLeft: 14 }}>
         <span style={{ fontSize: 11, color: "#475569" }}>任務名稱</span>
       </div>
     );
     const bottomCorner = (top: number) => (
-      <div style={{ ...corner(top), height: 33 }} />
+      <div style={{ ...stickyLabel({ top, zIndex: 4, background: HEADER_BG }), height: 33 }} />
     );
 
     if (timeScale === "day") return (
@@ -264,7 +258,7 @@ export default function GanttView({ columns, onEditTask }: {
               <div key={task.id}>
                 <div style={{ display: "flex", minHeight: rowHeight, borderBottom: "1px solid #ffffff06" }}>
                   <div style={{
-                    ...stickyLabel, padding: "8px 14px",
+                    ...stickyLabel(), padding: "8px 14px",
                     fontSize: 12, fontWeight: 600, color: "#cbd5e1",
                     cursor: "pointer", wordBreak: "break-word",
                     background: "#161b27", display: "flex", alignItems: "center",
@@ -316,7 +310,7 @@ export default function GanttView({ columns, onEditTask }: {
                     return (
                       <div key={sub.id} style={{ display: "flex", minHeight: 36, borderBottom: "1px solid #ffffff04", background: "#ffffff02" }}>
                         <div style={{
-                          ...stickyLabel, padding: "6px 14px 6px 28px",
+                          ...stickyLabel(), padding: "6px 14px 6px 28px",
                           fontSize: 11, color: "#64748b",
                           wordBreak: "break-word", background: "#1a1f2e",
                           display: "flex", alignItems: "center",
