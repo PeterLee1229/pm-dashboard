@@ -7,6 +7,8 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import { parse } from "csv-parse/sync";
+import cron from "node-cron";
+import { checkDueTasks } from "./scheduler";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -36,11 +38,15 @@ app.get("/", (_req, res) => {
 
 // ── Auth middleware ────────────────────────────────────────────────────
 
-function authMiddleware(req: any, res: any, next: any) {
+async function authMiddleware(req: any, res: any, next: any) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "未登入" });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
+    const dbUser = await prisma.user.findUnique({
+      where: { id: req.user.userId }, select: { isActive: true }
+    });
+    if (!dbUser?.isActive) return res.status(403).json({ error: "帳號已被停用" });
     next();
   } catch {
     res.status(401).json({ error: "通行證無效" });
@@ -138,6 +144,7 @@ app.post("/api/auth/login", async (req, res) => {
     console.log("密碼驗證:", valid);
 
     if (!valid) return res.status(401).json({ error: "密碼錯誤" });
+    if (!user.isActive) return res.status(403).json({ error: "此帳號已被停用，請聯繫管理員" });
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
@@ -813,11 +820,28 @@ app.get("/api/admin/users", authMiddleware, async (req: any, res) => {
   }
   const users = await prisma.user.findMany({
     select: {
-      id: true, name: true, memberId: true, email: true, role: true, createdAt: true,
+      id: true, name: true, memberId: true, email: true, role: true, isActive: true, createdAt: true,
       _count: { select: { projectMemberships: true } }
     }
   });
   res.json(users);
+});
+
+app.put("/api/admin/users/:id/toggle-active", authMiddleware, async (req: any, res) => {
+  if (!(await isAdmin(req.user.userId))) {
+    return res.status(403).json({ error: "需要管理員權限" });
+  }
+  if (req.params.id === req.user.userId) {
+    return res.status(400).json({ error: "不能停用自己的帳號" });
+  }
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: "使用者不存在" });
+  const updated = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { isActive: !user.isActive },
+    select: { id: true, isActive: true },
+  });
+  res.json(updated);
 });
 
 app.put("/api/admin/users/:id", authMiddleware, async (req: any, res) => {
@@ -1288,6 +1312,13 @@ app.get("/api/templates/tasks", (_req, res) => {
   res.setHeader("Content-Disposition", "attachment; filename=task_import_template.csv");
   res.send(csv);
 });
+
+// ── 排程：每天早上 8 點（台灣時間 UTC+8 = UTC 0 點）──────────────────
+
+cron.schedule("0 0 * * *", () => {
+  checkDueTasks().catch(console.error);
+});
+checkDueTasks().catch(console.error); // 啟動時也跑一次
 
 // ── 啟動伺服器 ────────────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ model User {
   name               String
   memberId           String   @unique
   role               String   @default("user")
+  isActive           Boolean  @default(true)
   groupId            String?
   group              Group?   @relation(fields: [groupId], references: [id])
   projectMemberships ProjectMember[]

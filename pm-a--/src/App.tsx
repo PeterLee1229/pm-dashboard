@@ -1134,6 +1134,7 @@ export default function App() {
                           task_assigned: "📋", task_moved: "🔄",
                           project_invited: "👋", risk_updated: "⚠️", meeting_created: "📅",
                           comment_added: "💬",
+                          task_due_tomorrow: "⏰", task_due_today: "🔴", task_overdue: "🚨",
                         };
                         return (
                           <div key={n.id} onClick={async () => {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
-import { getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole, getUsers } from "../api";
+import { getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole, getUsers, transferOwner } from "../api";
 
 export function AddMemberModal({ availableUsers, onAdd, onClose, currentUser, currentProjectRole }: {
   availableUsers: any[];
@@ -115,6 +115,95 @@ export function AddMemberModal({ availableUsers, onAdd, onClose, currentUser, cu
   );
 }
 
+// ── TransferOwnerModal ────────────────────────────────────────────────
+
+function TransferOwnerModal({ projectId, projectName, members, currentOwnerId, onSuccess, onClose }: {
+  projectId: string;
+  projectName: string;
+  members: any[];
+  currentOwnerId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [confirmInput, setConfirmInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const candidates = members.filter(m => m.userId !== currentOwnerId && m.role !== "owner");
+  const isConfirmed = confirmInput.trim() === projectName.trim();
+
+  const handleTransfer = async () => {
+    if (!selectedUserId || !isConfirmed) return;
+    setSaving(true);
+    try {
+      await transferOwner(projectId, selectedUserId);
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      alert(err.message || "轉移失敗");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-label">轉移 Owner</span>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ background: "#f59e0b18", border: "1px solid #f59e0b44", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#f59e0b", lineHeight: 1.6 }}>
+            ⚠️ 轉移後你將降級為 PM，此操作無法自行撤銷。
+          </div>
+
+          <div className="field">
+            <label className="field-label">選擇新 Owner</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflowY: "auto" }}>
+              {candidates.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>沒有可選擇的成員</p>
+              ) : candidates.map(m => (
+                <div key={m.userId} onClick={() => setSelectedUserId(m.userId)} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 12px", borderRadius: 8, cursor: "pointer",
+                  background: selectedUserId === m.userId ? "#6366f122" : "#0f1117",
+                  border: `1px solid ${selectedUserId === m.userId ? "#6366f1" : "#ffffff08"}`,
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>{m.user?.name}</span>
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8 }}>({m.user?.memberId})</span>
+                  </div>
+                  <span style={{ fontSize: 10, color: "#64748b" }}>{m.role}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {selectedUserId && (
+            <div className="field">
+              <label className="field-label">輸入專案名稱確認</label>
+              <p style={{ fontSize: 12, color: "#64748b", marginBottom: 6 }}>請輸入「{projectName}」以確認操作</p>
+              <input className="field-input" value={confirmInput}
+                onChange={(e) => setConfirmInput(e.target.value)}
+                placeholder={projectName} />
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-save"
+            disabled={!selectedUserId || !isConfirmed || saving}
+            onClick={handleTransfer}
+            style={{ background: "#ef4444", opacity: (!selectedUserId || !isConfirmed || saving) ? 0.4 : 1 }}>
+            {saving ? "轉移中…" : "確認轉移"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── AdminView ────────────────────────────────────────────────────────
 
 export default function ProjectMembersView({ projectId, projectName, currentUser, currentProjectRole, onMembersChange }: {
@@ -128,6 +217,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
 
   useEffect(() => { loadData(); }, [projectId]);
 
@@ -218,13 +308,24 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
           <span style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0" }}>
             {projectName} — 專案成員
           </span>
-          <button onClick={() => setShowAddModal(true)} style={{
-            background: "#6366f122", border: "1px solid #6366f144",
-            borderRadius: 8, color: "#6366f1", fontSize: 12, fontWeight: 600,
-            padding: "6px 16px", cursor: "pointer"
-          }}>
-            + 邀請成員
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {(currentProjectRole === "owner" || currentProjectRole === "admin") && (
+              <button onClick={() => setShowTransferModal(true)} style={{
+                background: "#ef444418", border: "1px solid #ef444444",
+                borderRadius: 8, color: "#ef4444", fontSize: 12, fontWeight: 600,
+                padding: "6px 16px", cursor: "pointer"
+              }}>
+                轉移 Owner
+              </button>
+            )}
+            <button onClick={() => setShowAddModal(true)} style={{
+              background: "#6366f122", border: "1px solid #6366f144",
+              borderRadius: 8, color: "#6366f1", fontSize: 12, fontWeight: 600,
+              padding: "6px 16px", cursor: "pointer"
+            }}>
+              + 邀請成員
+            </button>
+          </div>
         </div>
 
         <div style={{
@@ -305,6 +406,17 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
           onClose={() => setShowAddModal(false)}
           currentUser={currentUser}
           currentProjectRole={currentProjectRole}
+        />
+      )}
+
+      {showTransferModal && (
+        <TransferOwnerModal
+          projectId={projectId}
+          projectName={projectName}
+          members={members}
+          currentOwnerId={currentUser?.id}
+          onSuccess={loadData}
+          onClose={() => setShowTransferModal(false)}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getAdminUsers, updateAdminUser } from "../api";
+import { getAdminUsers, updateAdminUser, toggleUserActive } from "../api";
 
 export default function AdminView({ currentUser }: { currentUser: any }) {
   const [users, setUsers] = useState<any[]>([]);
@@ -22,21 +22,32 @@ export default function AdminView({ currentUser }: { currentUser: any }) {
     setSaving(null);
   };
 
-  const adminCount  = users.filter((u) => u.role === "admin").length;
-  const activeCount = users.filter((u) => u._count?.projectMemberships > 0).length;
+  const handleToggleActive = async (userId: string) => {
+    setSaving(userId);
+    try {
+      const result = await toggleUserActive(userId);
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, isActive: result.isActive } : u));
+    } catch {}
+    setSaving(null);
+  };
+
+  const adminCount    = users.filter((u) => u.role === "admin").length;
+  const activeCount   = users.filter((u) => u._count?.projectMemberships > 0).length;
+  const disabledCount = users.filter((u) => u.isActive === false).length;
 
   if (loading) return <div style={{ padding: 40, color: "#94a3b8" }}>載入中…</div>;
 
   return (
-    <div className="admin-page" style={{ padding: "32px 40px", maxWidth: 900 }}>
+    <div className="admin-page" style={{ padding: "32px 40px", maxWidth: 960 }}>
       <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, marginBottom: 24 }}>系統管理</h2>
 
       {/* 統計卡片 */}
       <div className="admin-stats" style={{ display: "flex", gap: 16, marginBottom: 32 }}>
         {[
-          { label: "總使用者", value: users.length, color: "#6366f1" },
-          { label: "管理員",   value: adminCount,   color: "#ef4444" },
-          { label: "有專案成員", value: activeCount, color: "#10b981" },
+          { label: "總使用者",   value: users.length,  color: "#6366f1" },
+          { label: "管理員",     value: adminCount,    color: "#ef4444" },
+          { label: "有專案成員", value: activeCount,   color: "#10b981" },
+          { label: "已停用",     value: disabledCount, color: "#f59e0b" },
         ].map((s) => (
           <div key={s.label} style={{
             flex: 1, background: "#1e293b", borderRadius: 12, padding: "20px 24px",
@@ -53,42 +64,73 @@ export default function AdminView({ currentUser }: { currentUser: any }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#0f172a" }}>
-              {["姓名", "員工編號", "Email", "系統角色", "所屬專案數"].map((h) => (
+              {["姓名", "員工編號", "Email", "系統角色", "所屬專案數", "操作"].map((h) => (
                 <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, color: "#64748b", fontWeight: 600 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {users.map((u, i) => (
-              <tr key={u.id} style={{ borderTop: i > 0 ? "1px solid #ffffff08" : undefined }}>
-                <td style={{ padding: "12px 16px", color: "#e2e8f0", fontSize: 14 }}>{u.name}</td>
-                <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{u.memberId || "—"}</td>
-                <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{u.email}</td>
-                <td style={{ padding: "12px 16px" }}>
-                  {u.id === currentUser?.id ? (
-                    <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600, background: "#ef444422", padding: "3px 8px", borderRadius: 6 }}>
-                      {u.role === "admin" ? "管理員" : "一般使用者"}（本人）
-                    </span>
-                  ) : (
-                    <select
-                      value={u.role}
-                      disabled={saving === u.id}
-                      onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                      style={{
-                        background: "#0f172a", color: "#e2e8f0", border: "1px solid #ffffff20",
-                        borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer"
-                      }}
-                    >
-                      <option value="user">一般使用者</option>
-                      <option value="admin">管理員</option>
-                    </select>
-                  )}
-                </td>
-                <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>
-                  {u._count?.projectMemberships ?? 0}
-                </td>
-              </tr>
-            ))}
+            {users.map((u, i) => {
+              const isDisabled = u.isActive === false;
+              return (
+                <tr key={u.id} style={{
+                  borderTop: i > 0 ? "1px solid #ffffff08" : undefined,
+                  background: isDisabled ? "#ef444408" : "transparent",
+                  opacity: isDisabled ? 0.7 : 1,
+                }}>
+                  <td style={{ padding: "12px 16px", color: "#e2e8f0", fontSize: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {u.name}
+                      {isDisabled && (
+                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 99, background: "#f59e0b22", color: "#f59e0b", border: "1px solid #f59e0b44" }}>已停用</span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{u.memberId || "—"}</td>
+                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{u.email}</td>
+                  <td style={{ padding: "12px 16px" }}>
+                    {u.id === currentUser?.id ? (
+                      <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600, background: "#ef444422", padding: "3px 8px", borderRadius: 6 }}>
+                        {u.role === "admin" ? "管理員" : "一般使用者"}（本人）
+                      </span>
+                    ) : (
+                      <select
+                        value={u.role}
+                        disabled={saving === u.id || isDisabled}
+                        onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                        style={{
+                          background: "#0f172a", color: "#e2e8f0", border: "1px solid #ffffff20",
+                          borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer"
+                        }}
+                      >
+                        <option value="user">一般使用者</option>
+                        <option value="admin">管理員</option>
+                      </select>
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>
+                    {u._count?.projectMemberships ?? 0}
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    {u.id !== currentUser?.id && (
+                      <button
+                        disabled={saving === u.id}
+                        onClick={() => handleToggleActive(u.id)}
+                        style={{
+                          background: isDisabled ? "#10b98118" : "#ef444418",
+                          border: `1px solid ${isDisabled ? "#10b98144" : "#ef444444"}`,
+                          borderRadius: 6, color: isDisabled ? "#10b981" : "#ef4444",
+                          fontSize: 11, padding: "4px 10px", cursor: "pointer",
+                          opacity: saving === u.id ? 0.5 : 1,
+                        }}
+                      >
+                        {isDisabled ? "啟用" : "停用"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

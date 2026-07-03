@@ -268,6 +268,17 @@ export async function updateAdminUser(id: string, data: any) {
   });
 }
 
+export async function toggleUserActive(id: string) {
+  return apiFetch(`/admin/users/${id}/toggle-active`, { method: "PUT" });
+}
+
+export async function transferOwner(projectId: string, newOwnerId: string) {
+  return apiFetch(`/projects/${projectId}/transfer-owner`, {
+    method: "POST",
+    body: JSON.stringify({ newOwnerId }),
+  });
+}
+
 // ── 專案成員 API ────────────────────────────
 
 export async function getProjectMembers(projectId: string) {
