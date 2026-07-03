@@ -46,7 +46,7 @@ async function authMiddleware(req: any, res: any, next: any) {
     const dbUser = await prisma.user.findUnique({
       where: { id: req.user.userId }, select: { isActive: true }
     });
-    if (!dbUser?.isActive) return res.status(403).json({ error: "帳號已被停用" });
+    if (dbUser?.isActive === false) return res.status(403).json({ error: "帳號已被停用" });
     next();
   } catch {
     res.status(401).json({ error: "通行證無效" });
