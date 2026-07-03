@@ -116,10 +116,11 @@ export default function AdminView({ currentUser }: { currentUser: any }) {
                       <button
                         disabled={saving === u.id}
                         onClick={() => handleToggleActive(u.id)}
+                        title={isDisabled ? "重新啟用此帳號（可逆）" : "停用此帳號（可隨時重新啟用）"}
                         style={{
-                          background: isDisabled ? "#10b98118" : "#ef444418",
-                          border: `1px solid ${isDisabled ? "#10b98144" : "#ef444444"}`,
-                          borderRadius: 6, color: isDisabled ? "#10b981" : "#ef4444",
+                          background: isDisabled ? "#10b98118" : "#f59e0b18",
+                          border: `1px solid ${isDisabled ? "#10b98144" : "#f59e0b44"}`,
+                          borderRadius: 6, color: isDisabled ? "#10b981" : "#f59e0b",
                           fontSize: 11, padding: "4px 10px", cursor: "pointer",
                           opacity: saving === u.id ? 0.5 : 1,
                         }}

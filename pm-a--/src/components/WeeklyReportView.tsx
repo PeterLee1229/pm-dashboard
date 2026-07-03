@@ -17,6 +17,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
   projectName: string;
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [hoursFilter, setHoursFilter] = useState<"week" | "month" | "all">("week");
 
   const now = new Date();
   const targetDate = new Date(now);
@@ -59,23 +60,43 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     ? inProgressColumn.tasks.filter((t) => getCompletion(t) < 100 && taskInWeek(t))
     : [];
 
-  const weekHoursMap: Record<string, number> = {};
-  allTasks.forEach((t) => {
-    if (t.subtasks.length === 0) {
-      (t.timeLogs || []).filter((l) => isInWeek(l.date)).forEach((l) => {
-        const member = findMemberById(groups, t.assignee);
-        const key = member ? memberDisplay(member) : t.assignee || "未指派";
-        weekHoursMap[key] = (weekHoursMap[key] || 0) + l.hours;
-      });
-    }
-    t.subtasks.forEach((s) => {
-      (s.timeLogs || []).filter((l) => isInWeek(l.date)).forEach((l) => {
-        const member = findMemberById(groups, s.assignee);
-        const key = member ? memberDisplay(member) : s.assignee || "未指派";
-        weekHoursMap[key] = (weekHoursMap[key] || 0) + l.hours;
+  const buildHoursMap = (isInRange: (dateStr: string) => boolean): Record<string, number> => {
+    const map: Record<string, number> = {};
+    allTasks.forEach((t) => {
+      if (t.subtasks.length === 0) {
+        (t.timeLogs || []).filter((l) => isInRange(l.date)).forEach((l) => {
+          const member = findMemberById(groups, t.assignee);
+          const key = member ? memberDisplay(member) : t.assignee || "未指派";
+          map[key] = (map[key] || 0) + l.hours;
+        });
+      }
+      t.subtasks.forEach((s) => {
+        (s.timeLogs || []).filter((l) => isInRange(l.date)).forEach((l) => {
+          const member = findMemberById(groups, s.assignee);
+          const key = member ? memberDisplay(member) : s.assignee || "未指派";
+          map[key] = (map[key] || 0) + l.hours;
+        });
       });
     });
-  });
+    return map;
+  };
+
+  const weekHoursMap = buildHoursMap(isInWeek);
+
+  const isInMonth = (dateStr: string) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d.getFullYear() === targetDate.getFullYear() && d.getMonth() === targetDate.getMonth();
+  };
+  const monthHoursMap = buildHoursMap(isInMonth);
+  const allHoursMap = buildHoursMap(() => true);
+
+  const HOURS_FILTER_MAP: Record<"week" | "month" | "all", Record<string, number>> = {
+    week: weekHoursMap, month: monthHoursMap, all: allHoursMap,
+  };
+  const displayedHoursMap = HOURS_FILTER_MAP[hoursFilter];
+  const totalDisplayedHours = Math.round(Object.values(displayedHoursMap).reduce((s, h) => s + h, 0) * 10) / 10;
+
   const totalWeekHours = Math.round(Object.values(weekHoursMap).reduce((s, h) => s + h, 0) * 10) / 10;
 
   const activeRisks = risks.filter((r) => r.status !== "resolved");
@@ -252,10 +273,22 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
 
         {/* 工時統計 */}
         <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "#6366f1", marginBottom: 12 }}>⏱ 工時統計</p>
-          {Object.keys(weekHoursMap).length === 0 ? (
-            <p style={{ fontSize: 12, color: "#475569" }}>本週無工時紀錄</p>
-          ) : Object.entries(weekHoursMap)
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#6366f1" }}>⏱ 個人工時累計（{totalDisplayedHours} h）</p>
+            <div style={{ display: "flex", gap: 4 }}>
+              {([["week", "本週"], ["month", "本月"], ["all", "全部"]] as const).map(([val, label]) => (
+                <button key={val} onClick={() => setHoursFilter(val)} style={{
+                  background: hoursFilter === val ? "#6366f122" : "transparent",
+                  border: `1px solid ${hoursFilter === val ? "#6366f166" : "#ffffff15"}`,
+                  color: hoursFilter === val ? "#6366f1" : "#64748b",
+                  borderRadius: 6, fontSize: 11, fontWeight: 600, padding: "3px 10px", cursor: "pointer",
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+          {Object.keys(displayedHoursMap).length === 0 ? (
+            <p style={{ fontSize: 12, color: "#475569" }}>此範圍無工時紀錄</p>
+          ) : Object.entries(displayedHoursMap)
               .sort((a, b) => b[1] - a[1])
               .map(([name, hours]) => (
                 <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>

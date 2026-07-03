@@ -354,6 +354,8 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
   const [showSeriesModal, setShowSeriesModal] = useState(false);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [addingRecordId, setAddingRecordId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
 
   const toggleExpand = (id: string) =>
     setExpandedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -361,10 +363,19 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
   const handleDeleteSeries = (id: string) => onDeleteSeries(id);
   const handleDeleteRecord = (seriesId: string, recordId: string) => onDeleteRecord(seriesId, recordId);
 
+  const query = searchQuery.trim().toLowerCase();
+  const recordMatches = (r: MeetingRecord) => !query || r.summary?.toLowerCase().includes(query);
+  const seriesMatches = (s: MeetingSeries) =>
+    !query || s.name.toLowerCase().includes(query) || s.records.some(recordMatches);
+
+  const sortRecords = (records: MeetingRecord[]) =>
+    [...records].sort((a, b) => sortDir === "desc" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date));
+
   const renderSeries = (series: MeetingSeries) => {
-    const isExpanded = expandedIds.includes(series.id);
+    const isExpanded = expandedIds.includes(series.id) || (!!query && series.records.some(recordMatches));
     const typeColor = series.type === "regular" ? "#6366f1" : "#f59e0b";
     const typeLabel = series.type === "regular" ? "定期" : "臨時";
+    const visibleRecords = sortRecords(query ? series.records.filter(recordMatches) : series.records);
 
     return (
       <div key={series.id} style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
@@ -410,11 +421,13 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
               />
             )}
 
-            {series.records.length === 0 && addingRecordId !== series.id && (
-              <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 16 }}>尚無會議紀錄</p>
+            {visibleRecords.length === 0 && addingRecordId !== series.id && (
+              <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 16 }}>
+                {query ? "找不到符合搜尋的紀錄" : "尚無會議紀錄"}
+              </p>
             )}
 
-            {series.records.map((record) => (
+            {visibleRecords.map((record) => (
               <MeetingRecordCard
                 key={record.id}
                 record={record}
@@ -430,16 +443,34 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
     );
   };
 
-  const regularMeetings = meetings.filter((m) => m.type === "regular");
-  const adhocMeetings   = meetings.filter((m) => m.type === "adhoc");
+  const visibleMeetings = meetings.filter(seriesMatches);
+  const regularMeetings = visibleMeetings.filter((m) => m.type === "regular");
+  const adhocMeetings   = visibleMeetings.filter((m) => m.type === "adhoc");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 220 }}>
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜尋會議名稱或摘要關鍵字..."
+            style={{
+              flex: 1, maxWidth: 320, background: "#161b27", border: "1px solid #ffffff12",
+              borderRadius: 8, color: "#e2e8f0", fontSize: 13, padding: "8px 14px", outline: "none",
+            }}
+          />
+          <button onClick={() => setSortDir((d) => d === "desc" ? "asc" : "desc")} style={{
+            background: "#ffffff08", border: "1px solid #ffffff15", borderRadius: 8,
+            color: "#94a3b8", fontSize: 12, padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap",
+          }}>
+            日期 {sortDir === "desc" ? "新→舊 ▾" : "舊→新 ▴"}
+          </button>
+        </div>
         <button onClick={() => setShowSeriesModal(true)} style={{
           background: "#6366f122", border: "1px solid #6366f144",
           borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
-          padding: "8px 20px", cursor: "pointer"
+          padding: "8px 20px", cursor: "pointer", whiteSpace: "nowrap",
         }}>+ 新增會議系列</button>
       </div>
 
@@ -462,6 +493,12 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
           <p style={{ fontSize: 48 }}>📋</p>
           <p style={{ fontSize: 15 }}>尚無會議紀錄</p>
           <p style={{ fontSize: 13 }}>點右上角「+ 新增會議系列」開始</p>
+        </div>
+      )}
+
+      {meetings.length > 0 && visibleMeetings.length === 0 && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 200, color: "#475569", gap: 8 }}>
+          <p style={{ fontSize: 13 }}>找不到符合「{searchQuery}」的會議紀錄</p>
         </div>
       )}
 

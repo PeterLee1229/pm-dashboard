@@ -787,6 +787,8 @@ export default function App() {
         .task-footer { display: flex; align-items: center; justify-content: space-between; }
         .assignee { font-size: 11px; color: #94a3b8; background: #ffffff08; padding: 2px 8px; border-radius: 99px; }
 
+        .gantt-resize-handle:hover, .gantt-resize-handle:active { background: #6366f166; }
+
         .timer-wrap { display: flex; align-items: center; gap: 4px; }
         .timer-display { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #475569; font-variant-numeric: tabular-nums; }
         .timer-display.running { color: #10b981; }

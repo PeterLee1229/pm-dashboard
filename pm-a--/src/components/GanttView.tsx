@@ -13,7 +13,9 @@ export default function GanttView({ columns, onEditTask }: {
 }) {
   const [timeScale, setTimeScale] = useState<TimeScale>("day");
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+  const [customLabelWidth, setCustomLabelWidth] = useState<number | null>(null);
   const scrollToTodayRef = useRef<() => void>(() => {});
+  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
     const handler = () => setViewportWidth(window.innerWidth);
@@ -24,6 +26,23 @@ export default function GanttView({ columns, onEditTask }: {
   useEffect(() => {
     scrollToTodayRef.current();
   }, [timeScale]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeStateRef.current) return;
+      const maxWidth = Math.min(480, Math.floor(window.innerWidth * 0.6));
+      const delta = e.clientX - resizeStateRef.current.startX;
+      const newWidth = Math.max(120, Math.min(maxWidth, resizeStateRef.current.startWidth + delta));
+      setCustomLabelWidth(newWidth);
+    };
+    const handleMouseUp = () => { resizeStateRef.current = null; };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   const allTasks = columns.flatMap((col) => col.tasks);
   const tasksWithDates = allTasks
@@ -56,7 +75,13 @@ export default function GanttView({ columns, onEditTask }: {
     : timeScale === "month" ? 4
     : 3;
   const rowHeight = 44;
-  const labelWidth = Math.min(220, Math.floor(viewportWidth * 0.33));
+  const labelWidth = customLabelWidth ?? Math.min(220, Math.floor(viewportWidth * 0.33));
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeStateRef.current = { startX: e.clientX, startWidth: labelWidth };
+  };
 
   const days: Date[] = [];
   for (let i = 0; i <= totalDays; i++) {
@@ -152,8 +177,17 @@ export default function GanttView({ columns, onEditTask }: {
 
   function renderHeaders() {
     const topLabel = (
-      <div style={{ ...stickyLabel({ top: 0, zIndex: 4, background: HEADER_BG }), height: 37, display: "flex", alignItems: "center", paddingLeft: 14 }}>
+      <div style={{ ...stickyLabel({ top: 0, zIndex: 4, background: HEADER_BG }), height: 37, display: "flex", alignItems: "center", paddingLeft: 14, position: "sticky" }}>
         <span style={{ fontSize: 11, color: "#475569" }}>任務名稱</span>
+        <div
+          onMouseDown={handleResizeStart}
+          title="拖曳調整欄寬"
+          className="gantt-resize-handle"
+          style={{
+            position: "absolute", right: -3, top: 0, bottom: 0, width: 6,
+            cursor: "col-resize", zIndex: 5,
+          }}
+        />
       </div>
     );
     const bottomCorner = (top: number) => (

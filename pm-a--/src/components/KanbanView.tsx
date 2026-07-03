@@ -5,7 +5,33 @@ import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task, Column, Group } from "../types";
-import { PRIORITY_CONFIG, COLUMN_COLORS, getCompletion, getSubtaskAssigneeLabel } from "../helpers";
+import { PRIORITY_CONFIG, COLUMN_COLORS, getCompletion, getSubtaskAssigneeLabel, getEffectiveEndDate } from "../helpers";
+
+function DueDateBadge({ task }: { task: Task }) {
+  const dueDate = getEffectiveEndDate(task);
+  if (!dueDate) return null;
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate + "T00:00:00");
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+  const isDone = getCompletion(task) >= 100;
+  const isOverdue = !isDone && diffDays < 0;
+  const isDueSoon = !isDone && diffDays >= 0 && diffDays <= 2;
+
+  const color = isOverdue ? "#ef4444" : isDueSoon ? "#f59e0b" : "#64748b";
+  const label = `${due.getMonth() + 1}/${due.getDate()}`;
+
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: isOverdue ? 700 : 600, padding: "1px 6px", borderRadius: 4,
+      background: (isOverdue || isDueSoon) ? color + "1c" : "transparent",
+      border: (isOverdue || isDueSoon) ? `1px solid ${color}44` : "none",
+      color, display: "inline-flex", alignItems: "center", gap: 3,
+    }}>
+      {isOverdue ? "⚠ 已逾期" : "截止"} {label}
+    </span>
+  );
+}
 
 export const COLUMN_ICONS: Record<string, ReactElement> = {
   todo:       <Circle size={14} />,
@@ -58,8 +84,9 @@ export function TaskCard({ task, isDragging = false, onClick, groups = [], canDr
           }} />
         </div>
       </div>
-      <div className="task-footer">
+      <div className="task-footer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
         <span className="assignee">{getSubtaskAssigneeLabel(task, groups)}</span>
+        <DueDateBadge task={task} />
       </div>
     </div>
   );

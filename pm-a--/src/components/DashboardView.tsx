@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from "recharts";
 import type { Column, Group } from "../types";
 import { getCompletion, getTotalHours, findMemberById, memberDisplay } from "../helpers";
 
@@ -78,7 +78,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
         <div style={{ background: "#161b27", borderRadius: 12, padding: 20, border: "1px solid #ffffff08" }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 16 }}>各階段任務數</p>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={columnData} barSize={32}>
+            <BarChart data={columnData} barSize={32} margin={{ top: 20 }}>
               <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
@@ -86,6 +86,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
                 {columnData.map((_, i) => (
                   <Cell key={i} fill={["#6366f1", "#f59e0b", "#8b5cf6", "#10b981"][i % 4]} />
                 ))}
+                <LabelList dataKey="數量" position="top" style={{ fill: "#e2e8f0", fontSize: 12, fontWeight: 600 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -124,7 +125,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 13 }}>尚無資料</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={groupTaskData} barSize={32} layout="vertical">
+              <BarChart data={groupTaskData} barSize={32} layout="vertical" margin={{ right: 24 }}>
                 <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
@@ -134,6 +135,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
                     if (group) setSelectedGroup(group);
                   }}>
                   {groupTaskData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  <LabelList dataKey="任務數" position="right" style={{ fill: "#e2e8f0", fontSize: 12, fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -147,11 +149,13 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 13 }}>尚無計時紀錄</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={hoursData} barSize={32} layout="vertical">
+              <BarChart data={hoursData} barSize={32} layout="vertical" margin={{ right: 24 }}>
                 <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={60} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "#ffffff06" }} />
-                <Bar dataKey="工時" fill="#10b981" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="工時" fill="#10b981" radius={[0, 6, 6, 0]}>
+                  <LabelList dataKey="工時" position="right" style={{ fill: "#e2e8f0", fontSize: 12, fontWeight: 600 }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           )}
