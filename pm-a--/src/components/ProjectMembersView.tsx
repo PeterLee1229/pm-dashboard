@@ -25,7 +25,7 @@ export function AddMemberModal({ availableUsers, onAdd, onClose, currentUser, cu
     : [];
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal" style={{ width: 520 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-label">邀請成員加入專案</span>
@@ -147,7 +147,7 @@ function TransferOwnerModal({ projectId, projectName, members, currentOwnerId, o
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-label">轉移 Owner</span>
@@ -218,6 +218,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
   useEffect(() => { loadData(); }, [projectId]);
 
@@ -341,58 +342,81 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
           <span style={{ textAlign: "center" }}>操作</span>
         </div>
 
-        {members.map((m) => (
-          <div key={m.id} style={{
-            display: "grid", gridTemplateColumns: "1fr 80px 100px 140px 120px 60px",
-            padding: "12px 20px", borderBottom: "1px solid #ffffff06",
-            alignItems: "center", fontSize: 13
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{m.user?.name || "未知"}</span>
-              {m.userId === currentUser?.id && (
-                <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 99, background: "#6366f122", color: "#6366f1" }}>你</span>
-              )}
-            </div>
-            <div>
-              {m.user?.group ? (
-                <span style={{
-                  fontSize: 10, padding: "2px 7px", borderRadius: 99,
-                  background: m.user.group.color + "22", color: m.user.group.color,
-                  border: `1px solid ${m.user.group.color}33`
-                }}>{m.user.group.name}</span>
+        {members.map((m) => {
+          const canRemove = m.role !== "owner" && m.userId !== currentUser?.id &&
+            (currentProjectRole !== "group_leader" || m.user?.group?.id === currentUser?.group?.id);
+          const isConfirming = confirmRemove === m.userId;
+          return (
+            <div key={m.id} style={{
+              display: "grid",
+              gridTemplateColumns: isConfirming ? "1fr" : "1fr 80px 100px 140px 120px 60px",
+              padding: "12px 20px", borderBottom: "1px solid #ffffff06",
+              alignItems: "center", fontSize: 13
+            }}>
+              {isConfirming ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ flex: 1, fontSize: 13, color: "#ef4444" }}>
+                    確定要將 <strong>{m.user?.name}</strong> 移出此專案嗎？
+                  </span>
+                  <button onClick={() => setConfirmRemove(null)}
+                    style={{ background: "#ffffff12", border: "1px solid #ffffff20", borderRadius: 6, color: "#94a3b8", fontSize: 12, padding: "5px 14px", cursor: "pointer" }}>
+                    取消
+                  </button>
+                  <button onClick={() => { handleRemove(m.userId); setConfirmRemove(null); }}
+                    style={{ background: "#ef444422", border: "1px solid #ef444466", borderRadius: 6, color: "#ef4444", fontSize: 12, fontWeight: 600, padding: "5px 14px", cursor: "pointer" }}>
+                    確認移除
+                  </button>
+                </div>
               ) : (
-                <span style={{ fontSize: 10, color: "#475569" }}>未分組</span>
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{m.user?.name || "未知"}</span>
+                    {m.userId === currentUser?.id && (
+                      <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 99, background: "#6366f122", color: "#6366f1" }}>你</span>
+                    )}
+                  </div>
+                  <div>
+                    {m.user?.group ? (
+                      <span style={{
+                        fontSize: 10, padding: "2px 7px", borderRadius: 99,
+                        background: m.user.group.color + "22", color: m.user.group.color,
+                        border: `1px solid ${m.user.group.color}33`
+                      }}>{m.user.group.name}</span>
+                    ) : (
+                      <span style={{ fontSize: 10, color: "#475569" }}>未分組</span>
+                    )}
+                  </div>
+                  <span style={{ color: "#94a3b8" }}>{m.user?.memberId || ""}</span>
+                  <span style={{ color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>{m.user?.email || ""}</span>
+                  <div style={{ textAlign: "center" }}>
+                    {m.role === "owner" ? (
+                      <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 99, background: "#ef444422", color: "#ef4444" }}>Owner</span>
+                    ) : (
+                      <select value={m.role} onChange={(e) => handleRoleChange(m.userId, e.target.value)} style={{
+                        background: "#0f1117", border: "1px solid #ffffff12", borderRadius: 6,
+                        color: "#e2e8f0", fontSize: 11, padding: "4px 8px", cursor: "pointer", outline: "none"
+                      }}>
+                        <option value="pm">PM</option>
+                        <option value="group_leader">Group Leader</option>
+                        <option value="member">Member</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    )}
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    {canRemove && (
+                      <button onClick={() => setConfirmRemove(m.userId)} style={{
+                        background: "#ef444418", border: "1px solid #ef444433",
+                        borderRadius: 6, color: "#ef4444", fontSize: 10,
+                        padding: "4px 8px", cursor: "pointer"
+                      }}>移除</button>
+                    )}
+                  </div>
+                </>
               )}
             </div>
-            <span style={{ color: "#94a3b8" }}>{m.user?.memberId || ""}</span>
-            <span style={{ color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>{m.user?.email || ""}</span>
-            <div style={{ textAlign: "center" }}>
-              {m.role === "owner" ? (
-                <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 99, background: "#ef444422", color: "#ef4444" }}>Owner</span>
-              ) : (
-                <select value={m.role} onChange={(e) => handleRoleChange(m.userId, e.target.value)} style={{
-                  background: "#0f1117", border: "1px solid #ffffff12", borderRadius: 6,
-                  color: "#e2e8f0", fontSize: 11, padding: "4px 8px", cursor: "pointer", outline: "none"
-                }}>
-                  <option value="pm">PM</option>
-                  <option value="group_leader">Group Leader</option>
-                  <option value="member">Member</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              )}
-            </div>
-            <div style={{ textAlign: "center" }}>
-              {m.role !== "owner" && m.userId !== currentUser?.id &&
-               (currentProjectRole !== "group_leader" || m.user?.group?.id === currentUser?.group?.id) && (
-                <button onClick={() => handleRemove(m.userId)} style={{
-                  background: "#ef444418", border: "1px solid #ef444433",
-                  borderRadius: 6, color: "#ef4444", fontSize: 10,
-                  padding: "4px 8px", cursor: "pointer"
-                }}>移除</button>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {members.length === 0 && (
           <div style={{ padding: 24, textAlign: "center", color: "#475569", fontSize: 13 }}>尚無成員</div>

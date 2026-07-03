@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Task, Column } from "../types";
 import { getCompletion, getEffectiveStartDate, getEffectiveEndDate } from "../helpers";
 
@@ -12,6 +12,18 @@ export default function GanttView({ columns, onEditTask }: {
   onEditTask: (task: Task) => void;
 }) {
   const [timeScale, setTimeScale] = useState<TimeScale>("day");
+  const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
+  const scrollToTodayRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const handler = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  useEffect(() => {
+    scrollToTodayRef.current();
+  }, [timeScale]);
 
   const allTasks = columns.flatMap((col) => col.tasks);
   const tasksWithDates = allTasks
@@ -44,7 +56,7 @@ export default function GanttView({ columns, onEditTask }: {
     : timeScale === "month" ? 4
     : 1;
   const rowHeight = 44;
-  const labelWidth = 220;
+  const labelWidth = Math.min(220, Math.floor(viewportWidth * 0.33));
 
   const days: Date[] = [];
   for (let i = 0; i <= totalDays; i++) {
@@ -216,6 +228,15 @@ export default function GanttView({ columns, onEditTask }: {
       </>
     );
   }
+
+  scrollToTodayRef.current = () => {
+    const container = document.getElementById("gantt-container");
+    if (!container) return;
+    const todayOff = dayOffset(today);
+    if (todayOff < 0 || todayOff > totalDays) return;
+    const scrollTarget = labelWidth + todayOff * pxPerDay - (container.clientWidth - labelWidth) / 2;
+    container.scrollLeft = Math.max(0, scrollTarget);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

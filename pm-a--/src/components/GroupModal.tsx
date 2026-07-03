@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { X } from "lucide-react";
 import type { Member, Group } from "../types";
 import { PROJECT_COLORS } from "../helpers";
@@ -42,6 +42,11 @@ export default function GroupModal({ groups, onSave, onClose }: {
   );
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PROJECT_COLORS[0]);
+  const initialSnapshot = useRef(JSON.stringify(groups.map((g) => ({ ...g, members: g.members || [] }))));
+  const [showConfirmLeave, setShowConfirmLeave] = useState(false);
+
+  const isDirty = JSON.stringify(editGroups) !== initialSnapshot.current || newName.trim() !== "";
+  const handleClose = () => { if (isDirty) setShowConfirmLeave(true); else onClose(); };
 
   const handleAdd = () => {
     if (!newName.trim()) return;
@@ -76,11 +81,11 @@ export default function GroupModal({ groups, onSave, onClose }: {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ width: 560 }} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay">
+      <div className="modal" style={{ width: 560, position: "relative" }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-label">管理組別與成員</span>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+          <button className="modal-close" onClick={handleClose}><X size={16} /></button>
         </div>
         <div className="modal-body" style={{ maxHeight: "65vh", overflowY: "auto" }}>
           {editGroups.map((g) => (
@@ -141,9 +146,27 @@ export default function GroupModal({ groups, onSave, onClose }: {
           </div>
         </div>
         <div className="modal-footer">
-          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-cancel" onClick={handleClose}>取消</button>
           <button className="btn-save" onClick={async () => { await onSave(editGroups); onClose(); }}>儲存變更</button>
         </div>
+
+        {showConfirmLeave && (
+          <div style={{ position: "absolute", inset: 0, background: "#000000cc", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "inherit", zIndex: 10 }}>
+            <div style={{ background: "#1e293b", border: "1px solid #ef444444", borderRadius: 12, padding: 24, width: 300, textAlign: "center" }}>
+              <p style={{ fontSize: 15, fontWeight: 600, color: "#f1f5f9", marginBottom: 8 }}>放棄變更？</p>
+              <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 20, lineHeight: 1.5 }}>
+                你有未儲存的修改，關閉後將遺失。<br />確定要離開嗎？
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button className="btn-cancel" onClick={() => setShowConfirmLeave(false)}>繼續編輯</button>
+                <button onClick={onClose}
+                  style={{ background: "#ef4444", border: "none", color: "#fff", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                  放棄變更
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import type { Column, Group, Risk, Task, WeeklyReport } from "../types";
-import { RISK_STATUS_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getWeekRange, formatDateStr, toROCDate, findMemberById, memberDisplay } from "../helpers";
+import { RISK_STATUS_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getWeekRange, formatDateStr, findMemberById, memberDisplay } from "../helpers";
+
+const toWesternDate = (dateStr: string) => {
+  const d = new Date(dateStr + "T00:00:00");
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+};
 import { exportWeeklyReportPDF } from "../exportUtils";
 
 export default function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, projectName }: {
@@ -114,7 +119,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
         </button>
         <div className="weekly-toolbar-title" style={{ textAlign: "center" }}>
           <p style={{ fontSize: 16, fontWeight: 700, color: "#e2e8f0" }}>
-            {toROCDate(weekStartStr)} ~ {toROCDate(weekEndStr)}
+            {toWesternDate(weekStartStr)} ~ {toWesternDate(weekEndStr)}
           </p>
           <p style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>
             {weekOffset === 0 ? "本週" : weekOffset === -1 ? "上週" : weekOffset === 1 ? "下週" : ""}
@@ -129,7 +134,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
           回到本週
         </button>
         <button onClick={() => {
-          const weekLabel = `${toROCDate(weekStartStr)} ~ ${toROCDate(weekEndStr)}`;
+          const weekLabel = `${toWesternDate(weekStartStr)} ~ ${toWesternDate(weekEndStr)}`;
           exportWeeklyReportPDF(projectName, weekLabel, {
             completedTasks: completedTasks.map((t) => ({
               title: t.title,
