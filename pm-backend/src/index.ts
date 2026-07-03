@@ -144,7 +144,7 @@ app.post("/api/auth/login", async (req, res) => {
     console.log("密碼驗證:", valid);
 
     if (!valid) return res.status(401).json({ error: "密碼錯誤" });
-    if (!user.isActive) return res.status(403).json({ error: "此帳號已被停用，請聯繫管理員" });
+    if (user.isActive === false) return res.status(403).json({ error: "此帳號已被停用，請聯繫管理員" });
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
