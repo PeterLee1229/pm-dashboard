@@ -54,7 +54,7 @@ export default function GanttView({ columns, onEditTask }: {
     ? dayWidth
     : timeScale === "week" ? 14
     : timeScale === "month" ? 4
-    : 1;
+    : 3;
   const rowHeight = 44;
   const labelWidth = Math.min(220, Math.floor(viewportWidth * 0.33));
 
@@ -266,8 +266,10 @@ export default function GanttView({ columns, onEditTask }: {
         overflowX: "auto", overflowY: "auto",
         maxHeight: "calc(100vh - 220px)",
         position: "relative",
+        scrollbarWidth: "thin",
+        scrollbarColor: "#ffffff18 transparent",
       }}>
-        <div style={{ minWidth: labelWidth + days.length * pxPerDay }}>
+        <div style={{ minWidth: labelWidth + days.length * pxPerDay, position: "relative" }}>
 
           {renderHeaders()}
 

@@ -109,7 +109,7 @@ export default function CalendarView({ columns, meetings, groups }: {
         </div>
 
         {/* 日期格子 */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gridAutoRows: "minmax(80px, auto)", gap: 2 }}>
           {days.map((day, i) => {
             const dateStr = formatDateStr(day.date);
             const isToday = dateStr === todayStr;
