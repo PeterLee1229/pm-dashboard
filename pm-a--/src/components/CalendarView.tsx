@@ -33,6 +33,7 @@ export default function CalendarView({ columns, meetings, groups }: {
   }
 
   const allTasks = columns.flatMap(c => c.tasks);
+  const hasAnyContent = allTasks.length > 0 || meetings.some(s => s.records.length > 0);
 
   const getTasksForDate = (dateStr: string) => {
     return allTasks.filter(t => {
@@ -79,6 +80,16 @@ export default function CalendarView({ columns, meetings, groups }: {
 
       {/* 左側月曆 */}
       <div style={{ flex: 1 }}>
+        {!hasAnyContent && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+            background: "#161b27", border: "1px dashed #ffffff15", borderRadius: 10,
+            padding: "10px 16px", fontSize: 12, color: "#64748b",
+          }}>
+            💡 此專案尚未建立任何任務或會議，前往「看板」新增任務或「會議紀錄」新增會議後，行程會顯示在此月曆上。
+          </div>
+        )}
+
         {/* 月份切換 */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "center", gap: 20,

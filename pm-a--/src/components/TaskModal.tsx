@@ -3,6 +3,7 @@ import { X, CheckCircle2, User, AlignLeft, Flag, Timer, Calendar } from "lucide-
 import type { Priority, TimeLog, Group, Task, SubTask } from "../types";
 import { PRIORITY_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getTotalHours, hasPermission } from "../helpers";
 import { getComments, addComment, deleteComment, getAttachments, addAttachment, deleteAttachment } from "../api";
+import { Skeleton } from "./LoadingEmpty";
 
 export function TimeLogEditor({ logs, onChange }: {
   logs: TimeLog[];
@@ -410,7 +411,14 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
       <label className="field-label" style={{ fontSize: 13 }}>💬 評論討論</label>
       <div style={{ maxHeight: 250, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
         {loadingComments ? (
-          <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>載入中...</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[0, 1].map((i) => (
+              <div key={i} style={{ background: "#0f1117", borderRadius: 8, padding: "10px 12px", border: "1px solid #ffffff08" }}>
+                <Skeleton width="40%" height={11} style={{ marginBottom: 8 }} />
+                <Skeleton width="85%" height={11} />
+              </div>
+            ))}
+          </div>
         ) : comments.length === 0 ? (
           <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: 12 }}>尚無評論</p>
         ) : comments.map((c: any) => (

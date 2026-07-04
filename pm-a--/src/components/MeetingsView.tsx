@@ -2,6 +2,12 @@ import { useState } from "react";
 import { X, Flag } from "lucide-react";
 import type { MeetingRecord, MeetingSeries } from "../types";
 
+export const MEETING_TYPE_LEGEND: { type: "regular" | "adhoc"; label: string; color: string; description: string }[] = [
+  { type: "regular", label: "定期", color: "#6366f1", description: "固定週期召開的會議，如每週站會、月會" },
+  { type: "adhoc",   label: "臨時", color: "#f59e0b", description: "因特定事項臨時召集的會議，非固定排程" },
+];
+const MEETING_TYPE_COLOR: Record<string, string> = Object.fromEntries(MEETING_TYPE_LEGEND.map((m) => [m.type, m.color]));
+
 function AttendeesPicker({ projectMembers, selected, onChange }: {
   projectMembers: any[];
   selected: string[];
@@ -373,7 +379,7 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
 
   const renderSeries = (series: MeetingSeries) => {
     const isExpanded = expandedIds.includes(series.id) || (!!query && series.records.some(recordMatches));
-    const typeColor = series.type === "regular" ? "#6366f1" : "#f59e0b";
+    const typeColor = MEETING_TYPE_COLOR[series.type];
     const typeLabel = series.type === "regular" ? "定期" : "臨時";
     const visibleRecords = sortRecords(query ? series.records.filter(recordMatches) : series.records);
 
@@ -472,6 +478,19 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
           borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
           padding: "8px 20px", cursor: "pointer", whiteSpace: "nowrap",
         }}>+ 新增會議系列</button>
+      </div>
+
+      {/* 標籤圖例 */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 11, color: "#64748b" }}>
+        {MEETING_TYPE_LEGEND.map((item) => (
+          <div key={item.type} title={item.description} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "help" }}>
+            <span style={{
+              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+              background: item.color + "22", color: item.color, border: `1px solid ${item.color}44`
+            }}>{item.label}</span>
+            <span>{item.description}</span>
+          </div>
+        ))}
       </div>
 
       {regularMeetings.length > 0 && (

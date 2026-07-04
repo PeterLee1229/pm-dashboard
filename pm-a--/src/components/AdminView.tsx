@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getAdminUsers, updateAdminUser, toggleUserActive } from "../api";
+import { ListSkeleton, Skeleton, useDelayedLoading } from "./LoadingEmpty";
 
 export default function AdminView({ currentUser }: { currentUser: any }) {
   const [users, setUsers] = useState<any[]>([]);
@@ -35,7 +36,24 @@ export default function AdminView({ currentUser }: { currentUser: any }) {
   const activeCount   = users.filter((u) => u._count?.projectMemberships > 0).length;
   const disabledCount = users.filter((u) => u.isActive === false).length;
 
-  if (loading) return <div style={{ padding: 40, color: "#94a3b8" }}>載入中…</div>;
+  const showSkeleton = useDelayedLoading(loading);
+  if (loading) {
+    if (!showSkeleton) return null;
+    return (
+      <div className="admin-page" style={{ padding: "32px 40px", maxWidth: 960 }}>
+        <Skeleton width={140} height={22} style={{ marginBottom: 24 }} />
+        <div className="admin-stats" style={{ display: "flex", gap: 16, marginBottom: 32 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} style={{ flex: 1, background: "#1e293b", borderRadius: 12, padding: "20px 24px", border: "1px solid #ffffff10" }}>
+              <Skeleton width={40} height={28} style={{ marginBottom: 8 }} />
+              <Skeleton width={60} height={13} />
+            </div>
+          ))}
+        </div>
+        <ListSkeleton rows={4} />
+      </div>
+    );
+  }
 
   return (
     <div className="admin-page" style={{ padding: "32px 40px", maxWidth: 960 }}>

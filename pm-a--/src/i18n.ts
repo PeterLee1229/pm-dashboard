@@ -54,6 +54,8 @@ const translations: Record<Language, Record<string, string>> = {
     "sidebar.projectMembers": "專案成員",
     "sidebar.admin": "系統管理",
     "sidebar.manageGroups": "管理組別",
+    "sidebar.groupProjectTools": "專案工具",
+    "sidebar.groupAccountManagement": "帳號管理",
 
     // 看板
     "kanban.todo": "待處理",
@@ -63,6 +65,7 @@ const translations: Record<Language, Record<string, string>> = {
     "kanban.totalTasks": "項任務",
     "kanban.completed": "項已完成",
     "kanban.progress": "進度",
+    "progress.tooltipSuffix": "已完成",
     "kanban.addTask": "輸入任務名稱...",
     "kanban.add": "新增",
     "kanban.notAllowedDone": "只有 PM 以上可以將任務移至已完成",
@@ -312,7 +315,8 @@ const translations: Record<Language, Record<string, string>> = {
     "admin.you": "你",
 
     // 篩選
-    "filter.search": "搜尋任務或指派人...",
+    "filter.search": "搜尋任務名稱或描述...",
+    "filter.assignee": "所有成員",
     "filter.clear": "清除篩選",
 
     // 匯出
@@ -376,6 +380,8 @@ const translations: Record<Language, Record<string, string>> = {
     "sidebar.projectMembers": "Members",
     "sidebar.admin": "Admin",
     "sidebar.manageGroups": "Manage Groups",
+    "sidebar.groupProjectTools": "Project Tools",
+    "sidebar.groupAccountManagement": "Account Management",
 
     "kanban.todo": "To Do",
     "kanban.inprogress": "In Progress",
@@ -384,6 +390,7 @@ const translations: Record<Language, Record<string, string>> = {
     "kanban.totalTasks": "tasks",
     "kanban.completed": "completed",
     "kanban.progress": "Progress",
+    "progress.tooltipSuffix": " completed",
     "kanban.addTask": "Enter task name...",
     "kanban.add": "Add",
     "kanban.notAllowedDone": "Only PM and above can move tasks to Done",
@@ -617,7 +624,8 @@ const translations: Record<Language, Record<string, string>> = {
     "admin.userRole": "Normal User",
     "admin.you": "You",
 
-    "filter.search": "Search tasks or assignees...",
+    "filter.search": "Search task name or description...",
+    "filter.assignee": "All members",
     "filter.clear": "Clear filters",
 
     "export.taskListCsv": "📄 CSV",

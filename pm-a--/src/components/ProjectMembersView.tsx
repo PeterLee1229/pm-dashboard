@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole, getUsers, transferOwner } from "../api";
+import { ListSkeleton, Skeleton, useDelayedLoading } from "./LoadingEmpty";
 
 export function AddMemberModal({ availableUsers, onAdd, onClose, currentUser, currentProjectRole }: {
   availableUsers: any[];
@@ -279,7 +280,24 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
   const memberUserIds = members.map(m => m.userId);
   const availableUsers = allUsers.filter(u => !memberUserIds.includes(u.id));
 
-  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>載入中...</div>;
+  const showSkeleton = useDelayedLoading(loading);
+  if (loading) {
+    if (!showSkeleton) return null;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <Skeleton width={160} height={22} />
+        <div className="stats-grid-5" style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} style={{ background: "#161b27", borderRadius: 10, padding: "14px 18px", border: "1px solid #ffffff08" }}>
+              <Skeleton width="60%" height={11} style={{ marginBottom: 8 }} />
+              <Skeleton width={32} height={24} />
+            </div>
+          ))}
+        </div>
+        <ListSkeleton rows={4} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

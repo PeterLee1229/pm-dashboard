@@ -19,6 +19,7 @@ import TaskModal from "./components/TaskModal";
 import ProjectModal from "./components/ProjectModal";
 import GroupModal from "./components/GroupModal";
 import ColumnComponent, { TaskCard } from "./components/KanbanView";
+import { EmptyState, KanbanSkeleton, Skeleton, useDelayedLoading } from "./components/LoadingEmpty";
 
 const GanttView = lazy(() => import("./components/GanttView"));
 const DashboardView = lazy(() => import("./components/DashboardView"));
@@ -35,6 +36,7 @@ const ImportModal = lazy(() => import("./components/ImportModal"));
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addTaskSignal, setAddTaskSignal] = useState(0);
 
   const [activeProjectId, setActiveProjectId] = useState<string>("");
 
@@ -441,21 +443,17 @@ export default function App() {
       const matchPriority = filterPriorities.length === 0 || filterPriorities.includes(task.priority);
       if (!matchPriority) return false;
 
-      const entityMatches = (title: string, assigneeId: string, groupId: string) => {
-        const memberName = (() => {
-          const m = findMemberById(projectMemberGroups, assigneeId);
-          return m ? m.name : assigneeId;
-        })();
+      const entityMatches = (title: string, description: string, assigneeId: string, groupId: string) => {
         const matchSearch = searchText === "" ||
           title.toLowerCase().includes(searchText.toLowerCase()) ||
-          memberName.toLowerCase().includes(searchText.toLowerCase());
+          (description || "").toLowerCase().includes(searchText.toLowerCase());
         const matchAssignee = filterAssignees.length === 0 || filterAssignees.includes(assigneeId);
         const matchGroup = filterGroups.length === 0 || filterGroups.includes(groupId);
         return matchSearch && matchAssignee && matchGroup;
       };
 
-      if (entityMatches(task.title, task.assignee, task.groupId)) return true;
-      return task.subtasks.some((sub) => entityMatches(sub.title, sub.assignee, sub.groupId));
+      if (entityMatches(task.title, task.description, task.assignee, task.groupId)) return true;
+      return task.subtasks.some((sub) => entityMatches(sub.title, sub.description, sub.assignee, sub.groupId));
     })
   }));
 
@@ -725,22 +723,25 @@ export default function App() {
 
   const totalTasks = columns.reduce((s, c) => s + c.tasks.length, 0);
   const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
+  const showInitialSkeleton = useDelayedLoading(loading);
 
   if (!loggedIn) {
     return <LoginPage onLogin={() => { setLoggedIn(true); setCurrentUser(getCurrentUser()); }} />;
   }
 
   if (loading) {
+    if (!showInitialSkeleton) return null;
     return (
-      <div style={{
-        minHeight: "100vh", background: "#0f1117",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Segoe UI', system-ui, sans-serif"
-      }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: 32, marginBottom: 12 }}>📋</p>
-          <p style={{ fontSize: 15, color: "#e2e8f0", marginBottom: 4 }}>PM Dashboard</p>
-          <p style={{ fontSize: 13, color: "#64748b" }}>{t("app.loading")}</p>
+      <div style={{ minHeight: "100vh", background: "#0f1117", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+        <div className="app">
+          <div className="topbar">
+            <div className="topbar-left">
+              <Skeleton width={160} height={22} style={{ marginBottom: 8 }} />
+              <Skeleton width={110} height={13} />
+            </div>
+            <Skeleton width={140} height={6} radius={99} />
+          </div>
+          <KanbanSkeleton />
         </div>
       </div>
     );
@@ -788,6 +789,30 @@ export default function App() {
         .assignee { font-size: 11px; color: #94a3b8; background: #ffffff08; padding: 2px 8px; border-radius: 99px; }
 
         .gantt-resize-handle:hover, .gantt-resize-handle:active { background: #6366f166; }
+
+        .skeleton {
+          background: linear-gradient(90deg, #1e2638 25%, #263049 37%, #1e2638 63%);
+          background-size: 400% 100%;
+          animation: skeleton-shimmer 1.4s ease infinite;
+        }
+        @keyframes skeleton-shimmer {
+          0% { background-position: 100% 50%; }
+          100% { background-position: 0 50%; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .skeleton { animation: none; }
+        }
+
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 48px 20px; gap: 6px; }
+        .empty-state-icon { font-size: 32px; margin-bottom: 4px; }
+        .empty-state-title { font-size: 15px; color: #94a3b8; }
+        .empty-state-desc { font-size: 13px; color: #475569; }
+        .empty-state-action {
+          margin-top: 14px; background: #6366f122; border: 1px solid #6366f144;
+          border-radius: 8px; color: #6366f1; font-size: 13px; font-weight: 600;
+          padding: 8px 20px; cursor: pointer;
+        }
+        .empty-state-action:hover { background: #6366f133; }
 
         .timer-wrap { display: flex; align-items: center; gap: 4px; }
         .timer-display { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #475569; font-variant-numeric: tabular-nums; }
@@ -1069,7 +1094,8 @@ export default function App() {
               <h1>{activeProject?.name || t("app.title")}</h1>
               <p>{totalTasks} {t("kanban.totalTasks")} · {doneTasks} {t("kanban.completed")}</p>
             </div>
-            <div className="progress-wrap topbar-actions">
+            <div className="progress-wrap topbar-actions"
+              title={`${doneTasks} / ${totalTasks} ${t("kanban.totalTasks")}${t("progress.tooltipSuffix")}`}>
               <span className="progress-label">{t("kanban.progress")}</span>
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
@@ -1250,13 +1276,13 @@ export default function App() {
                 placeholder="所有組別"
               />
 
-              {filterGroups.length > 0 && (() => {
+              {(() => {
                 const availableMembers = Array.from(
                   new Map(
-                    projectMemberGroups
-                      .filter(g => filterGroups.includes(g.id))
-                      .flatMap(g => g.members || [])
-                      .map(m => [m.id, m])
+                    (filterGroups.length > 0
+                      ? projectMemberGroups.filter(g => filterGroups.includes(g.id))
+                      : projectMemberGroups
+                    ).flatMap(g => g.members || []).map(m => [m.id, m])
                   ).values()
                 );
                 if (availableMembers.length === 0) return null;
@@ -1265,7 +1291,7 @@ export default function App() {
                     options={availableMembers.map(m => ({ id: m.id, label: `${m.name}（${m.id}）` }))}
                     selected={filterAssignees}
                     onChange={setFilterAssignees}
-                    placeholder="所有成員"
+                    placeholder={t("filter.assignee")}
                   />
                 );
               })()}
@@ -1291,18 +1317,28 @@ export default function App() {
           )}
 
           {<Suspense fallback={
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: "#64748b" }}>
-                載入中...
+              <div style={{ padding: "20px 0" }}>
+                <Skeleton height={300} radius={12} />
               </div>
             }>{view === "kanban" ? (
-            <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-              <div className="board">
-                {filteredColumns.map((col) => (
-                  <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={projectMemberGroups} />
-                ))}
-              </div>
-              <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={projectMemberGroups} />}</DragOverlay>
-            </DndContext>
+            <>
+              {totalTasks === 0 && (
+                <EmptyState
+                  icon="📋"
+                  title="此看板尚未建立任務，點此新增第一個任務"
+                  actionLabel={hasPermission(currentProjectRole, "create_task") ? "+ 新增任務" : undefined}
+                  onAction={hasPermission(currentProjectRole, "create_task") ? () => setAddTaskSignal((n) => n + 1) : undefined}
+                />
+              )}
+              <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+                <div className="board">
+                  {filteredColumns.map((col) => (
+                    <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={projectMemberGroups} forceOpenSignal={col.id === "todo" ? addTaskSignal : undefined} />
+                  ))}
+                </div>
+                <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={projectMemberGroups} />}</DragOverlay>
+              </DndContext>
+            </>
           ) : view === "gantt" ? (
             <GanttView columns={filteredColumns} onEditTask={setEditingTask} />
           ) : view === "dashboard" ? (

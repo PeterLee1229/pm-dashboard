@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getActivities } from "../api";
+import { EmptyState, ListSkeleton, Skeleton, useDelayedLoading } from "./LoadingEmpty";
 
 export default function ActivityView({ projectId }: { projectId: string }) {
   const [activities, setActivities] = useState<any[]>([]);
@@ -54,8 +55,27 @@ export default function ActivityView({ projectId }: { projectId: string }) {
     groupedByDate[date].push(a);
   });
 
+  const showSkeleton = useDelayedLoading(loading);
   if (loading) {
-    return <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>載入中...</div>;
+    if (!showSkeleton) return null;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} width={64} height={28} radius={8} />
+          ))}
+        </div>
+        <div className="stats-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ background: "#161b27", borderRadius: 10, padding: "14px 18px", border: "1px solid #ffffff08" }}>
+              <Skeleton width="50%" height={11} style={{ marginBottom: 8 }} />
+              <Skeleton width="30%" height={22} />
+            </div>
+          ))}
+        </div>
+        <ListSkeleton rows={6} />
+      </div>
+    );
   }
 
   return (
@@ -108,9 +128,7 @@ export default function ActivityView({ projectId }: { projectId: string }) {
       {/* 時間線 */}
       <div style={{ background: "#161b27", borderRadius: 12, border: "1px solid #ffffff08", overflow: "hidden" }}>
         {Object.keys(groupedByDate).length === 0 ? (
-          <div style={{ padding: 40, textAlign: "center", color: "#475569", fontSize: 13 }}>
-            尚無活動紀錄
-          </div>
+          <EmptyState icon="🕒" title="目前無活動紀錄" />
         ) : Object.entries(groupedByDate).map(([date, acts]) => (
           <div key={date}>
             <div style={{

@@ -97,6 +97,11 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
         {/* 分隔線 */}
         <div style={{ borderTop: "1px solid #ffffff08", marginBottom: 12 }} />
 
+        {/* 群組標題：專案工具 */}
+        <p style={{ fontSize: 10, fontWeight: 600, color: "#3f4a5e", textTransform: "uppercase", letterSpacing: ".05em", padding: "0 12px 6px" }}>
+          {t("sidebar.groupProjectTools")}
+        </p>
+
         {/* 視圖切換 */}
         {nav("kanban",    t("sidebar.kanban"),    <Circle size={16} />)}
         {nav("gantt",     t("sidebar.gantt"),     <Clock size={16} />)}
@@ -115,9 +120,13 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
         }}>
           🎯 {t("sidebar.okr")}
         </button>
+        {nav("calendar", t("sidebar.calendar"), <Calendar size={16} />)}
 
-        {/* 專案成員 + 管理功能 */}
+        {/* 群組標題：帳號管理 */}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #ffffff08" }}>
+          <p style={{ fontSize: 10, fontWeight: 600, color: "#3f4a5e", textTransform: "uppercase", letterSpacing: ".05em", padding: "0 12px 6px" }}>
+            {t("sidebar.groupAccountManagement")}
+          </p>
           {hasPermission(currentProjectRole, "manage_members") && (
             <button onClick={() => { setView("project_members"); onClose(); }} style={{
               display: "flex", alignItems: "center", gap: 10,
@@ -131,55 +140,33 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
               <User size={16} /> {t("sidebar.projectMembers")}
             </button>
           )}
-          <button onClick={() => { setView("activities"); onClose(); }} style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 12px", borderRadius: 8, border: "none",
-            background: view === "activities" ? "#6366f122" : "transparent",
-            color: view === "activities" ? "#6366f1" : "#64748b",
-            fontSize: 13, fontWeight: view === "activities" ? 600 : 400,
-            cursor: "pointer", textAlign: "left", width: "100%",
-            borderLeft: view === "activities" ? "3px solid #6366f1" : "3px solid transparent"
-          }}>
-            <Clock size={16} /> {t("sidebar.activities")}
-          </button>
-          <button onClick={() => { setView("calendar"); onClose(); }} style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 12px", borderRadius: 8, border: "none",
-            background: view === "calendar" ? "#6366f122" : "transparent",
-            color: view === "calendar" ? "#6366f1" : "#64748b",
-            fontSize: 13, fontWeight: view === "calendar" ? 600 : 400,
-            cursor: "pointer", textAlign: "left", width: "100%",
-            borderLeft: view === "calendar" ? "3px solid #6366f1" : "3px solid transparent"
-          }}>
-            <Calendar size={16} /> {t("sidebar.calendar")}
-          </button>
-        </div>
+          {nav("activities", t("sidebar.activities"), <Clock size={16} />)}
 
-        {/* 系統管理（僅 admin） */}
-        {currentUser?.role === "admin" && (
-          <div style={{ marginTop: 4 }}>
-            <button onClick={onManageGroups} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
-              background: "transparent", color: "#64748b",
-              fontSize: 13, cursor: "pointer", textAlign: "left",
-              borderLeft: "3px solid transparent"
-            }}>
-              <User size={16} /> {t("sidebar.manageGroups")}
-            </button>
-            <button onClick={() => { setView("admin"); onClose(); }} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px", borderRadius: 8, border: "none",
-              background: view === "admin" ? "#ef444422" : "transparent",
-              color: view === "admin" ? "#ef4444" : "#64748b",
-              fontSize: 13, fontWeight: view === "admin" ? 600 : 400,
-              cursor: "pointer", textAlign: "left", width: "100%",
-              borderLeft: view === "admin" ? "3px solid #ef4444" : "3px solid transparent"
-            }}>
-              ⚙️ {t("sidebar.admin")}
-            </button>
-          </div>
-        )}
+          {currentUser?.role === "admin" && (
+            <>
+              <button onClick={onManageGroups} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                width: "100%", padding: "10px 12px", borderRadius: 8, border: "none",
+                background: "transparent", color: "#64748b",
+                fontSize: 13, cursor: "pointer", textAlign: "left",
+                borderLeft: "3px solid transparent"
+              }}>
+                <User size={16} /> {t("sidebar.manageGroups")}
+              </button>
+              <button onClick={() => { setView("admin"); onClose(); }} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 8, border: "none",
+                background: view === "admin" ? "#ef444422" : "transparent",
+                color: view === "admin" ? "#ef4444" : "#64748b",
+                fontSize: 13, fontWeight: view === "admin" ? 600 : 400,
+                cursor: "pointer", textAlign: "left", width: "100%",
+                borderLeft: view === "admin" ? "3px solid #ef4444" : "3px solid transparent"
+              }}>
+                ⚙️ {t("sidebar.admin")}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* 下半部：固定底部 */}

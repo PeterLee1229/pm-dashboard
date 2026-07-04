@@ -6,7 +6,7 @@ const toWesternDate = (dateStr: string) => {
   const d = new Date(dateStr + "T00:00:00");
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 };
-import { exportWeeklyReportPDF } from "../exportUtils";
+import { exportWeeklyReportPDF, buildWeeklyReportMarkdown } from "../exportUtils";
 
 export default function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, projectName }: {
   columns: Column[];
@@ -18,6 +18,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [hoursFilter, setHoursFilter] = useState<"week" | "month" | "all">("week");
+  const [copied, setCopied] = useState(false);
 
   const now = new Date();
   const targetDate = new Date(now);
@@ -126,6 +127,36 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     return false;
   });
 
+  const buildReportData = () => ({
+    completedTasks: completedTasks.map((t) => ({
+      title: t.title,
+      group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
+    })),
+    inProgressTasks: inProgressTasks.map((t) => ({
+      title: t.title,
+      group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
+      completion: getCompletion(t),
+    })),
+    weekHours: Object.entries(weekHoursMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, hours]) => ({ name, hours: Math.round(hours * 10) / 10 })),
+    totalHours: totalWeekHours,
+    activeRisks: activeRisks.map((r) => ({
+      title: r.title,
+      status: RISK_STATUS_CONFIG[r.status].label,
+    })),
+    nextWeekTasks: nextWeekTasks.map((t) => {
+      const group = groups.find((g) => g.id === t.groupId);
+      const assignee = findMemberById(groups, t.assignee);
+      return {
+        title: t.title,
+        group: group?.name || "未分組",
+        assignee: assignee ? memberDisplay(assignee) : "未指派",
+      };
+    }),
+    notes,
+  });
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
@@ -156,35 +187,7 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
         </button>
         <button onClick={() => {
           const weekLabel = `${toWesternDate(weekStartStr)} ~ ${toWesternDate(weekEndStr)}`;
-          exportWeeklyReportPDF(projectName, weekLabel, {
-            completedTasks: completedTasks.map((t) => ({
-              title: t.title,
-              group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
-            })),
-            inProgressTasks: inProgressTasks.map((t) => ({
-              title: t.title,
-              group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
-              completion: getCompletion(t),
-            })),
-            weekHours: Object.entries(weekHoursMap)
-              .sort((a, b) => b[1] - a[1])
-              .map(([name, hours]) => ({ name, hours: Math.round(hours * 10) / 10 })),
-            totalHours: totalWeekHours,
-            activeRisks: activeRisks.map((r) => ({
-              title: r.title,
-              status: RISK_STATUS_CONFIG[r.status].label,
-            })),
-            nextWeekTasks: nextWeekTasks.map((t) => {
-              const group = groups.find((g) => g.id === t.groupId);
-              const assignee = findMemberById(groups, t.assignee);
-              return {
-                title: t.title,
-                group: group?.name || "未分組",
-                assignee: assignee ? memberDisplay(assignee) : "未指派",
-              };
-            }),
-            notes,
-          });
+          exportWeeklyReportPDF(projectName, weekLabel, buildReportData());
         }}
           style={{
             background: "#8b5cf622", border: "1px solid #8b5cf644",
@@ -192,6 +195,20 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
             padding: "6px 14px", cursor: "pointer"
           }}>
           匯出 PDF
+        </button>
+        <button onClick={async () => {
+          const weekLabel = `${toWesternDate(weekStartStr)} ~ ${toWesternDate(weekEndStr)}`;
+          const markdown = buildWeeklyReportMarkdown(projectName, weekLabel, buildReportData());
+          await navigator.clipboard.writeText(markdown);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+          style={{
+            background: copied ? "#10b98122" : "#10b98118", border: `1px solid ${copied ? "#10b981" : "#10b98144"}`,
+            borderRadius: 8, color: "#10b981", fontSize: 12, fontWeight: 600,
+            padding: "6px 14px", cursor: "pointer"
+          }}>
+          {copied ? "已複製 ✓" : "複製 Markdown"}
         </button>
       </div>
 

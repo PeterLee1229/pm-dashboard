@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { getOKRs, createObjective, updateObjective, deleteObjective, createKeyResult, updateKeyResult, deleteKeyResult } from "../api";
+import { CardListSkeleton, EmptyState, Skeleton, useDelayedLoading } from "./LoadingEmpty";
 
 export function OKRModal({ objective, onSave, onClose }: {
   objective: any;
@@ -187,7 +188,23 @@ export default function OKRView({ projectId, canManage }: {
     return Math.round(total / krs.length);
   };
 
-  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>載入中...</div>;
+  const showSkeleton = useDelayedLoading(loading);
+  if (loading) {
+    if (!showSkeleton) return null;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+        <div className="stats-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ background: "#161b27", borderRadius: 10, padding: "16px 20px", border: "1px solid #ffffff08" }}>
+              <Skeleton width="50%" height={11} style={{ marginBottom: 10 }} />
+              <Skeleton width="35%" height={26} />
+            </div>
+          ))}
+        </div>
+        <CardListSkeleton cards={3} />
+      </div>
+    );
+  }
 
   const overallProgress = objectives.length > 0
     ? Math.round(objectives.reduce((sum, o) => sum + getObjProgress(o), 0) / objectives.length)
@@ -229,11 +246,12 @@ export default function OKRView({ projectId, canManage }: {
 
       {/* 目標列表 */}
       {objectives.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#475569" }}>
-          <p style={{ fontSize: 32, marginBottom: 8 }}>🎯</p>
-          <p style={{ fontSize: 15 }}>尚無 OKR 目標</p>
-          <p style={{ fontSize: 13, marginTop: 4 }}>點右上角「+ 新增目標」開始</p>
-        </div>
+        <EmptyState
+          icon="🎯"
+          title="此專案尚未設定 OKR，點此新增目標"
+          actionLabel={canManage ? "+ 新增 OKR" : undefined}
+          onAction={canManage ? () => setShowAddObj(true) : undefined}
+        />
       ) : objectives.map((obj) => {
         const progress = getObjProgress(obj);
         const progressColor = progress >= 70 ? "#10b981" : progress >= 40 ? "#f59e0b" : "#ef4444";

@@ -360,6 +360,73 @@ export function exportWeeklyReportPDF(
   printPDF(`${projectName} - 週報`, html);
 }
 
+export function buildWeeklyReportMarkdown(
+  projectName: string,
+  weekLabel: string,
+  data: {
+    completedTasks: { title: string; group: string }[];
+    inProgressTasks: { title: string; group: string; completion: number }[];
+    weekHours: { name: string; hours: number }[];
+    totalHours: number;
+    activeRisks: { title: string; status: string }[];
+    nextWeekTasks: { title: string; group: string; assignee: string }[];
+    notes: string;
+  }
+): string {
+  const lines: string[] = [];
+  lines.push(`# ${projectName} — 週報`);
+  lines.push(`_${weekLabel}｜匯出日期：${new Date().toLocaleDateString()}_`);
+  lines.push("");
+
+  lines.push("## ✅ 本週完成");
+  if (data.completedTasks.length === 0) {
+    lines.push("無");
+  } else {
+    data.completedTasks.forEach((t) => lines.push(`- [${t.group}] ${t.title}`));
+  }
+  lines.push("");
+
+  lines.push("## 🔄 進行中");
+  if (data.inProgressTasks.length === 0) {
+    lines.push("無");
+  } else {
+    data.inProgressTasks.forEach((t) => lines.push(`- [${t.group}] ${t.title}（${t.completion}%）`));
+  }
+  lines.push("");
+
+  lines.push("## ⏱ 工時統計");
+  if (data.weekHours.length === 0) {
+    lines.push("本週無工時紀錄");
+  } else {
+    data.weekHours.forEach((h) => lines.push(`- ${h.name}：${h.hours} h`));
+    lines.push(`- **合計：${data.totalHours} h**`);
+  }
+  lines.push("");
+
+  lines.push("## ⚠️ 風險狀態");
+  if (data.activeRisks.length === 0) {
+    lines.push("無活躍風險");
+  } else {
+    data.activeRisks.forEach((r) => lines.push(`- [${r.status}] ${r.title}`));
+  }
+  lines.push("");
+
+  lines.push("## 📅 下週預計工作");
+  if (data.nextWeekTasks.length === 0) {
+    lines.push("無");
+  } else {
+    data.nextWeekTasks.forEach((t) => lines.push(`- [${t.group}] ${t.title} - ${t.assignee}`));
+  }
+
+  if (data.notes) {
+    lines.push("");
+    lines.push("## 📝 PM 備註");
+    lines.push(data.notes);
+  }
+
+  return lines.join("\n");
+}
+
 // ── 甘特圖匯出 PNG ──────────────────────────────────────────────
 
 export async function exportGanttPNG(elementId: string, projectName: string) {

@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import { t } from "../i18n";
 import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -94,7 +94,7 @@ export function TaskCard({ task, isDragging = false, onClick, groups = [], canDr
 
 // ── Column ───────────────────────────────────────────────────────────
 
-export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, onDeleteTask, onEditTask, groups }: {
+export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, onDeleteTask, onEditTask, groups, forceOpenSignal }: {
   column: Column;
   canAdd: boolean;
   canDrag: boolean;
@@ -102,6 +102,7 @@ export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, on
   onDeleteTask: (colId: string, taskId: string) => void;
   onEditTask: (task: Task) => void;
   groups: Group[];
+  forceOpenSignal?: number;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -109,6 +110,10 @@ export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, on
   const icon = COLUMN_ICONS[column.id];
   const isAddableColumn = column.id === "todo" || column.id === "inprogress";
   const { setNodeRef: setDropRef } = useDroppable({ id: column.id });
+
+  useEffect(() => {
+    if (forceOpenSignal) setAdding(true);
+  }, [forceOpenSignal]);
 
   const handleAdd = () => {
     if (newTitle.trim()) { onAddTask(column.id, newTitle.trim()); setNewTitle(""); setAdding(false); }
