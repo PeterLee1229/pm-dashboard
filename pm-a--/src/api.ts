@@ -384,10 +384,17 @@ export async function deleteKeyResult(id: string) {
   return apiFetch(`/key-results/${id}`, { method: "DELETE" });
 }
 
-export async function importTasks(projectId: string, csv: string) {
-  return apiFetch(`/projects/${projectId}/import/tasks`, {
+export async function previewTaskImport(projectId: string, csv: string) {
+  return apiFetch(`/projects/${projectId}/tasks/import/preview`, {
     method: "POST",
     body: JSON.stringify({ csv }),
+  });
+}
+
+export async function commitTaskImport(projectId: string, previewToken: string, decisions: Record<string, string>) {
+  return apiFetch(`/projects/${projectId}/tasks/import/commit`, {
+    method: "POST",
+    body: JSON.stringify({ previewToken, decisions }),
   });
 }
 

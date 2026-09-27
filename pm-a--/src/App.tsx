@@ -604,24 +604,29 @@ export default function App() {
   };
 
   const prepareTaskExportData = () => {
-    const allTasks = columns.flatMap((c) => c.tasks);
-    return allTasks.map((task) => {
-      const group = projectMemberGroups.find((g) => g.id === task.groupId);
-      const assignee = findMemberById(projectMemberGroups, task.assignee);
+    // 組別/指派人用系統組別查名稱，確保匯出的值可在重新匯入時對應回同一筆資料
+    const groupName = (id: string) => formattedGroups.find((g) => g.id === id)?.name;
+    const findAssignee = (id: string) => findMemberById(projectMemberGroups, id) || findMemberById(formattedGroups, id);
+    return columns.flatMap((col) => col.tasks.map((task) => {
+      const group = groupName(task.groupId);
+      const assignee = findAssignee(task.assignee);
       return {
+        id: task.id,
         title: task.title,
-        group: group?.name || "未分組",
+        group: group || "未分組",
         assignee: assignee ? memberDisplay(assignee) : task.assignee || "未指派",
         priority: PRIORITY_CONFIG[task.priority].label + "優先",
+        status: col.title,
         startDate: getEffectiveStartDate(task),
         endDate: getEffectiveEndDate(task),
         completion: getCompletion(task),
         subtasks: task.subtasks.map((sub) => {
-          const subGroup = projectMemberGroups.find((g) => g.id === sub.groupId);
-          const subAssignee = findMemberById(projectMemberGroups, sub.assignee);
+          const subGroup = groupName(sub.groupId);
+          const subAssignee = findAssignee(sub.assignee);
           return {
+            id: sub.id,
             title: sub.title,
-            group: subGroup?.name || "未分組",
+            group: subGroup || "未分組",
             assignee: subAssignee ? memberDisplay(subAssignee) : sub.assignee || "未指派",
             startDate: sub.startDate,
             endDate: sub.endDate,
@@ -629,7 +634,7 @@ export default function App() {
           };
         }),
       };
-    });
+    }));
   };
 
   const prepareTimeReportData = () => {

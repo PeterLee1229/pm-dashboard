@@ -6,9 +6,13 @@ import pg from "pg";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
-import { parse } from "csv-parse/sync";
 import cron from "node-cron";
 import { checkDueTasks } from "./scheduler";
+import { PreviewStore } from "./services/import/diff";
+import {
+  ImportPlan, ImportFormatError, parseTaskCsv, collectIds, loadImportContext,
+  buildImportPlan, toPreviewResponse, commitImportPlan,
+} from "./services/import/taskImport";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -20,7 +24,7 @@ if (!JWT_SECRET) {
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
 
 app.use(cors({
   origin: [
@@ -110,7 +114,8 @@ app.post("/api/auth/register", async (req, res) => {
         password: hashedPassword,
         name: req.body.name,
         memberId: req.body.memberId,
-        role: req.body.role || "user",
+        // 系統角色一律由管理員指派，註冊時不接受指定
+        role: "user",
         groupId: req.body.groupId || null,
       },
       include: { group: { select: { id: true, name: true, color: true } } }
@@ -498,21 +503,32 @@ app.put("/api/tasks/:id", authMiddleware, async (req: any, res) => {
     await prisma.task.update({ where: { id: req.params.id }, data: taskData });
 
     if (subtasks && Array.isArray(subtasks)) {
-      await prisma.subTask.deleteMany({ where: { taskId: req.params.id } });
+      // 保留既有子工項 id（CSV 匯入以工項ID比對），只刪除這次沒送來的
+      const existing = await prisma.subTask.findMany({ where: { taskId: req.params.id }, select: { id: true } });
+      const existingIds = new Set(existing.map((s) => s.id));
+      const keepIds = subtasks.map((s: any) => s.id).filter((id: any) => existingIds.has(id));
+      await prisma.subTask.deleteMany({ where: { taskId: req.params.id, id: { notIn: keepIds } } });
       for (const sub of subtasks) {
-        await prisma.subTask.create({
-          data: {
-            title: sub.title || "",
-            description: sub.description || "",
-            assignee: sub.assignee || "",
-            groupId: sub.groupId || "",
-            startDate: sub.startDate || "",
-            endDate: sub.endDate || "",
-            completion: sub.completion || 0,
-            timeLogs: sub.timeLogs || [],
-            taskId: req.params.id,
-          }
-        });
+        const data = {
+          title: sub.title || "",
+          description: sub.description || "",
+          assignee: sub.assignee || "",
+          groupId: sub.groupId || "",
+          startDate: sub.startDate || "",
+          endDate: sub.endDate || "",
+          completion: sub.completion || 0,
+          timeLogs: sub.timeLogs || [],
+        };
+        if (existingIds.has(sub.id)) {
+          await prisma.subTask.update({ where: { id: sub.id }, data });
+        } else {
+          // 沿用前端產生的 id，讓畫面上的子工項與資料庫一致，下次儲存才不會重複建立
+          const idTaken = typeof sub.id === "string" && sub.id
+            && await prisma.subTask.findUnique({ where: { id: sub.id }, select: { id: true } });
+          await prisma.subTask.create({
+            data: { ...data, taskId: req.params.id, ...(typeof sub.id === "string" && sub.id && !idTaken ? { id: sub.id } : {}) }
+          });
+        }
       }
     }
 
@@ -1216,97 +1232,54 @@ app.delete("/api/key-results/:id", authMiddleware, async (req: any, res) => {
 });
 
 // ── 匯入 API ──────────────────────────────────────────────────────────
+// 兩段式：preview 只比對不寫入，commit 依使用者決定寫入（單一 transaction）
 
-function normalizeDate(dateStr: string): string {
-  if (!dateStr) return "";
-  const cleaned = dateStr.replace(/\//g, "-");
-  const parts = cleaned.split("-");
-  if (parts.length !== 3) return dateStr;
-  const year = parts[0];
-  const month = parts[1].padStart(2, "0");
-  const day = parts[2].padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+const importPreviews = new PreviewStore<ImportPlan>(30 * 60 * 1000);
 
-app.post("/api/projects/:projectId/import/tasks", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
+app.post("/api/projects/:projectId/tasks/import/preview", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
   try {
     const csvText = req.body.csv;
     if (!csvText) return res.status(400).json({ error: "缺少 CSV 資料" });
 
-    const records = parse(csvText, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-      bom: true,
+    const parsed = parseTaskCsv(csvText);
+    const ctx = await loadImportContext(prisma, req.params.projectId, collectIds(parsed));
+    const plan = buildImportPlan(parsed, ctx, { projectId: req.params.projectId, userId: req.user.userId }, {
+      // 與 PUT /api/tasks/:id 一致：只有 PM 以上可以將任務標記為已完成
+      canMarkDone: ["admin", "owner", "pm"].includes(req.userRole),
     });
-
-    const results: any[] = [];
-    let currentParentTask: any = null;
-
-    for (const row of records) {
-      const type = row["類型"] || row["type"] || "";
-      const title = row["任務名稱"] || row["title"] || "";
-      const priority = row["優先級"] || row["priority"] || "medium";
-      const startDate = row["開始日期"] || row["startDate"] || "";
-      const endDate = row["結束日期"] || row["endDate"] || "";
-      const completionStr = (row["完成度"] || row["completion"] || "0").replace("%", "").trim();
-      const completion = parseInt(completionStr) || 0;
-
-      if (!title) continue;
-
-      let normalizedPriority = "medium";
-      if (priority.includes("高") || priority.toLowerCase() === "high") normalizedPriority = "high";
-      else if (priority.includes("低") || priority.toLowerCase() === "low") normalizedPriority = "low";
-
-      if (type === "子工項" || type === "subtask" || type === "子任務") {
-        if (currentParentTask) {
-          const subtask = await prisma.subTask.create({
-            data: {
-              title,
-              startDate: normalizeDate(startDate),
-              endDate: normalizeDate(endDate),
-              completion: Math.min(completion, 100),
-              timeLogs: [],
-              taskId: currentParentTask.id,
-            }
-          });
-          results.push({ type: "subtask", title, parentTask: currentParentTask.title, id: subtask.id });
-        }
-      } else {
-        const task = await prisma.task.create({
-          data: {
-            title,
-            priority: normalizedPriority,
-            columnId: "todo",
-            startDate: normalizeDate(startDate),
-            endDate: normalizeDate(endDate),
-            completion: Math.min(completion, 100),
-            timeLogs: [],
-            projectId: req.params.projectId,
-          }
-        });
-        currentParentTask = task;
-        results.push({ type: "task", title, id: task.id });
-
-        await logActivity(req.user.userId, "create", "task", `匯入任務「${title}」`, req.params.projectId, task.id);
-      }
-    }
-
-    res.json({ success: true, imported: results.length, details: results });
+    const token = importPreviews.put(plan);
+    res.json(toPreviewResponse(plan, token));
   } catch (err: any) {
-    console.error("匯入錯誤:", err);
-    res.status(400).json({ error: "CSV 格式錯誤：" + (err.message || "") });
+    if (err instanceof ImportFormatError) return res.status(400).json({ error: err.message });
+    console.error("匯入預覽錯誤:", err);
+    res.status(500).json({ error: "匯入預覽失敗" });
+  }
+});
+
+app.post("/api/projects/:projectId/tasks/import/commit", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
+  const { previewToken, decisions } = req.body;
+  const plan = previewToken ? importPreviews.get(previewToken) : null;
+  if (!plan || plan.projectId !== req.params.projectId || plan.userId !== req.user.userId) {
+    return res.status(410).json({ error: "預覽已過期或無效，請重新上傳檔案" });
+  }
+  try {
+    const result = await commitImportPlan(prisma, plan, decisions || {}, req.user.userId);
+    importPreviews.delete(previewToken);
+    res.json(result);
+  } catch (err: any) {
+    console.error("匯入寫入錯誤:", err);
+    res.status(500).json({ error: "匯入失敗，本次所有變更已回滾：" + (err.message || "") });
   }
 });
 
 app.get("/api/templates/tasks", (_req, res) => {
-  const BOM = "﻿";
-  const csv = BOM + "類型,任務名稱,優先級,開始日期,結束日期,完成度\n" +
-    "主工項,買電腦,高優先,2026-06-01,2026-07-01,0%\n" +
-    "子工項,估價,,2026-06-01,2026-06-10,0%\n" +
-    "子工項,採購,,2026-06-11,2026-06-20,0%\n" +
-    "子工項,驗收,,2026-06-21,2026-07-01,0%\n" +
-    "主工項,網路建置,中優先,2026-06-10,2026-07-15,0%\n";
+  const BOM = "\ufeff";
+  const csv = BOM + "工項ID（新增工項時留空）,父工項ID（新增工項時留空）,類型,任務名稱,組別,指派人,優先級,狀態,開始日期,結束日期,完成度\n" +
+    ",,主工項,買電腦,,,高優先,待處理,2026-06-01,2026-07-01,0%\n" +
+    ",,子工項,估價,,,,,2026-06-01,2026-06-10,0%\n" +
+    ",,子工項,採購,,,,,2026-06-11,2026-06-20,0%\n" +
+    ",,子工項,驗收,,,,,2026-06-21,2026-07-01,0%\n" +
+    ",,主工項,網路建置,,,中優先,待處理,2026-06-10,2026-07-15,0%\n";
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", "attachment; filename=task_import_template.csv");

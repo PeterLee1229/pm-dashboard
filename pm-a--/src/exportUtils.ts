@@ -198,17 +198,21 @@ export function exportTimeReportPDF(
 
 // ── CSV 匯出任務清單 ─────────────────────────────────────────────
 
+// 工項ID / 父工項ID 供重新匯入時比對同一工項（新增工項時留空）
 export function exportTaskListCSV(
   projectName: string,
   tasks: {
+    id: string;
     title: string;
     group: string;
     assignee: string;
     priority: string;
+    status: string;
     startDate: string;
     endDate: string;
     completion: number;
     subtasks: {
+      id: string;
       title: string;
       group: string;
       assignee: string;
@@ -218,12 +222,12 @@ export function exportTaskListCSV(
     }[];
   }[]
 ) {
-  const headers = ["類型", "任務名稱", "組別", "指派人", "優先級", "開始日期", "結束日期", "完成度"];
+  const headers = ["工項ID", "父工項ID", "類型", "任務名稱", "組別", "指派人", "優先級", "狀態", "開始日期", "結束日期", "完成度"];
   const rows: string[][] = [];
   tasks.forEach((task) => {
-    rows.push(["主工項", task.title, task.group, task.assignee, task.priority, task.startDate || "", task.endDate || "", `${task.completion}%`]);
+    rows.push([task.id, "", "主工項", task.title, task.group, task.assignee, task.priority, task.status, task.startDate || "", task.endDate || "", `${task.completion}%`]);
     task.subtasks.forEach((sub) => {
-      rows.push(["子工項", sub.title, sub.group, sub.assignee, "", sub.startDate || "", sub.endDate || "", `${sub.completion}%`]);
+      rows.push([sub.id, task.id, "子工項", sub.title, sub.group, sub.assignee, "", "", sub.startDate || "", sub.endDate || "", `${sub.completion}%`]);
     });
   });
   downloadCSV(`${projectName}_TaskList.csv`, headers, rows);
