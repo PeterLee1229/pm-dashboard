@@ -585,10 +585,12 @@ app.put("/api/notifications/read-all", authMiddleware, async (req: any, res) => 
 });
 
 app.put("/api/notifications/:id/read", authMiddleware, async (req: any, res) => {
-  await prisma.notification.update({
-    where: { id: req.params.id },
+  // 只能標記自己的通知；別人的通知與不存在的通知回應相同
+  const result = await prisma.notification.updateMany({
+    where: { id: req.params.id, userId: req.ctx.userId },
     data: { isRead: true }
   });
+  if (result.count === 0) return res.status(404).json({ error: "找不到通知" });
   res.json({ success: true });
 });
 
