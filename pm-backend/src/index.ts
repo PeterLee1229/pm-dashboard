@@ -1,29 +1,35 @@
 import "dotenv/config";
 import express from "express";
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 import cron from "node-cron";
+import { z } from "zod";
+import { prisma } from "./db";
+import { HttpError, parseInput } from "./errors";
 import { checkDueTasks } from "./scheduler";
 import { PreviewStore } from "./services/import/diff";
 import {
   ImportPlan, ImportFormatError, parseTaskCsv, collectIds, loadImportContext,
   buildImportPlan, toPreviewResponse, commitImportPlan,
 } from "./services/import/taskImport";
+import { Ctx, PROJECT_ROLES, assertCan, assertCanRead, can, isAdmin, loadLeaderGroupId } from "./services/permissions";
+import { createNotification, listActivities, logActivity } from "./services/activity";
+import * as projects from "./services/projects";
+import * as tasks from "./services/tasks";
+import * as meetings from "./services/meetings";
+import * as risks from "./services/risks";
+import * as okrs from "./services/okrs";
+import * as reports from "./services/reports";
+import { searchProject } from "./services/search";
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
 const JWT_SECRET = process.env.JWT_SECRET!;
 if (!JWT_SECRET) {
   console.error("JWT_SECRET is not set. Set the JWT_SECRET environment variable.");
   process.exit(1);
 }
 
-const app = express();
+export const app = express();
 app.use(express.json({ limit: "5mb" }));
 
 app.use(cors({
@@ -45,63 +51,31 @@ app.get("/", (_req, res) => {
 async function authMiddleware(req: any, res: any, next: any) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "未登入" });
+  let payload: any;
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    const dbUser = await prisma.user.findUnique({
-      where: { id: req.user.userId }, select: { isActive: true }
-    });
-    if (dbUser?.isActive === false) return res.status(403).json({ error: "帳號已被停用" });
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
-    res.status(401).json({ error: "通行證無效" });
+    return res.status(401).json({ error: "通行證無效" });
   }
-}
-
-// ── Permission helpers ─────────────────────────────────────────────────
-
-async function getProjectRole(userId: string, projectId: string): Promise<string | null> {
-  const membership = await prisma.projectMember.findUnique({
-    where: { projectId_userId: { projectId, userId } }
+  const dbUser = await prisma.user.findUnique({
+    where: { id: payload.userId }, select: { role: true, isActive: true }
   });
-  return membership?.role || null;
+  if (!dbUser) return res.status(401).json({ error: "帳號不存在，請重新登入" });
+  if (dbUser.isActive === false) return res.status(403).json({ error: "帳號已被停用" });
+  req.user = payload;
+  // 系統角色以 DB 為準，JWT 內的 role 可能已過時
+  const ctx: Ctx = { userId: payload.userId, systemRole: dbUser.role };
+  req.ctx = ctx;
+  next();
 }
 
-async function isAdmin(userId: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  return user?.role === "admin";
+async function requireAdmin(req: any, res: any, next: any) {
+  if (!isAdmin(req.ctx)) return res.status(403).json({ error: "需要管理員權限" });
+  next();
 }
 
-function requireProjectRole(...roles: string[]) {
-  return async (req: any, res: any, next: any) => {
-    const projectId = req.params.projectId;
-    if (!projectId) return res.status(400).json({ error: "缺少專案 ID" });
-
-    if (await isAdmin(req.user.userId)) {
-      req.userRole = "admin";
-      return next();
-    }
-
-    const role = await getProjectRole(req.user.userId, projectId);
-    if (!role || !roles.includes(role)) {
-      return res.status(403).json({ error: "權限不足" });
-    }
-
-    req.userRole = role;
-    next();
-  };
-}
-
-async function createNotification(userId: string, type: string, title: string, message: string, projectId?: string, taskId?: string) {
-  return prisma.notification.create({
-    data: { userId, type, title, message, projectId, taskId }
-  });
-}
-
-async function logActivity(userId: string, action: string, target: string, detail: string, projectId?: string, targetId?: string) {
-  return prisma.activityLog.create({
-    data: { userId, action, target, detail, projectId, targetId }
-  });
-}
+const projectRoleSchema = z.enum(PROJECT_ROLES);
+const systemRoleSchema = z.enum(["admin", "user"]);
 
 // ── 認證 API ──────────────────────────────────────────────────────────
 
@@ -175,22 +149,37 @@ app.post("/api/auth/login", async (req, res) => {
 
 // ── 使用者 API ────────────────────────────────────────────────────────
 
-app.get("/api/users", authMiddleware, async (_req: any, res) => {
+// 非 Admin 只回傳指派與邀請成員所需的欄位
+app.get("/api/users", authMiddleware, async (req: any, res) => {
+  const admin = isAdmin(req.ctx);
   const users = await prisma.user.findMany({
     select: {
-      id: true, name: true, memberId: true, email: true, role: true,
-      group: { select: { id: true, name: true, color: true } }
+      id: true, name: true, memberId: true,
+      group: { select: { id: true, name: true, color: true } },
+      ...(admin ? { email: true, role: true } : {}),
     }
   });
   res.json(users);
 });
 
-app.get("/api/groups", async (_req, res) => {
-  const groups = await prisma.group.findMany({
+async function listGroupsWithUsers(ctx: Ctx) {
+  return prisma.group.findMany({
     orderBy: { name: "asc" },
     include: {
-      users: { select: { id: true, name: true, memberId: true, email: true } }
+      users: { select: { id: true, name: true, memberId: true, ...(isAdmin(ctx) ? { email: true } : {}) } }
     }
+  });
+}
+
+app.get("/api/groups", authMiddleware, async (req: any, res) => {
+  res.json(await listGroupsWithUsers(req.ctx));
+});
+
+// 註冊頁（尚未登入）選擇組別用，只回傳組別名稱
+app.get("/api/groups/options", async (_req, res) => {
+  const groups = await prisma.group.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, color: true },
   });
   res.json(groups);
 });
@@ -198,105 +187,31 @@ app.get("/api/groups", async (_req, res) => {
 // ── 專案 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects", authMiddleware, async (req: any, res) => {
-  try {
-    const isAdminUser = await isAdmin(req.user.userId);
-
-    const projects = await prisma.project.findMany({
-      where: isAdminUser ? {} : {
-        members: { some: { userId: req.user.userId } }
-      },
-      include: {
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true, name: true, memberId: true, email: true,
-                group: { select: { id: true, name: true, color: true } }
-              }
-            }
-          }
-        }
-      }
-    });
-
-    const result = projects.map(p => {
-      const myMembership = p.members.find(m => m.userId === req.user.userId);
-      return {
-        ...p,
-        userRole: isAdminUser ? "admin" : (myMembership?.role || "viewer"),
-      };
-    });
-
-    res.json(result);
-  } catch (err) {
-    console.error("取得專案錯誤:", err);
-    res.status(500).json({ error: "取得專案失敗" });
-  }
+  res.json(await projects.listProjects(req.ctx));
 });
 
 app.post("/api/projects", authMiddleware, async (req: any, res) => {
-  const project = await prisma.project.create({
-    data: {
-      name: req.body.name,
-      description: req.body.description || "",
-      color: req.body.color || "#6366f1",
-      ownerId: req.user.userId,
-    }
-  });
-
-  await prisma.projectMember.create({
-    data: {
-      projectId: project.id,
-      userId: req.user.userId,
-      role: "owner",
-    }
-  });
-
-  await logActivity(req.user.userId, "create", "project", project.name, project.id, project.id);
-  res.status(201).json(project);
+  res.status(201).json(await projects.createProject(req.ctx, req.body));
 });
 
 app.put("/api/projects/:id", authMiddleware, async (req: any, res) => {
-  try {
-    if (!(await isAdmin(req.user.userId))) {
-      const role = await getProjectRole(req.user.userId, req.params.id);
-      if (!role || !["owner", "pm"].includes(role)) {
-        return res.status(403).json({ error: "權限不足" });
-      }
-    }
-    const project = await prisma.project.update({
-      where: { id: req.params.id },
-      data: { name: req.body.name, description: req.body.description, color: req.body.color }
-    });
-    res.json(project);
-  } catch {
-    res.status(404).json({ error: "找不到專案" });
-  }
+  res.json(await projects.updateProject(req.ctx, req.params.id, req.body));
 });
 
 app.delete("/api/projects/:id", authMiddleware, async (req: any, res) => {
-  try {
-    if (!(await isAdmin(req.user.userId))) {
-      const role = await getProjectRole(req.user.userId, req.params.id);
-      if (role !== "owner") {
-        return res.status(403).json({ error: "只有專案擁有者可以刪除專案" });
-      }
-    }
-    await prisma.project.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch {
-    res.status(404).json({ error: "找不到專案" });
-  }
+  await projects.deleteProject(req.ctx, req.params.id);
+  res.json({ success: true });
+});
+
+app.get("/api/projects/:projectId/summary", authMiddleware, async (req: any, res) => {
+  res.json(await reports.getProjectSummary(req.ctx, req.params.projectId));
 });
 
 // ── 專案成員 API ──────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/members", authMiddleware, async (req: any, res) => {
   const { projectId } = req.params;
-  const role = await getProjectRole(req.user.userId, projectId);
-  if (!role && !(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "權限不足" });
-  }
+  await assertCanRead(req.ctx, projectId);
   const members = await prisma.projectMember.findMany({
     where: { projectId },
     include: {
@@ -314,12 +229,13 @@ app.get("/api/projects/:projectId/members", authMiddleware, async (req: any, res
 
 app.post("/api/projects/:projectId/members", authMiddleware, async (req: any, res) => {
   const { projectId } = req.params;
+  const { userId, role: targetRole } = parseInput(z.object({
+    userId: z.string().min(1),
+    role: projectRoleSchema.default("member"),
+  }), req.body);
 
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, projectId);
-    if (!role) return res.status(403).json({ error: "權限不足" });
-
-    const targetRole = req.body.role || "member";
+  const role = await assertCanRead(req.ctx, projectId);
+  if (role !== "admin") {
     if (role === "pm" && ["owner", "pm"].includes(targetRole)) {
       return res.status(403).json({ error: "PM 不能指定 Owner 或 PM 角色" });
     }
@@ -333,23 +249,19 @@ app.post("/api/projects/:projectId/members", authMiddleware, async (req: any, re
 
   try {
     const member = await prisma.projectMember.create({
-      data: {
-        projectId,
-        userId: req.body.userId,
-        role: req.body.role || "member",
-      },
+      data: { projectId, userId, role: targetRole },
       include: { user: { select: { id: true, name: true, memberId: true, email: true } } }
     });
 
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     await createNotification(
-      req.body.userId, "project_invited", "專案邀請",
-      `你被邀請加入專案「${project?.name || ""}」，角色為 ${req.body.role || "member"}`,
+      userId, "project_invited", "專案邀請",
+      `你被邀請加入專案「${project?.name || ""}」，角色為 ${targetRole}`,
       projectId
     );
 
-    const invitedUser = await prisma.user.findUnique({ where: { id: req.body.userId }, select: { name: true } });
-    await logActivity(req.user.userId, "invite", "member", invitedUser?.name || req.body.userId, projectId, req.body.userId);
+    const invitedUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    await logActivity(req.ctx.userId, "invite", "member", invitedUser?.name || userId, projectId, userId);
     res.status(201).json(member);
   } catch {
     res.status(400).json({ error: "新增成員失敗（可能已是成員）" });
@@ -359,10 +271,8 @@ app.post("/api/projects/:projectId/members", authMiddleware, async (req: any, re
 app.delete("/api/projects/:projectId/members/:userId", authMiddleware, async (req: any, res) => {
   const { projectId, userId } = req.params;
 
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, projectId);
-    if (!role) return res.status(403).json({ error: "權限不足" });
-
+  const role = await assertCanRead(req.ctx, projectId);
+  if (role !== "admin") {
     const target = await prisma.projectMember.findUnique({
       where: { projectId_userId: { projectId, userId } }
     });
@@ -377,34 +287,31 @@ app.delete("/api/projects/:projectId/members/:userId", authMiddleware, async (re
   }
 
   const removedUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-  await logActivity(req.user.userId, "remove", "member", removedUser?.name || userId, projectId, userId);
+  await logActivity(req.ctx.userId, "remove", "member", removedUser?.name || userId, projectId, userId);
   await prisma.projectMember.deleteMany({ where: { projectId, userId } });
   res.json({ success: true });
 });
 
 app.put("/api/projects/:projectId/members/:userId", authMiddleware, async (req: any, res) => {
   const { projectId, userId } = req.params;
+  const { role: newRole } = parseInput(z.object({ role: projectRoleSchema }), req.body);
 
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, projectId);
-    if (role !== "owner") return res.status(403).json({ error: "只有專案擁有者可以變更角色" });
-  }
+  const role = await assertCanRead(req.ctx, projectId);
+  if (role !== "admin" && role !== "owner") return res.status(403).json({ error: "只有專案擁有者可以變更角色" });
 
   await prisma.projectMember.updateMany({
     where: { projectId, userId },
-    data: { role: req.body.role }
+    data: { role: newRole }
   });
   res.json({ success: true });
 });
 
 app.post("/api/projects/:projectId/transfer-owner", authMiddleware, async (req: any, res) => {
   const { projectId } = req.params;
-  const { newOwnerId } = req.body;
+  const { newOwnerId } = parseInput(z.object({ newOwnerId: z.string().min(1) }), req.body);
 
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, projectId);
-    if (role !== "owner") return res.status(403).json({ error: "只有專案擁有者可以轉移權限" });
-  }
+  const role = await assertCanRead(req.ctx, projectId);
+  if (role !== "admin" && role !== "owner") return res.status(403).json({ error: "只有專案擁有者可以轉移權限" });
 
   const newOwnerMembership = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId, userId: newOwnerId } }
@@ -421,186 +328,44 @@ app.post("/api/projects/:projectId/transfer-owner", authMiddleware, async (req: 
 // ── 任務 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/tasks", authMiddleware, async (req: any, res) => {
-  const tasks = await prisma.task.findMany({
-    where: { projectId: req.params.projectId },
-    include: {
-      subtasks: true,
-      attachments: {
-        include: { uploader: { select: { id: true, name: true, memberId: true } } },
-        orderBy: { createdAt: "desc" }
-      }
-    },
-    orderBy: { createdAt: "asc" }
-  });
-  res.json(tasks);
+  res.json(await tasks.listTasks(req.ctx, req.params.projectId));
 });
 
-app.post("/api/projects/:projectId/tasks", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
-  const task = await prisma.task.create({
-    data: {
-      title: req.body.title,
-      description: req.body.description || "",
-      priority: req.body.priority || "medium",
-      assignee: req.body.assignee || "",
-      groupId: req.body.groupId || "",
-      columnId: req.body.columnId || "todo",
-      startDate: req.body.startDate || "",
-      endDate: req.body.endDate || "",
-      completion: req.body.completion || 0,
-      timeLogs: req.body.timeLogs || [],
-      projectId: req.params.projectId,
-    },
-    include: { subtasks: true }
-  });
+app.post("/api/projects/:projectId/tasks", authMiddleware, async (req: any, res) => {
+  res.status(201).json(await tasks.createTask(req.ctx, req.params.projectId, req.body));
+});
 
-  if (task.assignee) {
-    const assigneeUser = await prisma.user.findFirst({ where: { memberId: task.assignee } });
-    if (assigneeUser && assigneeUser.id !== req.user.userId) {
-      const project = await prisma.project.findUnique({ where: { id: req.params.projectId } });
-      await createNotification(
-        assigneeUser.id, "task_assigned", "新任務指派",
-        `你被指派了新任務「${task.title}」在專案「${project?.name || ""}」中`,
-        req.params.projectId, task.id
-      );
-    }
-  }
-
-  await logActivity(req.user.userId, "create", "task", task.title, req.params.projectId, task.id);
-  res.status(201).json(task);
+app.get("/api/tasks/:id", authMiddleware, async (req: any, res) => {
+  res.json(await tasks.getTask(req.ctx, req.params.id));
 });
 
 app.put("/api/tasks/:id", authMiddleware, async (req: any, res) => {
-  try {
-    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
-    if (!task) return res.status(404).json({ error: "找不到任務" });
-
-    if (!(await isAdmin(req.user.userId))) {
-      const role = await getProjectRole(req.user.userId, task.projectId);
-      if (!role) return res.status(403).json({ error: "權限不足" });
-
-      if (role === "viewer") return res.status(403).json({ error: "權限不足" });
-
-      if (role === "member") {
-        const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
-        if (task.assignee !== user?.memberId) {
-          return res.status(403).json({ error: "只能編輯自己的任務" });
-        }
-      }
-
-      if (req.body.columnId === "done" && !["owner", "pm"].includes(role)) {
-        return res.status(403).json({ error: "只有 PM 以上可以將任務標記為已完成" });
-      }
-    }
-
-    const { subtasks, ...taskData } = req.body;
-
-    if (req.body.columnId === "done" && task.columnId !== "done") {
-      taskData.completedAt = new Date();
-    } else if (req.body.columnId && req.body.columnId !== "done" && task.columnId === "done") {
-      taskData.completedAt = null;
-    }
-
-    await prisma.task.update({ where: { id: req.params.id }, data: taskData });
-
-    if (subtasks && Array.isArray(subtasks)) {
-      // 保留既有子工項 id（CSV 匯入以工項ID比對），只刪除這次沒送來的
-      const existing = await prisma.subTask.findMany({ where: { taskId: req.params.id }, select: { id: true } });
-      const existingIds = new Set(existing.map((s) => s.id));
-      const keepIds = subtasks.map((s: any) => s.id).filter((id: any) => existingIds.has(id));
-      await prisma.subTask.deleteMany({ where: { taskId: req.params.id, id: { notIn: keepIds } } });
-      for (const sub of subtasks) {
-        const data = {
-          title: sub.title || "",
-          description: sub.description || "",
-          assignee: sub.assignee || "",
-          groupId: sub.groupId || "",
-          startDate: sub.startDate || "",
-          endDate: sub.endDate || "",
-          completion: sub.completion || 0,
-          timeLogs: sub.timeLogs || [],
-        };
-        if (existingIds.has(sub.id)) {
-          await prisma.subTask.update({ where: { id: sub.id }, data });
-        } else {
-          // 沿用前端產生的 id，讓畫面上的子工項與資料庫一致，下次儲存才不會重複建立
-          const idTaken = typeof sub.id === "string" && sub.id
-            && await prisma.subTask.findUnique({ where: { id: sub.id }, select: { id: true } });
-          await prisma.subTask.create({
-            data: { ...data, taskId: req.params.id, ...(typeof sub.id === "string" && sub.id && !idTaken ? { id: sub.id } : {}) }
-          });
-        }
-      }
-    }
-
-    if (req.body.columnId && req.body.columnId !== task.columnId && task.assignee) {
-      const columnNames: Record<string, string> = {
-        todo: "待處理", inprogress: "進行中", review: "審查中", done: "已完成"
-      };
-      const assigneeUser = await prisma.user.findFirst({ where: { memberId: task.assignee } });
-      if (assigneeUser && assigneeUser.id !== req.user.userId) {
-        await createNotification(
-          assigneeUser.id, "task_moved", "任務狀態變更",
-          `任務「${task.title}」已移至「${columnNames[req.body.columnId] || req.body.columnId}」`,
-          task.projectId, task.id
-        );
-      }
-    }
-
-    const updated = await prisma.task.findUnique({
-      where: { id: req.params.id },
-      include: { subtasks: true }
-    });
-
-    if (req.body.columnId && req.body.columnId !== task.columnId) {
-      await logActivity(req.user.userId, "move", "task", `${task.title} → ${req.body.columnId}`, task.projectId, task.id);
-    } else {
-      await logActivity(req.user.userId, "update", "task", task.title, task.projectId, task.id);
-    }
-
-    res.json(updated);
-  } catch {
-    res.status(404).json({ error: "找不到任務" });
-  }
+  res.json(await tasks.updateTask(req.ctx, req.params.id, req.body));
 });
 
 app.delete("/api/tasks/:id", authMiddleware, async (req: any, res) => {
-  try {
-    const task = await prisma.task.findUnique({ where: { id: req.params.id } });
-    if (!task) return res.status(404).json({ error: "找不到任務" });
-
-    if (!(await isAdmin(req.user.userId))) {
-      const role = await getProjectRole(req.user.userId, task.projectId);
-      if (!role || !["owner", "pm", "group_leader"].includes(role)) {
-        return res.status(403).json({ error: "權限不足" });
-      }
-    }
-
-    await logActivity(req.user.userId, "delete", "task", task.title, task.projectId, task.id);
-    await prisma.task.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch {
-    res.status(404).json({ error: "找不到任務" });
-  }
+  await tasks.deleteTask(req.ctx, req.params.id);
+  res.json({ success: true });
 });
 
 // ── 組別 API ──────────────────────────────────────────────────────────
 
 // 回傳所有系統組別（含組員），projectId 保留在 URL 路徑以維持前端相容
-app.get("/api/projects/:projectId/groups", authMiddleware, async (_req: any, res) => {
-  const groups = await prisma.group.findMany({
-    orderBy: { name: "asc" },
-    include: {
-      users: { select: { id: true, name: true, memberId: true, email: true } }
-    }
-  });
-  res.json(groups);
+app.get("/api/projects/:projectId/groups", authMiddleware, async (req: any, res) => {
+  res.json(await listGroupsWithUsers(req.ctx));
 });
 
 // 建立系統組別（Admin 或 owner/pm 可操作）
-app.post("/api/projects/:projectId/groups", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
+app.post("/api/projects/:projectId/groups", authMiddleware, async (req: any, res) => {
+  const role = await assertCanRead(req.ctx, req.params.projectId);
+  if (!["admin", "owner", "pm"].includes(role)) return res.status(403).json({ error: "權限不足" });
+  const data = parseInput(z.object({
+    name: z.string().trim().min(1).max(100),
+    color: z.string().regex(/^#[0-9a-fA-F]{3,8}$/).optional(),
+  }), req.body);
   try {
     const group = await prisma.group.create({
-      data: { name: req.body.name, color: req.body.color || "#6366f1" }
+      data: { name: data.name, color: data.color || "#6366f1" }
     });
     res.status(201).json(group);
   } catch (err: any) {
@@ -609,10 +374,7 @@ app.post("/api/projects/:projectId/groups", authMiddleware, requireProjectRole("
   }
 });
 
-app.put("/api/groups/:id", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.put("/api/groups/:id", authMiddleware, requireAdmin, async (req: any, res) => {
   try {
     const updated = await prisma.group.update({
       where: { id: req.params.id },
@@ -624,10 +386,7 @@ app.put("/api/groups/:id", authMiddleware, async (req: any, res) => {
   }
 });
 
-app.delete("/api/groups/:id", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.delete("/api/groups/:id", authMiddleware, requireAdmin, async (req: any, res) => {
   try {
     await prisma.group.delete({ where: { id: req.params.id } });
     res.json({ success: true });
@@ -639,201 +398,71 @@ app.delete("/api/groups/:id", authMiddleware, async (req: any, res) => {
 // ── 會議 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/meetings", authMiddleware, async (req: any, res) => {
-  const series = await prisma.meetingSeries.findMany({
-    where: { projectId: req.params.projectId },
-    include: { records: { orderBy: { date: "desc" } } },
-    orderBy: { createdAt: "asc" }
-  });
-  res.json(series);
+  res.json(await meetings.listMeetings(req.ctx, req.params.projectId));
 });
 
-app.post("/api/projects/:projectId/meetings", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
-  const series = await prisma.meetingSeries.create({
-    data: {
-      name: req.body.name,
-      type: req.body.type || "regular",
-      projectId: req.params.projectId,
-    },
-    include: { records: true }
-  });
-  await logActivity(req.user.userId, "create", "meeting_series", series.name, req.params.projectId, series.id);
-  res.status(201).json(series);
+app.post("/api/projects/:projectId/meetings", authMiddleware, async (req: any, res) => {
+  res.status(201).json(await meetings.createSeries(req.ctx, req.params.projectId, req.body));
 });
 
 app.delete("/api/meetings/:id", authMiddleware, async (req: any, res) => {
-  const series = await prisma.meetingSeries.findUnique({ where: { id: req.params.id } });
-  if (!series) return res.status(404).json({ error: "找不到會議系列" });
-
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, series.projectId);
-    if (!role || !["owner", "pm", "group_leader"].includes(role)) {
-      return res.status(403).json({ error: "權限不足" });
-    }
-  }
-
-  await prisma.meetingRecord.deleteMany({ where: { seriesId: req.params.id } });
-  await prisma.meetingSeries.delete({ where: { id: req.params.id } });
+  await meetings.deleteSeries(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
 app.post("/api/meetings/:seriesId/records", authMiddleware, async (req: any, res) => {
-  const record = await prisma.meetingRecord.create({
-    data: {
-      date: req.body.date,
-      attendees: req.body.attendees || [],
-      summary: req.body.summary || "",
-      externalLink: req.body.externalLink || "",
-      seriesId: req.params.seriesId,
-    }
-  });
-  const seriesForLog = await prisma.meetingSeries.findUnique({ where: { id: req.params.seriesId } });
-  await logActivity(req.user.userId, "create", "meeting_record", record.date, seriesForLog?.projectId, record.id);
-  res.status(201).json(record);
+  res.status(201).json(await meetings.createRecord(req.ctx, req.params.seriesId, req.body));
+});
+
+app.get("/api/meeting-records/:id", authMiddleware, async (req: any, res) => {
+  res.json(await meetings.getMeetingRecord(req.ctx, req.params.id));
 });
 
 app.put("/api/meeting-records/:id", authMiddleware, async (req: any, res) => {
-  const record = await prisma.meetingRecord.update({
-    where: { id: req.params.id },
-    data: {
-      summary: req.body.summary,
-      attendees: req.body.attendees,
-      externalLink: req.body.externalLink,
-    }
-  });
-  res.json(record);
+  res.json(await meetings.updateRecord(req.ctx, req.params.id, req.body));
 });
 
 app.delete("/api/meeting-records/:id", authMiddleware, async (req: any, res) => {
-  await prisma.meetingRecord.delete({ where: { id: req.params.id } });
+  await meetings.deleteRecord(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
 // ── 風險 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/risks", authMiddleware, async (req: any, res) => {
-  const risks = await prisma.risk.findMany({
-    where: { projectId: req.params.projectId },
-    orderBy: { createdAt: "asc" }
-  });
-  res.json(risks);
+  res.json(await risks.listRisks(req.ctx, req.params.projectId));
 });
 
-app.post("/api/projects/:projectId/risks", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
-  const risk = await prisma.risk.create({
-    data: {
-      title: req.body.title,
-      description: req.body.description || "",
-      probability: req.body.probability || "medium",
-      impact: req.body.impact || "medium",
-      countermeasure: req.body.countermeasure || "",
-      ownerId: req.body.ownerId || "",
-      ownerGroupId: req.body.ownerGroupId || "",
-      status: req.body.status || "monitoring",
-      createdDate: req.body.createdDate || new Date().toISOString().split("T")[0],
-      projectId: req.params.projectId,
-    }
-  });
-  await logActivity(req.user.userId, "create", "risk", risk.title, req.params.projectId, risk.id);
-  res.status(201).json(risk);
+app.post("/api/projects/:projectId/risks", authMiddleware, async (req: any, res) => {
+  res.status(201).json(await risks.createRisk(req.ctx, req.params.projectId, req.body));
 });
 
 app.put("/api/risks/:id", authMiddleware, async (req: any, res) => {
-  const risk = await prisma.risk.findUnique({ where: { id: req.params.id } });
-  if (!risk) return res.status(404).json({ error: "找不到風險" });
-
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, risk.projectId);
-    if (!role || !["owner", "pm", "group_leader"].includes(role)) {
-      return res.status(403).json({ error: "權限不足" });
-    }
-  }
-
-  const updated = await prisma.risk.update({
-    where: { id: req.params.id },
-    data: {
-      title: req.body.title,
-      description: req.body.description,
-      probability: req.body.probability,
-      impact: req.body.impact,
-      countermeasure: req.body.countermeasure,
-      ownerId: req.body.ownerId,
-      ownerGroupId: req.body.ownerGroupId,
-      status: req.body.status,
-    }
-  });
-
-  if (req.body.status && req.body.status !== risk.status) {
-    const statusNames: Record<string, string> = {
-      monitoring: "監控中", occurred: "已發生", resolved: "已解除"
-    };
-    const projectMembers = await prisma.projectMember.findMany({
-      where: { projectId: risk.projectId }
-    });
-    for (const pm of projectMembers) {
-      if (pm.userId !== req.user.userId) {
-        await createNotification(
-          pm.userId, "risk_updated", "風險狀態變更",
-          `風險「${risk.title}」狀態已變更為「${statusNames[req.body.status] || req.body.status}」`,
-          risk.projectId
-        );
-      }
-    }
-  }
-
-  await logActivity(req.user.userId, "update", "risk", risk.title, risk.projectId, risk.id);
-  res.json(updated);
+  res.json(await risks.updateRisk(req.ctx, req.params.id, req.body));
 });
 
 app.delete("/api/risks/:id", authMiddleware, async (req: any, res) => {
-  const risk = await prisma.risk.findUnique({ where: { id: req.params.id } });
-  if (!risk) return res.status(404).json({ error: "找不到風險" });
-
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, risk.projectId);
-    if (!role || !["owner", "pm", "group_leader"].includes(role)) {
-      return res.status(403).json({ error: "權限不足" });
-    }
-  }
-
-  await prisma.risk.delete({ where: { id: req.params.id } });
+  await risks.deleteRisk(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
 // ── 週報 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/weekly-reports", authMiddleware, async (req: any, res) => {
-  const reports = await prisma.weeklyReport.findMany({
-    where: { projectId: req.params.projectId },
-    orderBy: { weekStart: "desc" }
-  });
-  res.json(reports);
+  res.json(await reports.listWeeklyReports(req.ctx, req.params.projectId));
 });
 
-app.put("/api/projects/:projectId/weekly-reports", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
-  const report = await prisma.weeklyReport.upsert({
-    where: {
-      projectId_weekStart: {
-        projectId: req.params.projectId,
-        weekStart: req.body.weekStart,
-      }
-    },
-    update: { notes: req.body.notes },
-    create: {
-      weekStart: req.body.weekStart,
-      weekEnd: req.body.weekEnd,
-      notes: req.body.notes || "",
-      projectId: req.params.projectId,
-    }
-  });
-  res.json(report);
+app.put("/api/projects/:projectId/weekly-reports", authMiddleware, async (req: any, res) => {
+  res.json(await reports.saveWeeklyNotes(req.ctx, req.params.projectId, req.body));
+});
+
+app.get("/api/projects/:projectId/weekly-report-data", authMiddleware, async (req: any, res) => {
+  res.json(await reports.getWeeklyReportData(req.ctx, req.params.projectId, req.query.weekStart));
 });
 
 // ── Admin API ─────────────────────────────────────────────────────────
 
-app.get("/api/admin/users", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.get("/api/admin/users", authMiddleware, requireAdmin, async (_req: any, res) => {
   const users = await prisma.user.findMany({
     select: {
       id: true, name: true, memberId: true, email: true, role: true, isActive: true, createdAt: true,
@@ -843,11 +472,8 @@ app.get("/api/admin/users", authMiddleware, async (req: any, res) => {
   res.json(users);
 });
 
-app.put("/api/admin/users/:id/toggle-active", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
-  if (req.params.id === req.user.userId) {
+app.put("/api/admin/users/:id/toggle-active", authMiddleware, requireAdmin, async (req: any, res) => {
+  if (req.params.id === req.ctx.userId) {
     return res.status(400).json({ error: "不能停用自己的帳號" });
   }
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
@@ -860,13 +486,11 @@ app.put("/api/admin/users/:id/toggle-active", authMiddleware, async (req: any, r
   res.json(updated);
 });
 
-app.put("/api/admin/users/:id", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.put("/api/admin/users/:id", authMiddleware, requireAdmin, async (req: any, res) => {
+  const { role } = parseInput(z.object({ role: systemRoleSchema }), req.body);
   const user = await prisma.user.update({
     where: { id: req.params.id },
-    data: { role: req.body.role },
+    data: { role },
     select: { id: true, name: true, memberId: true, email: true, role: true }
   });
   res.json(user);
@@ -874,10 +498,7 @@ app.put("/api/admin/users/:id", authMiddleware, async (req: any, res) => {
 
 // ── Admin 組別管理 ────────────────────────────────────────────────────
 
-app.post("/api/admin/groups", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.post("/api/admin/groups", authMiddleware, requireAdmin, async (req: any, res) => {
   try {
     const group = await prisma.group.create({
       data: { name: req.body.name, color: req.body.color || "#6366f1" }
@@ -889,10 +510,7 @@ app.post("/api/admin/groups", authMiddleware, async (req: any, res) => {
   }
 });
 
-app.put("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.put("/api/admin/groups/:id", authMiddleware, requireAdmin, async (req: any, res) => {
   try {
     const group = await prisma.group.update({
       where: { id: req.params.id },
@@ -905,10 +523,7 @@ app.put("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
   }
 });
 
-app.delete("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
-  if (!(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "需要管理員權限" });
-  }
+app.delete("/api/admin/groups/:id", authMiddleware, requireAdmin, async (req: any, res) => {
   await prisma.group.delete({ where: { id: req.params.id } });
   res.json({ success: true });
 });
@@ -916,114 +531,30 @@ app.delete("/api/admin/groups/:id", authMiddleware, async (req: any, res) => {
 // ── 附件 API ──────────────────────────────────────────────────────────
 
 app.get("/api/tasks/:taskId/attachments", authMiddleware, async (req: any, res) => {
-  const attachments = await prisma.attachment.findMany({
-    where: { taskId: req.params.taskId },
-    include: {
-      uploader: { select: { id: true, name: true, memberId: true } }
-    },
-    orderBy: { createdAt: "desc" }
-  });
-  res.json(attachments);
+  res.json(await tasks.listAttachments(req.ctx, req.params.taskId));
 });
 
 app.post("/api/tasks/:taskId/attachments", authMiddleware, async (req: any, res) => {
-  const attachment = await prisma.attachment.create({
-    data: {
-      name: req.body.name,
-      url: req.body.url,
-      type: req.body.type || "link",
-      taskId: req.params.taskId,
-      uploaderId: req.user.userId,
-    },
-    include: {
-      uploader: { select: { id: true, name: true, memberId: true } }
-    }
-  });
-
-  const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
-  if (task) {
-    await logActivity(req.user.userId, "create", "attachment", `在任務「${task.title}」新增附件「${req.body.name}」`, task.projectId, attachment.id);
-  }
-
-  res.status(201).json(attachment);
+  res.status(201).json(await tasks.createAttachment(req.ctx, req.params.taskId, req.body));
 });
 
 app.delete("/api/attachments/:id", authMiddleware, async (req: any, res) => {
-  const attachment = await prisma.attachment.findUnique({
-    where: { id: req.params.id },
-    include: { task: true }
-  });
-  if (!attachment) return res.status(404).json({ error: "找不到附件" });
-
-  if (attachment.uploaderId !== req.user.userId && !(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, attachment.task.projectId);
-    if (!role || !["owner", "pm"].includes(role)) {
-      return res.status(403).json({ error: "權限不足" });
-    }
-  }
-
-  await prisma.attachment.delete({ where: { id: req.params.id } });
-  await logActivity(req.user.userId, "delete", "attachment", `刪除附件「${attachment.name}」`, attachment.task.projectId, req.params.id);
-
+  await tasks.deleteAttachment(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
 // ── 評論 API ──────────────────────────────────────────────────────────
 
 app.get("/api/tasks/:taskId/comments", authMiddleware, async (req: any, res) => {
-  const comments = await prisma.comment.findMany({
-    where: { taskId: req.params.taskId },
-    include: {
-      user: {
-        select: { id: true, name: true, memberId: true, group: { select: { name: true, color: true } } }
-      }
-    },
-    orderBy: { createdAt: "asc" }
-  });
-  res.json(comments);
+  res.json(await tasks.listComments(req.ctx, req.params.taskId));
 });
 
 app.post("/api/tasks/:taskId/comments", authMiddleware, async (req: any, res) => {
-  const comment = await prisma.comment.create({
-    data: {
-      content: req.body.content,
-      taskId: req.params.taskId,
-      userId: req.user.userId,
-    },
-    include: {
-      user: {
-        select: { id: true, name: true, memberId: true, group: { select: { name: true, color: true } } }
-      }
-    }
-  });
-
-  const task = await prisma.task.findUnique({ where: { id: req.params.taskId } });
-  if (task && task.assignee) {
-    const assigneeUser = await prisma.user.findFirst({ where: { memberId: task.assignee } });
-    if (assigneeUser && assigneeUser.id !== req.user.userId) {
-      await createNotification(
-        assigneeUser.id, "comment_added", "新評論",
-        `在任務「${task.title}」中有新的評論`,
-        task.projectId, task.id
-      );
-    }
-  }
-
-  if (task) {
-    await logActivity(req.user.userId, "comment", "task", task.title, task.projectId, task.id);
-  }
-  res.status(201).json(comment);
+  res.status(201).json(await tasks.createComment(req.ctx, req.params.taskId, req.body));
 });
 
 app.delete("/api/comments/:id", authMiddleware, async (req: any, res) => {
-  const comment = await prisma.comment.findUnique({ where: { id: req.params.id } });
-  if (!comment) return res.status(404).json({ error: "找不到評論" });
-
-  if (comment.userId !== req.user.userId && !(await isAdmin(req.user.userId))) {
-    return res.status(403).json({ error: "只能刪除自己的評論" });
-  }
-
-  await prisma.comment.delete({ where: { id: req.params.id } });
+  await tasks.deleteComment(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
@@ -1031,7 +562,7 @@ app.delete("/api/comments/:id", authMiddleware, async (req: any, res) => {
 
 app.get("/api/notifications", authMiddleware, async (req: any, res) => {
   const notifications = await prisma.notification.findMany({
-    where: { userId: req.user.userId },
+    where: { userId: req.ctx.userId },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
@@ -1040,14 +571,14 @@ app.get("/api/notifications", authMiddleware, async (req: any, res) => {
 
 app.get("/api/notifications/unread-count", authMiddleware, async (req: any, res) => {
   const count = await prisma.notification.count({
-    where: { userId: req.user.userId, isRead: false }
+    where: { userId: req.ctx.userId, isRead: false }
   });
   res.json({ count });
 });
 
 app.put("/api/notifications/read-all", authMiddleware, async (req: any, res) => {
   await prisma.notification.updateMany({
-    where: { userId: req.user.userId, isRead: false },
+    where: { userId: req.ctx.userId, isRead: false },
     data: { isRead: true }
   });
   res.json({ success: true });
@@ -1064,170 +595,44 @@ app.put("/api/notifications/:id/read", authMiddleware, async (req: any, res) => 
 // ── 活動紀錄 API ──────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/activities", authMiddleware, async (req: any, res) => {
-  const { projectId } = req.params;
-
-  if (!(await isAdmin(req.user.userId))) {
-    const role = await getProjectRole(req.user.userId, projectId);
-    if (!role) return res.status(403).json({ error: "權限不足" });
-  }
-
-  const activities = await prisma.activityLog.findMany({
-    where: { projectId },
-    include: {
-      user: { select: { id: true, name: true, memberId: true } }
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
-  res.json(activities);
+  res.json(await listActivities(req.ctx, req.params.projectId));
 });
 
 // ── 搜尋 API ──────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/search", authMiddleware, async (req: any, res) => {
-  const query = (req.query.q as string || "").trim();
-  if (!query) return res.json({ tasks: [], risks: [], meetings: [] });
-
-  const tasks = await prisma.task.findMany({
-    where: {
-      projectId: req.params.projectId,
-      OR: [
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
-        { assignee: { contains: query, mode: "insensitive" } },
-      ]
-    },
-    include: { subtasks: true },
-    take: 20,
-  });
-
-  const subtasks = await prisma.subTask.findMany({
-    where: {
-      task: { projectId: req.params.projectId },
-      OR: [
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
-        { assignee: { contains: query, mode: "insensitive" } },
-      ]
-    },
-    include: { task: { select: { id: true, title: true } } },
-    take: 20,
-  });
-
-  const risks = await prisma.risk.findMany({
-    where: {
-      projectId: req.params.projectId,
-      OR: [
-        { title: { contains: query, mode: "insensitive" } },
-        { description: { contains: query, mode: "insensitive" } },
-        { countermeasure: { contains: query, mode: "insensitive" } },
-      ]
-    },
-    take: 20,
-  });
-
-  const meetingRecords = await prisma.meetingRecord.findMany({
-    where: {
-      series: { projectId: req.params.projectId },
-      OR: [
-        { summary: { contains: query, mode: "insensitive" } },
-      ]
-    },
-    include: { series: { select: { id: true, name: true } } },
-    take: 20,
-  });
-
-  res.json({ tasks, subtasks, risks, meetings: meetingRecords });
+  res.json(await searchProject(req.ctx, req.params.projectId, String(req.query.q ?? "")));
 });
 
 // ── OKR API ───────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/okrs", authMiddleware, async (req: any, res) => {
-  const objectives = await prisma.objective.findMany({
-    where: { projectId: req.params.projectId },
-    include: { keyResults: { orderBy: { createdAt: "asc" } } },
-    orderBy: { createdAt: "asc" }
-  });
-  res.json(objectives);
+  res.json(await okrs.listOkrs(req.ctx, req.params.projectId));
 });
 
-app.post("/api/projects/:projectId/okrs", authMiddleware, requireProjectRole("owner", "pm"), async (req: any, res) => {
-  const objective = await prisma.objective.create({
-    data: {
-      title: req.body.title,
-      description: req.body.description || "",
-      startDate: req.body.startDate || "",
-      endDate: req.body.endDate || "",
-      projectId: req.params.projectId,
-    },
-    include: { keyResults: true }
-  });
-
-  await logActivity(req.user.userId, "create", "okr", `建立目標「${objective.title}」`, req.params.projectId, objective.id);
-
-  res.status(201).json(objective);
+app.post("/api/projects/:projectId/okrs", authMiddleware, async (req: any, res) => {
+  res.status(201).json(await okrs.createObjective(req.ctx, req.params.projectId, req.body));
 });
 
 app.put("/api/okrs/:id", authMiddleware, async (req: any, res) => {
-  const objective = await prisma.objective.findUnique({ where: { id: req.params.id } });
-  if (!objective) return res.status(404).json({ error: "找不到目標" });
-
-  const updated = await prisma.objective.update({
-    where: { id: req.params.id },
-    data: {
-      title: req.body.title,
-      description: req.body.description,
-      startDate: req.body.startDate,
-      endDate: req.body.endDate,
-    },
-    include: { keyResults: true }
-  });
-
-  await logActivity(req.user.userId, "update", "okr", `更新目標「${updated.title}」`, objective.projectId, updated.id);
-
-  res.json(updated);
+  res.json(await okrs.updateObjective(req.ctx, req.params.id, req.body));
 });
 
 app.delete("/api/okrs/:id", authMiddleware, async (req: any, res) => {
-  const objective = await prisma.objective.findUnique({ where: { id: req.params.id } });
-  if (!objective) return res.status(404).json({ error: "找不到目標" });
-
-  await prisma.keyResult.deleteMany({ where: { objectiveId: req.params.id } });
-  await prisma.objective.delete({ where: { id: req.params.id } });
-
-  await logActivity(req.user.userId, "delete", "okr", `刪除目標「${objective.title}」`, objective.projectId, req.params.id);
-
+  await okrs.deleteObjective(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
 app.post("/api/okrs/:objectiveId/key-results", authMiddleware, async (req: any, res) => {
-  const kr = await prisma.keyResult.create({
-    data: {
-      title: req.body.title,
-      targetValue: req.body.targetValue || 100,
-      currentValue: req.body.currentValue || 0,
-      unit: req.body.unit || "%",
-      objectiveId: req.params.objectiveId,
-    }
-  });
-  res.status(201).json(kr);
+  res.status(201).json(await okrs.createKeyResult(req.ctx, req.params.objectiveId, req.body));
 });
 
 app.put("/api/key-results/:id", authMiddleware, async (req: any, res) => {
-  const kr = await prisma.keyResult.update({
-    where: { id: req.params.id },
-    data: {
-      title: req.body.title,
-      targetValue: req.body.targetValue,
-      currentValue: req.body.currentValue,
-      unit: req.body.unit,
-    }
-  });
-  res.json(kr);
+  res.json(await okrs.updateKeyResult(req.ctx, req.params.id, req.body));
 });
 
 app.delete("/api/key-results/:id", authMiddleware, async (req: any, res) => {
-  await prisma.keyResult.delete({ where: { id: req.params.id } });
+  await okrs.deleteKeyResult(req.ctx, req.params.id);
   res.json({ success: true });
 });
 
@@ -1236,16 +641,20 @@ app.delete("/api/key-results/:id", authMiddleware, async (req: any, res) => {
 
 const importPreviews = new PreviewStore<ImportPlan>(30 * 60 * 1000);
 
-app.post("/api/projects/:projectId/tasks/import/preview", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
+app.post("/api/projects/:projectId/tasks/import/preview", authMiddleware, async (req: any, res) => {
+  const { projectId } = req.params;
+  const role = await assertCan(req.ctx, projectId, "task.import");
   try {
     const csvText = req.body.csv;
     if (!csvText) return res.status(400).json({ error: "缺少 CSV 資料" });
 
     const parsed = parseTaskCsv(csvText);
-    const ctx = await loadImportContext(prisma, req.params.projectId, collectIds(parsed));
-    const plan = buildImportPlan(parsed, ctx, { projectId: req.params.projectId, userId: req.user.userId }, {
+    const ctx = await loadImportContext(prisma, projectId, collectIds(parsed));
+    const plan = buildImportPlan(parsed, ctx, { projectId, userId: req.ctx.userId }, {
       // 與 PUT /api/tasks/:id 一致：只有 PM 以上可以將任務標記為已完成
-      canMarkDone: ["admin", "owner", "pm"].includes(req.userRole),
+      canMarkDone: can(role, "task.move_done"),
+      // 與 PUT /api/tasks/:id 一致：組長人力調整規則
+      leader: role === "group_leader" ? { groupId: await loadLeaderGroupId(req.ctx) } : undefined,
     });
     const token = importPreviews.put(plan);
     res.json(toPreviewResponse(plan, token));
@@ -1256,14 +665,16 @@ app.post("/api/projects/:projectId/tasks/import/preview", authMiddleware, requir
   }
 });
 
-app.post("/api/projects/:projectId/tasks/import/commit", authMiddleware, requireProjectRole("owner", "pm", "group_leader"), async (req: any, res) => {
+app.post("/api/projects/:projectId/tasks/import/commit", authMiddleware, async (req: any, res) => {
+  const { projectId } = req.params;
+  await assertCan(req.ctx, projectId, "task.import");
   const { previewToken, decisions } = req.body;
   const plan = previewToken ? importPreviews.get(previewToken) : null;
-  if (!plan || plan.projectId !== req.params.projectId || plan.userId !== req.user.userId) {
+  if (!plan || plan.projectId !== projectId || plan.userId !== req.ctx.userId) {
     return res.status(410).json({ error: "預覽已過期或無效，請重新上傳檔案" });
   }
   try {
-    const result = await commitImportPlan(prisma, plan, decisions || {}, req.user.userId);
+    const result = await commitImportPlan(prisma, plan, decisions || {}, req.ctx.userId);
     importPreviews.delete(previewToken);
     res.json(result);
   } catch (err: any) {
@@ -1273,7 +684,7 @@ app.post("/api/projects/:projectId/tasks/import/commit", authMiddleware, require
 });
 
 app.get("/api/templates/tasks", (_req, res) => {
-  const BOM = "\ufeff";
+  const BOM = "﻿";
   const csv = BOM + "工項ID（新增工項時留空）,父工項ID（新增工項時留空）,類型,任務名稱,組別,指派人,優先級,狀態,開始日期,結束日期,完成度\n" +
     ",,主工項,買電腦,,,高優先,待處理,2026-06-01,2026-07-01,0%\n" +
     ",,子工項,估價,,,,,2026-06-01,2026-06-10,0%\n" +
@@ -1286,18 +697,29 @@ app.get("/api/templates/tasks", (_req, res) => {
   res.send(csv);
 });
 
-// ── 排程：每天早上 8 點（台灣時間 UTC+8 = UTC 0 點）──────────────────
+// ── 錯誤處理：service 丟出的錯誤統一轉成 HTTP 回應 ─────────────────────
 
-cron.schedule("0 0 * * *", () => {
-  checkDueTasks().catch(console.error);
+app.use((err: any, _req: any, res: any, _next: any) => {
+  if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+  if (err?.code === "P2025") return res.status(404).json({ error: "找不到資料" });
+  if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "JSON 格式錯誤" });
+  console.error("未預期的錯誤:", err);
+  res.status(500).json({ error: "伺服器錯誤" });
 });
-checkDueTasks().catch(console.error); // 啟動時也跑一次
 
-// ── 啟動伺服器 ────────────────────────────────────────────────────────
+// ── 排程與啟動（測試環境不啟動） ──────────────────────────────────────
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-}).on("error", (err) => {
-  console.error("Server error:", err);
-});
+if (!process.env.VITEST) {
+  // 每天早上 8 點（台灣時間 UTC+8 = UTC 0 點）
+  cron.schedule("0 0 * * *", () => {
+    checkDueTasks().catch(console.error);
+  });
+  checkDueTasks().catch(console.error); // 啟動時也跑一次
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  }).on("error", (err) => {
+    console.error("Server error:", err);
+  });
+}

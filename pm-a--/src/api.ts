@@ -76,7 +76,12 @@ export async function register(email: string, password: string, name: string, me
 }
 
 export async function getGroups() {
-  const response = await fetch(`${API_URL}/groups`);
+  return apiFetch("/groups");
+}
+
+/** 註冊頁（尚未登入）用：只有組別 id / 名稱 / 顏色 */
+export async function getGroupOptions() {
+  const response = await fetch(`${API_URL}/groups/options`);
   return response.json();
 }
 

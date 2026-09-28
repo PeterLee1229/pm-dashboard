@@ -8,6 +8,7 @@ import {
   normalizeText, normalizeKey, isBlank, parseDate, parseNumber, parseEnum,
   diffFields, findDuplicates, canonicalHeader, buildHeaderMap,
 } from "./diff";
+import { AssigneeInfo, checkLeaderAssignChange } from "../permissions";
 
 // ── 欄位定義 ─────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ type ExistingTask = {
 
 export type ImportContext = {
   tasks: ExistingTask[];
-  users: { memberId: string; email: string; name: string }[];
+  users: { memberId: string; email: string; name: string; groupId: string | null }[];
   projectMemberIds: Set<string>;
   groups: { id: string; name: string }[];
   /** 檔案中出現、但屬於其他專案的工項/子工項 id */
@@ -107,6 +108,8 @@ export type PlanRow = {
   fields: { label: string; value: string }[];
   /** 衝突偵測基準：工項為自身 updatedAt，子工項為父工項 updatedAt */
   baseline?: string;
+  /** 「另存為新工項」違反權限規則時的原因（例如組長不可建立別組成員負責的工項） */
+  createNewBlockedReason?: string;
 };
 
 export type MissingItem = { kind: Kind; id: string; title: string; parentTitle?: string; subtaskCount?: number };
@@ -186,7 +189,7 @@ export async function loadImportContext(prisma: PrismaClient, projectId: string,
       },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.user.findMany({ select: { memberId: true, email: true, name: true } }),
+    prisma.user.findMany({ select: { memberId: true, email: true, name: true, groupId: true } }),
     prisma.projectMember.findMany({ where: { projectId }, select: { user: { select: { memberId: true } } } }),
     prisma.group.findMany({ select: { id: true, name: true } }),
   ]);
@@ -234,7 +237,11 @@ type WorkRow = {
 
 export function buildImportPlan(
   parsed: ParsedCsv, ctx: ImportContext, meta: { projectId: string; userId: string },
-  perms: { canMarkDone: boolean } = { canMarkDone: true },
+  perms: {
+    canMarkDone: boolean;
+    /** 匯入者為組長時提供其組別，套用組長人力調整規則 */
+    leader?: { groupId: string | null };
+  } = { canMarkDone: true },
 ): ImportPlan {
   const has = (f: string) => parsed.fields.has(f);
   const tasksById = new Map(ctx.tasks.map((t) => [t.id, t]));
@@ -451,6 +458,8 @@ export function buildImportPlan(
   const subSpecs = taskSpecs.filter((s) => !["priority", "columnId"].includes(s.field));
   const normDate = (v: string) => { const d = parseDate(v); return d.ok ? d.value : v; };
 
+  const leaderUsers = new Map<string, AssigneeInfo>(ctx.users.map((u) => [u.memberId, { groupId: u.groupId, name: u.name }]));
+
   const planRows: PlanRow[] = rows.map((row) => {
     const specs = row.kind === "task" ? taskSpecs : subSpecs;
     let data = row.data;
@@ -486,6 +495,22 @@ export function buildImportPlan(
       changes = [];
     }
 
+    // 組長人力調整規則（與 PUT /api/tasks/:id 一致）
+    let createNewBlockedReason: string | undefined;
+    if (perms.leader && status !== "error") {
+      const current = status === "new" ? "" : (row.target?.assignee ?? "");
+      const next = data.assignee ?? current;
+      const error = checkLeaderAssignChange(perms.leader.groupId, leaderUsers, current, next);
+      if (error) {
+        row.errors.push(error);
+        status = "error";
+        changes = [];
+      } else if (status === "modified") {
+        // 另存為新工項 = 以 next 為負責人新增一筆，視同從未指派改為 next
+        createNewBlockedReason = checkLeaderAssignChange(perms.leader.groupId, leaderUsers, "", next) ?? undefined;
+      }
+    }
+
     const fields = status === "new"
       ? specs.filter((s) => s.field !== "title" && data[s.field as keyof TaskData] !== undefined && data[s.field as keyof TaskData] !== "")
           .map((s) => ({ label: s.label, value: s.format ? s.format(data[s.field as keyof TaskData]) : String(data[s.field as keyof TaskData]) }))
@@ -508,6 +533,7 @@ export function buildImportPlan(
       errors: row.errors,
       fields,
       baseline: baselineTask?.updatedAt.toISOString(),
+      createNewBlockedReason,
     };
   });
 
@@ -629,6 +655,11 @@ export async function commitImportPlan(
 
     const blocked = new Set<string>();
     for (const r of active) {
+      if (decisionOf(r) === "create_new" && r.createNewBlockedReason) {
+        blocked.add(r.key);
+        result.notImported.push({ key: r.key, rowNumber: r.rowNumber, title: r.title, reason: r.createNewBlockedReason });
+        continue;
+      }
       const reason = conflictReason(r);
       if (reason) {
         blocked.add(r.key);

@@ -4,11 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "seed": "tsx prisma/seed.ts",
     "build": "npx prisma generate && tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "test:watch": "vitest",
+    "test:db": "docker start pm-dashboard-test-pg || docker run -d --name pm-dashboard-test-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:16-alpine"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -32,7 +34,8 @@
     "pg": "^8.20.0",
     "prisma": "^7.8.0",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -40,6 +43,9 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.20.0",
-    "tsx": "^4.22.3"
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.0",
+    "tsx": "^4.22.3",
+    "vitest": "^5.0.2"
   }
 }

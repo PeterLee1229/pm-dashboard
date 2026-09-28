@@ -13,6 +13,7 @@ import { X } from "lucide-react";
 import MultiSelect from "./components/MultiSelect";
 import type { Member, Group, Task, Column, MeetingSeries, Risk, WeeklyReport, Project } from "./types";
 import { getCompletion, getEffectiveStartDate, getEffectiveEndDate, memberDisplay, findMemberById, normalizeDate, hasPermission, PRIORITY_CONFIG } from "./helpers";
+import { computeProgress } from "./reportCalc";
 
 import Sidebar from "./components/Sidebar";
 import TaskModal from "./components/TaskModal";
@@ -120,12 +121,18 @@ export default function App() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [showSearch]);
 
+  // 後端拒絕（403／404／400）時把原因顯示給使用者
+  const showError = (action: string, err: unknown) => {
+    setToast(`${action}：${err instanceof Error ? err.message : String(err)}`);
+  };
+
   const handleCreateMeetingSeries = async (name: string, type: string) => {
     try {
       const series = await apiCreateMeetingSeries(activeProjectId, { name, type });
       setMeetings(prev => [...prev, { ...series, records: [] }]);
     } catch (err) {
       console.error("建立會議系列失敗:", err);
+      showError("建立會議系列失敗", err);
     }
   };
 
@@ -135,6 +142,7 @@ export default function App() {
       setMeetings(prev => prev.filter(m => m.id !== id));
     } catch (err) {
       console.error("刪除會議系列失敗:", err);
+      showError("刪除會議系列失敗", err);
     }
   };
 
@@ -146,6 +154,7 @@ export default function App() {
       ));
     } catch (err) {
       console.error("新增會議紀錄失敗:", err);
+      showError("新增會議紀錄失敗", err);
     }
   };
 
@@ -157,6 +166,7 @@ export default function App() {
       ));
     } catch (err) {
       console.error("刪除會議紀錄失敗:", err);
+      showError("刪除會議紀錄失敗", err);
     }
   };
 
@@ -168,6 +178,7 @@ export default function App() {
       ));
     } catch (err) {
       console.error("更新會議紀錄失敗:", err);
+      showError("更新會議紀錄失敗", err);
     }
   };
 
@@ -177,6 +188,7 @@ export default function App() {
       setRisks(prev => [...prev, newRisk]);
     } catch (err) {
       console.error("建立風險失敗:", err);
+      showError("建立風險失敗", err);
     }
   };
 
@@ -186,6 +198,7 @@ export default function App() {
       setRisks(prev => prev.map(r => r.id === risk.id ? updated : r));
     } catch (err) {
       console.error("更新風險失敗:", err);
+      showError("更新風險失敗", err);
     }
   };
 
@@ -195,6 +208,7 @@ export default function App() {
       setRisks(prev => prev.filter(r => r.id !== id));
     } catch (err) {
       console.error("刪除風險失敗:", err);
+      showError("刪除風險失敗", err);
     }
   };
 
@@ -208,6 +222,7 @@ export default function App() {
       });
     } catch (err) {
       console.error("儲存週報失敗:", err);
+      showError("儲存週報失敗", err);
     }
   };
 
@@ -233,6 +248,7 @@ export default function App() {
       setActiveProjectId(newProject.id);
     } catch (err) {
       console.error("新增專案失敗:", err);
+      showError("新增專案失敗", err);
     }
   };
 
@@ -245,6 +261,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("刪除專案失敗:", err);
+      showError("刪除專案失敗", err);
     }
   };
 
@@ -472,6 +489,11 @@ export default function App() {
     if (!hasPermission(currentProjectRole, "drag_task")) return;
 
     const activeCol = findColumn(active.id as string);
+    const draggedTask = activeCol?.tasks.find((t) => t.id === active.id);
+    if (draggedTask && !hasPermission(currentProjectRole, "edit_all_tasks") && draggedTask.assignee !== currentUser?.memberId) {
+      setToast("只能移動自己負責的任務");
+      return;
+    }
     let overCol = columns.find((c) => c.id === over.id);
     if (!overCol) overCol = findColumn(over.id as string);
     if (!activeCol || !overCol || activeCol.id === overCol.id) return;
@@ -498,7 +520,11 @@ export default function App() {
       }
     }
 
-    apiUpdateTask(active.id as string, { columnId: overCol.id }).catch(console.error);
+    apiUpdateTask(active.id as string, { columnId: overCol.id }).catch((err) => {
+      console.error("移動任務失敗:", err);
+      showError("移動任務失敗", err);
+      loadProjects();
+    });
 
     setColumns((cols) => cols.map((col) => {
       if (col.id === activeCol.id) return { ...col, tasks: col.tasks.filter((t) => t.id !== active.id) };
@@ -566,6 +592,7 @@ export default function App() {
       ));
     } catch (err) {
       console.error("新增任務失敗:", err);
+      showError("新增任務失敗", err);
     }
   };
 
@@ -577,6 +604,7 @@ export default function App() {
       ));
     } catch (err) {
       console.error("刪除任務失敗:", err);
+      showError("刪除任務失敗", err);
     }
   };
 
@@ -600,6 +628,7 @@ export default function App() {
       })));
     } catch (err) {
       console.error("更新任務失敗:", err);
+      showError("更新任務失敗", err);
     }
   };
 
@@ -726,8 +755,7 @@ export default function App() {
     }
   }, [showNotifications]);
 
-  const totalTasks = columns.reduce((s, c) => s + c.tasks.length, 0);
-  const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
+  const { totalTasks, doneTasks, taskCompletionRate } = computeProgress(columns);
   const showInitialSkeleton = useDelayedLoading(loading);
 
   if (!loggedIn) {
@@ -1105,7 +1133,7 @@ export default function App() {
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: totalTasks ? `${(doneTasks / totalTasks) * 100}%` : "0%" }} />
               </div>
-              <span className="progress-label">{totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0}%</span>
+              <span className="progress-label">{taskCompletionRate}%</span>
 
               {/* 搜尋按鈕 */}
               <button onClick={() => setShowSearch(true)} style={{
@@ -1352,6 +1380,7 @@ export default function App() {
             <MeetingsView
               meetings={meetings}
               projectMembers={projectMembers}
+              canManage={hasPermission(currentProjectRole, "manage_meetings")}
               onCreateSeries={handleCreateMeetingSeries}
               onDeleteSeries={handleDeleteMeetingSeries}
               onCreateRecord={handleCreateMeetingRecord}
@@ -1378,13 +1407,14 @@ export default function App() {
               weeklyReports={weeklyReports}
               onSaveNotes={handleSaveWeeklyNotes}
               projectName={activeProject?.name || ""}
+              canEditNotes={hasPermission(currentProjectRole, "manage_weekly")}
             />
           )}</Suspense>}
         </div>
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={projectMemberGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
+        <TaskModal task={editingTask} groups={projectMemberGroups} assigneeGroups={formattedGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
       )}
 
       {<Suspense fallback={null}>{showImportModal && (

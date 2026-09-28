@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import type { Column, Group, Risk, Task, WeeklyReport } from "../types";
-import { RISK_STATUS_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getWeekRange, formatDateStr, findMemberById, memberDisplay } from "../helpers";
+import type { Column, Group, Risk, WeeklyReport } from "../types";
+import { RISK_STATUS_CONFIG, getWeekRange, formatDateStr, findMemberById } from "../helpers";
+import { computeWeeklyReport, toWeeklyReportData } from "../reportCalc";
 
 const toWesternDate = (dateStr: string) => {
   const d = new Date(dateStr + "T00:00:00");
@@ -8,13 +9,15 @@ const toWesternDate = (dateStr: string) => {
 };
 import { exportWeeklyReportPDF, buildWeeklyReportMarkdown } from "../exportUtils";
 
-export default function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, projectName }: {
+export default function WeeklyReportView({ columns, groups, risks, weeklyReports, onSaveNotes, projectName, canEditNotes }: {
   columns: Column[];
   groups: Group[];
   risks: Risk[];
   weeklyReports: WeeklyReport[];
   onSaveNotes: (weekStart: string, weekEnd: string, notes: string) => void;
   projectName: string;
+  /** manage_weekly：編輯週報備註 */
+  canEditNotes: boolean;
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [hoursFilter, setHoursFilter] = useState<"week" | "month" | "all">("week");
@@ -39,58 +42,9 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
     onSaveNotes(weekStartStr, weekEndStr, notes);
   };
 
-  const allTasks = columns.flatMap((c) => c.tasks);
-
-  const isInWeek = (dateStr: string) => {
-    if (!dateStr) return false;
-    const d = new Date(dateStr);
-    return d >= weekStart && d <= weekEnd;
-  };
-
-  const completedTasks = allTasks.filter((t) =>
-    t.completedAt != null && isInWeek(t.completedAt)
-  );
-
-  const taskInWeek = (t: Task): boolean => {
-    if (t.subtasks.length === 0) return isInWeek(t.startDate) || isInWeek(t.endDate);
-    return t.subtasks.some((s) => isInWeek(s.startDate) || isInWeek(s.endDate));
-  };
-
-  const inProgressColumn = columns.find((c) => c.id === "inprogress");
-  const inProgressTasks = inProgressColumn
-    ? inProgressColumn.tasks.filter((t) => getCompletion(t) < 100 && taskInWeek(t))
-    : [];
-
-  const buildHoursMap = (isInRange: (dateStr: string) => boolean): Record<string, number> => {
-    const map: Record<string, number> = {};
-    allTasks.forEach((t) => {
-      if (t.subtasks.length === 0) {
-        (t.timeLogs || []).filter((l) => isInRange(l.date)).forEach((l) => {
-          const member = findMemberById(groups, t.assignee);
-          const key = member ? memberDisplay(member) : t.assignee || "未指派";
-          map[key] = (map[key] || 0) + l.hours;
-        });
-      }
-      t.subtasks.forEach((s) => {
-        (s.timeLogs || []).filter((l) => isInRange(l.date)).forEach((l) => {
-          const member = findMemberById(groups, s.assignee);
-          const key = member ? memberDisplay(member) : s.assignee || "未指派";
-          map[key] = (map[key] || 0) + l.hours;
-        });
-      });
-    });
-    return map;
-  };
-
-  const weekHoursMap = buildHoursMap(isInWeek);
-
-  const isInMonth = (dateStr: string) => {
-    if (!dateStr) return false;
-    const d = new Date(dateStr);
-    return d.getFullYear() === targetDate.getFullYear() && d.getMonth() === targetDate.getMonth();
-  };
-  const monthHoursMap = buildHoursMap(isInMonth);
-  const allHoursMap = buildHoursMap(() => true);
+  const {
+    completedTasks, inProgressTasks, weekHoursMap, monthHoursMap, allHoursMap, totalWeekHours, activeRisks, nextWeekTasks,
+  } = computeWeeklyReport(columns, groups, risks, targetDate);
 
   const HOURS_FILTER_MAP: Record<"week" | "month" | "all", Record<string, number>> = {
     week: weekHoursMap, month: monthHoursMap, all: allHoursMap,
@@ -98,64 +52,10 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
   const displayedHoursMap = HOURS_FILTER_MAP[hoursFilter];
   const totalDisplayedHours = Math.round(Object.values(displayedHoursMap).reduce((s, h) => s + h, 0) * 10) / 10;
 
-  const totalWeekHours = Math.round(Object.values(weekHoursMap).reduce((s, h) => s + h, 0) * 10) / 10;
-
-  const activeRisks = risks.filter((r) => r.status !== "resolved");
-
-  const nextWeekStart = new Date(weekEnd);
-  nextWeekStart.setDate(nextWeekStart.getDate() + 1);
-  const nextWeekEnd = new Date(nextWeekStart);
-  nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
-
-  const isInNextWeek = (dateStr: string) => {
-    if (!dateStr) return false;
-    const d = new Date(dateStr);
-    return d >= nextWeekStart && d <= nextWeekEnd;
-  };
-
-  const nextWeekTasks = allTasks.filter((t) => {
-    const comp = getCompletion(t);
-    if (comp >= 100) return false;
-    const effectiveStart = getEffectiveStartDate(t);
-    const effectiveEnd = getEffectiveEndDate(t);
-    if (isInNextWeek(effectiveStart) || isInNextWeek(effectiveEnd)) return true;
-    if (effectiveStart && effectiveEnd) {
-      const s = new Date(effectiveStart);
-      const e = new Date(effectiveEnd);
-      if (s <= nextWeekEnd && e >= nextWeekStart) return true;
-    }
-    return false;
-  });
-
-  const buildReportData = () => ({
-    completedTasks: completedTasks.map((t) => ({
-      title: t.title,
-      group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
-    })),
-    inProgressTasks: inProgressTasks.map((t) => ({
-      title: t.title,
-      group: groups.find((g) => g.id === t.groupId)?.name || "未分組",
-      completion: getCompletion(t),
-    })),
-    weekHours: Object.entries(weekHoursMap)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, hours]) => ({ name, hours: Math.round(hours * 10) / 10 })),
-    totalHours: totalWeekHours,
-    activeRisks: activeRisks.map((r) => ({
-      title: r.title,
-      status: RISK_STATUS_CONFIG[r.status].label,
-    })),
-    nextWeekTasks: nextWeekTasks.map((t) => {
-      const group = groups.find((g) => g.id === t.groupId);
-      const assignee = findMemberById(groups, t.assignee);
-      return {
-        title: t.title,
-        group: group?.name || "未分組",
-        assignee: assignee ? memberDisplay(assignee) : "未指派",
-      };
-    }),
-    notes,
-  });
+  const buildReportData = () => toWeeklyReportData(
+    { weekStart, weekEnd, completedTasks, inProgressTasks, weekHoursMap, monthHoursMap, allHoursMap, totalWeekHours, activeRisks, nextWeekTasks },
+    groups, notes,
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -362,15 +262,15 @@ export default function WeeklyReportView({ columns, groups, risks, weeklyReports
       <div style={{ background: "#161b27", borderRadius: 12, padding: 18, border: "1px solid #ffffff08" }}>
         <p style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 12 }}>📝 PM 備註</p>
         <textarea className="field-input field-textarea" value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="輸入本週備註、特殊事項..." rows={4} />
-        <button onClick={handleSaveNotes}
+          onChange={(e) => setNotes(e.target.value)} readOnly={!canEditNotes}
+          placeholder={canEditNotes ? "輸入本週備註、特殊事項..." : "（僅 Owner / PM 可編輯備註）"} rows={4} />
+        {canEditNotes && <button onClick={handleSaveNotes}
           style={{
             marginTop: 10, background: "#6366f1", border: "none", borderRadius: 8,
             color: "#fff", fontSize: 13, fontWeight: 600, padding: "8px 20px", cursor: "pointer"
           }}>
           儲存備註
-        </button>
+        </button>}
       </div>
     </div>
   );
