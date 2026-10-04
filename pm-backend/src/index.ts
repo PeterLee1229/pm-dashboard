@@ -23,6 +23,7 @@ import * as risks from "./services/risks";
 import * as okrs from "./services/okrs";
 import * as reports from "./services/reports";
 import { searchProject } from "./services/search";
+import { mcpCors, mountMcp } from "./mcp/routes";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 if (!JWT_SECRET) {
@@ -35,6 +36,7 @@ export const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "5mb" }));
 
+app.use(["/mcp", "/.well-known"], mcpCors);
 app.use(cors({
   origin: [
     "http://localhost:5173",
@@ -709,6 +711,10 @@ app.get("/api/templates/tasks", (_req, res) => {
   res.setHeader("Content-Disposition", "attachment; filename=task_import_template.csv");
   res.send(csv);
 });
+
+// ── MCP connector（OAuth 授權伺服器、/mcp、同意頁與管理 API） ──────────
+
+mountMcp(app, { authMiddleware, requireAdmin });
 
 // ── 錯誤處理：service 丟出的錯誤統一轉成 HTTP 回應 ─────────────────────
 

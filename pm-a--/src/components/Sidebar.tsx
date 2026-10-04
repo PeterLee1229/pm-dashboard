@@ -4,8 +4,8 @@ import type { Project } from "../types";
 import { hasPermission } from "../helpers";
 
 export default function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange, sidebarOpen, onClose }: {
-  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr";
-  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr") => void;
+  view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr" | "ai_connections";
+  setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr" | "ai_connections") => void;
   projects: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
@@ -141,6 +141,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
             </button>
           )}
           {nav("activities", t("sidebar.activities"), <Clock size={16} />)}
+          {nav("ai_connections", t("sidebar.aiConnections"), <span style={{ fontSize: 14, width: 16, textAlign: "center" }}>🤖</span>)}
 
           {currentUser?.role === "admin" && (
             <>

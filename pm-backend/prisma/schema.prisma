@@ -216,3 +216,73 @@ model KeyResult {
   objective   Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
 }
+// ── MCP connector（OAuth 2.1 授權伺服器 + 稽核） ─────────────────────
+// token、code、client secret 一律只存 SHA-256 hash
+
+model OAuthClient {
+  id               String   @id @default(cuid())
+  clientId         String   @unique
+  clientSecretHash String?
+  clientName       String?
+  redirectUris     String[]
+  /// DCR 註冊時的完整 client metadata（不含 secret），用於還原 OAuthClientInformationFull
+  metadata         Json     @default("{}")
+  createdAt        DateTime @default(now())
+}
+
+model OAuthAuthCode {
+  id            String    @id @default(cuid())
+  codeHash      String    @unique
+  clientId      String
+  userId        String
+  redirectUri   String
+  codeChallenge String
+  scope         String
+  resource      String?
+  expiresAt     DateTime  // 10 分鐘
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+model OAuthToken {
+  id               String    @id @default(cuid())
+  accessTokenHash  String    @unique
+  refreshTokenHash String    @unique
+  clientId         String
+  userId           String
+  scope            String
+  resource         String?
+  /// 由哪一個 auth code 核發（refresh rotate 時沿用），code 被重複使用時據此撤銷整串 token
+  authCodeId       String?
+  accessExpiresAt  DateTime  // 1 小時
+  refreshExpiresAt DateTime  // 30 天
+  revokedAt        DateTime?
+  lastUsedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId])
+  @@index([authCodeId])
+}
+
+model McpAuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  clientId    String
+  tool        String
+  params      Json
+  resultCount Int?
+  success     Boolean
+  errorCode   String?
+  durationMs  Int
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  id         Int      @id @default(1) // 整張表只有一列
+  mcpEnabled Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+  updatedBy  String?
+}

@@ -7,6 +7,7 @@ import { app } from "../src/index";
 export const api = () => request(app);
 
 const TABLES = [
+  "OAuthClient", "OAuthAuthCode", "OAuthToken", "McpAuditLog", "SystemSetting",
   "KeyResult", "Objective", "Attachment", "ActivityLog", "Comment", "Notification",
   "WeeklyReport", "Risk", "MeetingRecord", "MeetingSeries", "ProjectMember",
   "SubTask", "Task", "Project", "User", "Group",

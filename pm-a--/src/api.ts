@@ -419,3 +419,37 @@ export async function deleteAttachment(id: string) {
     method: "DELETE",
   });
 }
+
+// ── AI 連線（MCP connector） ────────────────────────────────
+
+/** 同意頁：查詢授權請求（client 名稱、權限、系統是否開放） */
+export async function getOAuthConsent(request: string) {
+  return apiFetch(`/oauth/consent?request=${encodeURIComponent(request)}`);
+}
+
+/** 同意頁：允許或拒絕，回傳要導回 AI 服務的網址 */
+export async function decideOAuthConsent(request: string, approve: boolean): Promise<{ redirectUrl: string }> {
+  return apiFetch("/oauth/consent", { method: "POST", body: JSON.stringify({ request, approve }) });
+}
+
+export async function getAiConnections() {
+  return apiFetch("/oauth/connections");
+}
+
+export async function revokeAiConnection(id: string) {
+  return apiFetch(`/oauth/connections/${id}`, { method: "DELETE" });
+}
+
+export async function getMcpSettings() {
+  return apiFetch("/admin/mcp/settings");
+}
+
+export async function updateMcpSettings(mcpEnabled: boolean) {
+  return apiFetch("/admin/mcp/settings", { method: "PUT", body: JSON.stringify({ mcpEnabled }) });
+}
+
+export async function getMcpAuditLogs(filters: { userId?: string; tool?: string; from?: string; to?: string; limit?: number; offset?: number }) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== "") params.set(k, String(v));
+  return apiFetch(`/admin/mcp/audit-logs?${params.toString()}`);
+}

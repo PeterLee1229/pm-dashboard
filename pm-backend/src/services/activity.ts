@@ -22,10 +22,23 @@ export async function notifyAssignee(ctx: Ctx, assigneeMemberId: string, type: s
   }
 }
 
-export async function listActivities(ctx: Ctx, projectId: string, opts: { take?: number } = {}) {
+/**
+ * 專案活動紀錄（新到舊）。from / to 為台灣時區的 YYYY-MM-DD（含頭尾），userId 篩選操作者。
+ */
+export async function listActivities(
+  ctx: Ctx, projectId: string,
+  opts: { take?: number; from?: string; to?: string; userId?: string } = {},
+) {
   await assertCanRead(ctx, projectId);
+  const createdAt: { gte?: Date; lte?: Date } = {};
+  if (opts.from) createdAt.gte = new Date(`${opts.from}T00:00:00+08:00`);
+  if (opts.to) createdAt.lte = new Date(`${opts.to}T23:59:59.999+08:00`);
   return prisma.activityLog.findMany({
-    where: { projectId },
+    where: {
+      projectId,
+      ...(opts.userId ? { userId: opts.userId } : {}),
+      ...(opts.from || opts.to ? { createdAt } : {}),
+    },
     include: { user: { select: { id: true, name: true, memberId: true } } },
     orderBy: { createdAt: "desc" },
     take: opts.take ?? 100,
