@@ -12,8 +12,8 @@ export type ProjectRole = (typeof PROJECT_ROLES)[number];
 export type EffectiveRole = ProjectRole | "admin";
 
 /**
- * 角色 × 操作權限矩陣（admin 一律允許）。
- * 來源：前端 hasPermission（pm-a--/src/helpers.ts），前端沒有定義的操作沿用原本後端規則。
+ * 角色 × 操作權限矩陣（admin 一律允許），採最小權限。
+ * 前端 hasPermission（pm-a--/src/helpers.ts）使用對應的權限鍵（註解中列出），兩邊必須同步。
  */
 export const PERMISSIONS = {
   "project.update":        ["owner", "pm"],
@@ -22,14 +22,17 @@ export const PERMISSIONS = {
   "task.delete":           ["owner", "pm", "group_leader"],              // delete_task
   "task.edit_all":         ["owner", "pm", "group_leader"],              // edit_all_tasks
   "task.edit_own":         ["owner", "pm", "group_leader", "member"],    // edit_own_task（member 限自己負責的任務）
+  "task.assign":           ["owner", "pm", "group_leader"],              // assign_task（組長另受組別規則限制；member 不可改派）
   "task.move_done":        ["owner", "pm"],                              // drag_to_done（移入或移出「已完成」）
   "task.import":           ["owner", "pm", "group_leader"],              // 匯入按鈕以 create_task 控制
   "comment.create":        ["owner", "pm", "group_leader", "member"],    // 評論輸入框以 edit_own_task 控制
-  "attachment.delete_any": ["owner", "pm", "group_leader"],              // 附件刪除鈕以 edit_all_tasks 控制（上傳者本人也可刪）
+  "attachment.delete_any": ["owner", "pm"],                              // delete_attachments（上傳者本人也可刪）
   "meeting.manage":        ["owner", "pm", "group_leader"],              // manage_meetings（系列與紀錄）
-  "risk.manage":           ["owner", "pm", "group_leader", "member"],    // manage_risks
+  "risk.create":           ["owner", "pm", "group_leader", "member"],    // create_risk
+  "risk.manage":           ["owner", "pm", "group_leader"],              // manage_risks（編輯、刪除）
   "weekly.manage":         ["owner", "pm"],                              // manage_weekly
-  "okr.manage":            ["owner", "pm"],                              // OKRView 以 manage_weekly 控制
+  "okr.manage":            ["owner", "pm"],                              // manage_okr
+  "member.view_email":     ["owner", "pm", "group_leader", "member"],    // view_member_email（viewer 看不到成員 email）
 } as const satisfies Record<string, readonly ProjectRole[]>;
 export type Action = keyof typeof PERMISSIONS;
 
@@ -82,10 +85,13 @@ export async function canEditTask(ctx: Ctx, role: EffectiveRole, task: { assigne
 }
 
 // ── GroupLeader 人力調整規則 ──────────────────────────────────────────
-// 1. 只能把任務指派給自己 group 的成員
-// 2. 只能變更「目前 assignee 屬於自己 group，或尚未指派」的任務的 assignee
+// 1. 只能把任務（或風險）指派給自己 group 的成員
+// 2. 只能變更「目前 assignee 屬於自己 group，或尚未指派」的 assignee
+// 3. 只能變更「目前屬於自己組、或尚未分組」的任務 groupId，且新的 groupId 只能是自己的組
+// 另外：member 不能變更任何任務的 assignee（task.assign）
 
 export type AssigneeInfo = { groupId: string | null; name: string };
+export type Change = { current: string; next: string };
 
 /**
  * 純函式：檢查一次 assignee 變更（current → next）是否符合 GroupLeader 規則。
@@ -96,6 +102,7 @@ export function checkLeaderAssignChange(
   users: Map<string, AssigneeInfo>,
   current: string,
   next: string,
+  subject = "任務",
 ): string | null {
   if (current === next) return null;
   const label = (memberId: string) => {
@@ -105,10 +112,33 @@ export function checkLeaderAssignChange(
   const inMyGroup = (memberId: string) => !!leaderGroupId && users.get(memberId)?.groupId === leaderGroupId;
 
   if (current && !inMyGroup(current)) {
-    return `組長只能調整自己組別成員負責的任務：目前負責人「${label(current)}」不屬於你的組別`;
+    return `組長只能調整自己組別成員負責的${subject}：目前負責人「${label(current)}」不屬於你的組別`;
   }
   if (next && !inMyGroup(next)) {
-    return `組長只能將任務指派給自己組別的成員：「${label(next)}」不屬於你的組別`;
+    return `組長只能將${subject}指派給自己組別的成員：「${label(next)}」不屬於你的組別`;
+  }
+  return null;
+}
+
+/**
+ * 純函式：檢查一次任務 groupId 變更（current → next）是否符合 GroupLeader 規則。
+ * groupNames 用於錯誤訊息；空字串代表未分組。
+ */
+export function checkLeaderGroupChange(
+  leaderGroupId: string | null,
+  groupNames: Map<string, string>,
+  current: string,
+  next: string,
+): string | null {
+  if (current === next) return null;
+  const label = (id: string) => groupNames.get(id) ?? id;
+  if (current && current !== leaderGroupId) {
+    return `組長只能調整自己組別的任務：此任務目前屬於「${label(current)}」`;
+  }
+  if (!leaderGroupId || next !== leaderGroupId) {
+    return next
+      ? `組長只能將任務設為自己的組別：「${label(next)}」不是你的組別`
+      : "組長只能將任務設為自己的組別，不能改為未分組";
   }
   return null;
 }
@@ -127,12 +157,14 @@ export async function loadAssigneeInfo(memberIds: string[]): Promise<Map<string,
   return new Map(users.map((u) => [u.memberId, { groupId: u.groupId, name: u.name }]));
 }
 
-/**
- * 對一組 assignee 變更套用 GroupLeader 規則；非 group_leader 角色直接通過。
- * 違反時丟 ForbiddenError。
- */
-export async function assertCanAssign(
-  ctx: Ctx, role: EffectiveRole, changes: { current: string; next: string }[],
+export async function loadGroupNames(): Promise<Map<string, string>> {
+  const groups = await prisma.group.findMany({ select: { id: true, name: true } });
+  return new Map(groups.map((g) => [g.id, g.name]));
+}
+
+/** 只套用 GroupLeader 的負責人規則（風險負責人等）；非 group_leader 角色直接通過 */
+export async function assertLeaderAssignRules(
+  ctx: Ctx, role: EffectiveRole, changes: Change[], subject = "任務",
 ): Promise<void> {
   if (role !== "group_leader") return;
   const effective = changes.filter((c) => c.current !== c.next);
@@ -142,7 +174,29 @@ export async function assertCanAssign(
     loadAssigneeInfo(effective.flatMap((c) => [c.current, c.next])),
   ]);
   for (const c of effective) {
-    const error = checkLeaderAssignChange(leaderGroupId, users, c.current, c.next);
+    const error = checkLeaderAssignChange(leaderGroupId, users, c.current, c.next, subject);
+    if (error) throw new ForbiddenError(error);
+  }
+}
+
+/**
+ * 任務負責人變更：需有 task.assign 權限（member 一律不可），組長另受組別規則限制。
+ * 違反時丟 ForbiddenError。
+ */
+export async function assertCanAssign(ctx: Ctx, role: EffectiveRole, changes: Change[]): Promise<void> {
+  if (!changes.some((c) => c.current !== c.next)) return;
+  if (!can(role, "task.assign")) throw new ForbiddenError("只有 Owner、PM 與組長可以變更任務負責人");
+  await assertLeaderAssignRules(ctx, role, changes, "任務");
+}
+
+/** 任務 groupId 變更：組長受組別規則限制；其他可編輯任務的角色不受限 */
+export async function assertCanChangeGroup(ctx: Ctx, role: EffectiveRole, changes: Change[]): Promise<void> {
+  if (role !== "group_leader") return;
+  const effective = changes.filter((c) => c.current !== c.next);
+  if (effective.length === 0) return;
+  const [leaderGroupId, groupNames] = await Promise.all([loadLeaderGroupId(ctx), loadGroupNames()]);
+  for (const c of effective) {
+    const error = checkLeaderGroupChange(leaderGroupId, groupNames, c.current, c.next);
     if (error) throw new ForbiddenError(error);
   }
 }

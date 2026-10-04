@@ -1116,7 +1116,7 @@ export default function App() {
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             OKR · {activeProject.name}
           </h2>
-          <OKRView projectId={activeProject.id} canManage={hasPermission(currentProjectRole, "manage_weekly")} />
+          <OKRView projectId={activeProject.id} canManage={hasPermission(currentProjectRole, "manage_okr")} />
         </div>
       ) : null}</Suspense>}
 
@@ -1394,6 +1394,7 @@ export default function App() {
               onCreateRisk={handleCreateRisk}
               onUpdateRisk={handleUpdateRisk}
               onDeleteRisk={handleDeleteRisk}
+              canCreate={hasPermission(currentProjectRole, "create_risk")}
               canManage={hasPermission(currentProjectRole, "manage_risks")}
               projectMembers={projectMembers}
               currentProjectRole={currentProjectRole}

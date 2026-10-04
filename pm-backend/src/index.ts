@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import cors from "cors";
 import cron from "node-cron";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { prisma } from "./db";
 import { HttpError, parseInput } from "./errors";
 import { checkDueTasks } from "./scheduler";
@@ -30,6 +31,8 @@ if (!JWT_SECRET) {
 }
 
 export const app = express();
+// Railway 前面有一層 proxy；rate limit 需要以 X-Forwarded-For 取得真實 IP
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "5mb" }));
 
 app.use(cors({
@@ -175,8 +178,16 @@ app.get("/api/groups", authMiddleware, async (req: any, res) => {
   res.json(await listGroupsWithUsers(req.ctx));
 });
 
-// 註冊頁（尚未登入）選擇組別用，只回傳組別名稱
-app.get("/api/groups/options", async (_req, res) => {
+// 註冊頁（尚未登入）選擇組別用，只回傳組別名稱。
+// 商業化改成邀請制註冊後，移除這支 endpoint（連同前端 getGroupOptions）
+const groupOptionsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "請求過於頻繁，請稍後再試" },
+});
+app.get("/api/groups/options", groupOptionsLimiter, async (_req, res) => {
   const groups = await prisma.group.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true, color: true },
@@ -211,13 +222,13 @@ app.get("/api/projects/:projectId/summary", authMiddleware, async (req: any, res
 
 app.get("/api/projects/:projectId/members", authMiddleware, async (req: any, res) => {
   const { projectId } = req.params;
-  await assertCanRead(req.ctx, projectId);
+  const role = await assertCanRead(req.ctx, projectId);
   const members = await prisma.projectMember.findMany({
     where: { projectId },
     include: {
       user: {
         select: {
-          id: true, name: true, memberId: true, email: true,
+          id: true, name: true, memberId: true, email: can(role, "member.view_email"),
           group: { select: { id: true, name: true, color: true } }
         }
       }

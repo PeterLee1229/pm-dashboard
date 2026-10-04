@@ -177,7 +177,8 @@ describe("CSV 匯入套用 GroupLeader 規則", () => {
     const res = await preview(f.tokens.leader, header + `${f.tasks.ofMemberB.id},主工項,B組任務改名,${f.users.memberB.memberId}\n`);
     expect(res.body.summary.modified).toBe(1);
     const row = res.body.rows[0];
-    expect(row.createNewBlockedReason).toContain("不屬於你的組別");
+    // 此任務屬於 B 組：另存為新工項會建立一筆 B 組任務，先被組別規則擋下
+    expect(row.createNewBlockedReason).toContain("「B組」不是你的組別");
 
     const commit = await api().post(`/api/projects/${f.p1.id}/tasks/import/commit`)
       .set("Authorization", `Bearer ${f.tokens.leader}`)
@@ -226,5 +227,113 @@ describe("輸入驗證", () => {
     const after = await prisma.risk.findUniqueOrThrow({ where: { id: f.risk.id } });
     expect(after.projectId).toBe(f.p1.id);
     expect(after.title).toBe("改名");
+  });
+});
+
+// 裁決 #4：組長只能變更「目前屬於自己組、或尚未分組」的任務的 groupId，且新的 groupId 只能是自己的組
+describe("GroupLeader 變更任務組別", () => {
+  it("繞道情境：先把別組的任務改成自己的組，第一步就被擋下，之後也無法改派", async () => {
+    // B 組、尚未指派的任務：負責人規則本身擋不住，必須靠組別規則
+    const t = await prisma.task.create({ data: { title: "B組未指派", groupId: f.groups.B.id, projectId: f.p1.id } });
+    const step1 = await put(f.tokens.leader, t.id, { groupId: f.groups.A.id });
+    expect(step1.status).toBe(403);
+    expect(step1.body.error).toContain("B組");
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).groupId).toBe(f.groups.B.id);
+
+    // 一次送出「改組 + 改派」也一樣被擋
+    const combined = await put(f.tokens.leader, t.id, { groupId: f.groups.A.id, assignee: f.users.member.memberId });
+    expect(combined.status).toBe(403);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).assignee).toBe("");
+  });
+
+  it("未分組 → 自己的組：允許", async () => {
+    expect((await put(f.tokens.leader, f.tasks.unassigned.id, { groupId: f.groups.A.id })).status).toBe(200);
+  });
+
+  it("未分組 → 別組：403", async () => {
+    expect((await put(f.tokens.leader, f.tasks.unassigned.id, { groupId: f.groups.B.id })).status).toBe(403);
+  });
+
+  it("自己的組 → 別組、自己的組 → 未分組：403", async () => {
+    expect((await put(f.tokens.leader, f.tasks.ofMember.id, { groupId: f.groups.B.id })).status).toBe(403);
+    const toNone = await put(f.tokens.leader, f.tasks.ofMember.id, { groupId: "" });
+    expect(toNone.status).toBe(403);
+    expect(toNone.body.error).toContain("未分組");
+  });
+
+  it("別組任務的 groupId 不變時，可以編輯其他欄位", async () => {
+    expect((await put(f.tokens.leader, f.tasks.ofMemberB.id, { groupId: f.groups.B.id, description: "x" })).status).toBe(200);
+  });
+
+  it("建立任務時只能設為自己的組或不分組", async () => {
+    const post = (groupId: string) => api().post(`/api/projects/${f.p1.id}/tasks`)
+      .set("Authorization", `Bearer ${f.tokens.leader}`).send({ title: "新任務", groupId });
+    expect((await post(f.groups.B.id)).status).toBe(403);
+    expect((await post(f.groups.A.id)).status).toBe(201);
+    expect((await post("")).status).toBe(201);
+  });
+
+  it("子工項的組別也適用：B 組子工項不能改成 A 組；新子工項不能設為 B 組", async () => {
+    const [subA, subB] = f.tasks.withSubtasks.subtasks;
+    const change = await put(f.tokens.leader, f.tasks.withSubtasks.id, {
+      subtasks: [subA, { ...subB, groupId: f.groups.A.id }],
+    });
+    expect(change.status).toBe(403);
+    const add = await put(f.tokens.leader, f.tasks.withSubtasks.id, {
+      subtasks: [subA, subB, { title: "新子工項", groupId: f.groups.B.id }],
+    });
+    expect(add.status).toBe(403);
+  });
+
+  it("規則只套用在 GroupLeader：PM 可以任意變更組別", async () => {
+    expect((await put(f.tokens.pm, f.tasks.ofMemberB.id, { groupId: f.groups.A.id })).status).toBe(200);
+  });
+
+  it("CSV 匯入：組長把別組任務改成自己的組列為錯誤", async () => {
+    const res = await api().post(`/api/projects/${f.p1.id}/tasks/import/preview`)
+      .set("Authorization", `Bearer ${f.tokens.leader}`)
+      .send({ csv: `工項ID,類型,任務名稱,組別\n${f.tasks.ofMemberB.id},主工項,B組成員的任務,A組\n` });
+    expect(res.body.summary.error).toBe(1);
+    expect(res.body.rows[0].errors.join()).toContain("B組");
+  });
+});
+
+// 裁決 #5：member 不能變更任何任務的 assignee（包括自己負責的任務）
+describe("Member 不能改派任務", () => {
+  it("不能改派自己負責的任務（改給別人或取消指派）", async () => {
+    const toOther = await put(f.tokens.member, f.tasks.ofMember.id, { assignee: f.users.leader.memberId });
+    expect(toOther.status).toBe(403);
+    expect(toOther.body.error).toContain("負責人");
+    expect((await put(f.tokens.member, f.tasks.ofMember.id, { assignee: "" })).status).toBe(403);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: f.tasks.ofMember.id } })).assignee).toBe(f.users.member.memberId);
+  });
+
+  it("負責人不變時可以編輯自己的任務", async () => {
+    const res = await put(f.tokens.member, f.tasks.ofMember.id, {
+      assignee: f.users.member.memberId, description: "進度更新", completion: 50,
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("子工項：不能改派、不能刪除有負責人的子工項、不能新增有負責人的子工項；可以新增未指派的子工項", async () => {
+    const own = await prisma.task.create({
+      data: {
+        title: "member 的任務（有子工項）", assignee: f.users.member.memberId, projectId: f.p1.id,
+        subtasks: { create: [{ title: "子一", assignee: f.users.member.memberId }, { title: "子二" }] },
+      },
+      include: { subtasks: true },
+    });
+    const [s1, s2] = own.subtasks;
+    expect((await put(f.tokens.member, own.id, { subtasks: [{ ...s1, assignee: f.users.leader.memberId }, s2] })).status).toBe(403);
+    expect((await put(f.tokens.member, own.id, { subtasks: [s2] })).status).toBe(403);
+    expect((await put(f.tokens.member, own.id, { subtasks: [s1, s2, { title: "新", assignee: f.users.member.memberId }] })).status).toBe(403);
+    const ok = await put(f.tokens.member, own.id, { subtasks: [s1, s2, { title: "新（未指派）" }] });
+    expect(ok.status).toBe(200);
+    expect(ok.body.subtasks).toHaveLength(3);
+  });
+
+  it("Owner、PM 可以改派", async () => {
+    expect((await put(f.tokens.owner, f.tasks.ofMember.id, { assignee: f.users.memberB.memberId })).status).toBe(200);
+    expect((await put(f.tokens.pm, f.tasks.ofMember.id, { assignee: f.users.member.memberId })).status).toBe(200);
   });
 });

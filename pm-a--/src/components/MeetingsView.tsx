@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Flag } from "lucide-react";
 import type { MeetingRecord, MeetingSeries } from "../types";
+import { normalizeUrl, safeHref } from "../helpers";
 
 export const MEETING_TYPE_LEGEND: { type: "regular" | "adhoc"; label: string; color: string; description: string }[] = [
   { type: "regular", label: "定期", color: "#6366f1", description: "固定週期召開的會議，如每週站會、月會" },
@@ -179,7 +180,7 @@ export function NewRecordForm({ projectMembers, onSave, onCancel }: {
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn-cancel" style={{ flex: 1 }} onClick={onCancel}>取消</button>
         <button className="btn-save" style={{ flex: 2 }} onClick={() => {
-          if (date) onSave({ id: "mr" + Date.now(), date, attendees, summary, externalLink });
+          if (date) onSave({ id: "mr" + Date.now(), date, attendees, summary, externalLink: normalizeUrl(externalLink) });
         }}>儲存紀錄</button>
       </div>
     </div>
@@ -308,7 +309,7 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
             style={{ marginBottom: 10 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => {
-              if (onUpdate) { onUpdate(seriesId, record.id, { summary: editSummary, externalLink: editLink }); setEditing(false); }
+              if (onUpdate) { onUpdate(seriesId, record.id, { summary: editSummary, externalLink: normalizeUrl(editLink) }); setEditing(false); }
             }} style={{
               background: "#6366f1", border: "none", borderRadius: 6,
               color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 16px", cursor: "pointer",
@@ -340,8 +341,13 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
         )
       )}
 
-      {record.externalLink && !editing && (
-        <a href={record.externalLink} target="_blank" rel="noopener noreferrer"
+      {record.externalLink && !editing && !safeHref(record.externalLink) && (
+        <span title="連結格式不正確，無法開啟" style={{ fontSize: 11, color: "#94a3b8", display: "inline-block", marginTop: 8 }}>
+          📎 {record.externalLink}
+        </span>
+      )}
+      {safeHref(record.externalLink) && !editing && (
+        <a href={safeHref(record.externalLink)!} target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 11, color: "#6366f1", textDecoration: "none", display: "inline-block", marginTop: 8 }}>
           📎 查看完整記錄 →
         </a>

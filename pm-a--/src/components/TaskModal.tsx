@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, CheckCircle2, User, AlignLeft, Flag, Timer, Calendar } from "lucide-react";
 import type { Priority, TimeLog, Group, Task, SubTask } from "../types";
-import { PRIORITY_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getTotalHours, hasPermission } from "../helpers";
+import { PRIORITY_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getTotalHours, hasPermission, normalizeUrl, safeHref } from "../helpers";
 import { getComments, addComment, deleteComment, getAttachments, addAttachment, deleteAttachment } from "../api";
 import { Skeleton } from "./LoadingEmpty";
 
@@ -114,12 +114,21 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
     ? groups.filter((g) => g.id === currentUser?.group?.id)
     : groups;
 
-  // 組長人力調整規則（後端 services/permissions.ts 同步強制執行）：
-  // 只能變更「目前負責人屬於自己組別，或尚未指派」的任務／子工項的負責人
-  const myGroupMembers = assigneeGroups.find((g) => g.id === currentUser?.group?.id)?.members || [];
+  // 人力調整規則（後端 services/permissions.ts 同步強制執行）：
+  // - member 不能變更任何負責人（assign_task）
+  // - 組長只能變更「目前負責人屬於自己組別，或尚未指派」的負責人
+  // - 組長只能變更「目前屬於自己組、或尚未分組」的組別，且只能改成自己的組
+  const isLeader = currentProjectRole === "group_leader";
+  const myGroupId = currentUser?.group?.id;
+  const myGroupMembers = assigneeGroups.find((g) => g.id === myGroupId)?.members || [];
+  const canAssign = hasPermission(currentProjectRole, "assign_task");
   const canReassign = (originalAssignee: string) =>
-    currentProjectRole !== "group_leader" || !originalAssignee || myGroupMembers.some((m) => m.id === originalAssignee);
+    canAssign && (!isLeader || !originalAssignee || myGroupMembers.some((m) => m.id === originalAssignee));
+  const canChangeGroup = (originalGroupId: string) => !isLeader || !originalGroupId || originalGroupId === myGroupId;
+  /** 組長不能把已分組的任務改回未分組 */
+  const showUngroupedOption = (originalGroupId: string) => !isLeader || !originalGroupId;
   const assigneeLabel = (memberId: string) => {
+    if (!memberId) return "未指派";
     for (const g of assigneeGroups) {
       const m = g.members.find((x) => x.id === memberId);
       if (m) return `${m.name}（${m.id}）`;
@@ -127,19 +136,25 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
     return memberId;
   };
   const originalSubAssignee = (subId: string) => task.subtasks.find((s) => s.id === subId)?.assignee || "";
-  const mainAssigneeLocked = !canReassign(task.assignee);
-  const lockedHint = "別組成員負責，組長不可改派";
+  const originalSubGroup = (subId: string) => task.subtasks.find((s) => s.id === subId)?.groupId || "";
+  // 變更組別會清空負責人，所以組別與負責人一起鎖定
+  const mainAssigneeLocked = !canReassign(task.assignee) || !canChangeGroup(task.groupId);
+  const lockedHint = canAssign ? "別組的任務，組長不可改派" : "僅 Owner、PM 與組長可變更負責人";
+  const canDeleteAttachment = (a: { uploaderId: string }) => a.uploaderId === currentUser?.id || hasPermission(currentProjectRole, "delete_attachments");
 
   useEffect(() => {
     loadComments();
     loadAttachments();
   }, [task.id]);
 
+  // 自動補上負責人所屬組別；組長只會補成自己的組（後端不允許組長改到別組）
+  const autoGroupAllowed = (groupId: string) => currentProjectRole !== "group_leader" || groupId === currentUser?.group?.id;
+
   useEffect(() => {
     if (form.assignee && !form.groupId) {
       for (const g of groups) {
         const found = g.members?.find((m: any) => m.id === form.assignee);
-        if (found) {
+        if (found && autoGroupAllowed(g.id)) {
           setForm(prev => ({ ...prev, groupId: g.id }));
           break;
         }
@@ -153,7 +168,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
       if (sub.assignee && !sub.groupId) {
         for (const g of groups) {
           const found = g.members?.find((m: any) => m.id === sub.assignee);
-          if (found) {
+          if (found && autoGroupAllowed(g.id)) {
             changed = true;
             return { ...sub, groupId: g.id };
           }
@@ -176,7 +191,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   const handleAddAttachment = async () => {
     if (!newAttachName.trim() || !newAttachUrl.trim()) return;
     try {
-      const attachment = await addAttachment(task.id, newAttachName.trim(), newAttachUrl.trim());
+      const attachment = await addAttachment(task.id, newAttachName.trim(), normalizeUrl(newAttachUrl));
       setAttachments(prev => [attachment, ...prev]);
       setNewAttachName("");
       setNewAttachUrl("");
@@ -283,7 +298,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
         title={mainAssigneeLocked ? lockedHint : undefined}
         onChange={(e) => setForm({ ...form, groupId: e.target.value, assignee: "" })}
         style={{ opacity: form.subtasks.length > 0 || mainAssigneeLocked ? 0.4 : 1, cursor: form.subtasks.length > 0 || mainAssigneeLocked ? "not-allowed" : "auto" }}>
-        <option value="">未分組</option>
+        {showUngroupedOption(task.groupId) && <option value="">未分組</option>}
         {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
       </select>
     </div>
@@ -384,17 +399,20 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
           <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#0f1117", borderRadius: 8, padding: "8px 12px", border: "1px solid #ffffff08" }}>
             <span style={{ fontSize: 16 }}>📄</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <a href={a.url} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 12, fontWeight: 600, color: "#6366f1", textDecoration: "none" }}>
-                {a.name}
-              </a>
+              {safeHref(a.url) ? (
+                <a href={safeHref(a.url)!} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 12, fontWeight: 600, color: "#6366f1", textDecoration: "none" }}>
+                  {a.name}
+                </a>
+              ) : (
+                <span title="連結格式不正確，無法開啟" style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>{a.name}</span>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
                 <span style={{ fontSize: 10, color: "#475569" }}>{a.uploader?.name || ""}（{a.uploader?.memberId || ""}）</span>
                 <span style={{ fontSize: 10, color: "#475569" }}>{new Date(a.createdAt).toLocaleDateString("zh-TW")}</span>
               </div>
             </div>
-            {(a.uploaderId === currentUser?.id || currentUser?.role === "admin" ||
-              hasPermission(currentProjectRole, "edit_all_tasks")) && (
+            {canDeleteAttachment(a) && (
               <button onClick={() => handleDeleteAttachment(a.id)}
                 style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
                 <X size={12} />
@@ -504,7 +522,9 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
       )}
 
       {form.subtasks.map((sub, idx) => {
-        const subLocked = !canReassign(originalSubAssignee(sub.id));
+        const subLocked = !canReassign(originalSubAssignee(sub.id)) || !canChangeGroup(originalSubGroup(sub.id));
+        // 刪除有負責人的子工項等同移除負責人
+        const subDeletable = !originalSubAssignee(sub.id) || canReassign(originalSubAssignee(sub.id));
         return (
         <div key={sub.id} style={{ background: "#0f1117", border: "1px solid #ffffff10", borderRadius: 8, padding: 12, marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -513,7 +533,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
               updated[idx] = { ...sub, title: e.target.value };
               setForm({ ...form, subtasks: updated });
             }} style={{ background: "transparent", border: "none", color: "#e2e8f0", fontSize: 13, fontWeight: 600, outline: "none", flex: 1 }} />
-            {!subLocked && (
+            {subDeletable && (
               <button onClick={() => setForm({ ...form, subtasks: form.subtasks.filter((_, i) => i !== idx) })}
                 style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2 }}>
                 <X size={13} />
@@ -533,7 +553,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
               setForm({ ...form, subtasks: updated });
             }}
             style={{ marginBottom: 6, fontSize: 12 }}>
-            <option value="">選擇組別</option>
+            {showUngroupedOption(originalSubGroup(sub.id)) && <option value="">選擇組別</option>}
             {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
 

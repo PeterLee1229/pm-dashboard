@@ -125,12 +125,15 @@ export function RiskModal({ risk, onSave, onClose, projectMembers, currentProjec
 
 // ── Risk Matrix View ──────────────────────────────────────────────────
 
-export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk, canManage, projectMembers, currentProjectRole, currentUser }: {
+export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRisk, onDeleteRisk, canCreate, canManage, projectMembers, currentProjectRole, currentUser }: {
   risks: Risk[];
   groups: Group[];
   onCreateRisk: (risk: Risk) => void;
   onUpdateRisk: (risk: Risk) => void;
   onDeleteRisk: (id: string) => void;
+  /** create_risk：新增風險（含 member） */
+  canCreate: boolean;
+  /** manage_risks：編輯、刪除風險（不含 member） */
   canManage: boolean;
   projectMembers: any[];
   currentProjectRole: string;
@@ -175,7 +178,7 @@ export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRi
             );
           })}
         </div>
-        {canManage && (
+        {canCreate && (
           <button onClick={() => { setEditingRisk(null); setShowRiskModal(true); }}
             style={{
               background: "#6366f122", border: "1px solid #6366f144",

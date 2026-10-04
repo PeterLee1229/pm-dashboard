@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "../db";
 import { ForbiddenError, NotFoundError, parseInput } from "../errors";
-import { Ctx, assertCan, assertCanAssign, assertCanRead, can, canEditTask } from "./permissions";
+import { Change, Ctx, assertCan, assertCanAssign, assertCanChangeGroup, assertCanRead, can, canEditTask } from "./permissions";
 import { logActivity, notifyAssignee } from "./activity";
 
 // ── 輸入白名單 ────────────────────────────────────────────────────────
@@ -127,6 +127,7 @@ export async function createTask(ctx: Ctx, projectId: string, input: unknown) {
   if (data.columnId === "done" && !can(role, "task.move_done")) {
     throw new ForbiddenError("只有 PM 以上可以將任務標記為已完成");
   }
+  await assertCanChangeGroup(ctx, role, [{ current: "", next: data.groupId ?? "" }]);
   await assertCanAssign(ctx, role, [{ current: "", next: data.assignee ?? "" }]);
 
   const task = await prisma.task.create({
@@ -172,20 +173,28 @@ export async function updateTask(ctx: Ctx, taskId: string, input: unknown) {
       : "只有 PM 以上可以將任務從已完成移出");
   }
 
-  // 組長人力調整規則：主任務與每個子工項的 assignee 變更（含刪除子工項）都要檢查
-  const assignChanges: { current: string; next: string }[] = [];
+  // 人力調整規則：主任務與每個子工項的 assignee 變更（含刪除子工項）、groupId 變更都要檢查
+  // （member 不可改派；組長受組別規則限制）。先檢查組別，組長「先改組再改派」的繞道在第一步就會被擋下
+  const assignChanges: Change[] = [];
+  const groupChanges: Change[] = [];
   if (data.assignee !== undefined) assignChanges.push({ current: task.assignee, next: data.assignee });
+  if (data.groupId !== undefined) groupChanges.push({ current: task.groupId, next: data.groupId });
   if (data.subtasks) {
     const incoming = new Map(data.subtasks.filter((s) => s.id).map((s) => [s.id!, s]));
     for (const existing of task.subtasks) {
       const sub = incoming.get(existing.id);
       assignChanges.push({ current: existing.assignee, next: sub ? (sub.assignee ?? "") : "" });
+      if (sub) groupChanges.push({ current: existing.groupId, next: sub.groupId ?? "" });
     }
     const existingIds = new Set(task.subtasks.map((s) => s.id));
     for (const sub of data.subtasks) {
-      if (!sub.id || !existingIds.has(sub.id)) assignChanges.push({ current: "", next: sub.assignee ?? "" });
+      if (!sub.id || !existingIds.has(sub.id)) {
+        assignChanges.push({ current: "", next: sub.assignee ?? "" });
+        groupChanges.push({ current: "", next: sub.groupId ?? "" });
+      }
     }
   }
+  await assertCanChangeGroup(ctx, role, groupChanges);
   await assertCanAssign(ctx, role, assignChanges);
 
   const { subtasks, ...taskData } = data;
@@ -317,7 +326,7 @@ export async function deleteAttachment(ctx: Ctx, attachmentId: string) {
   if (!attachment) throw new NotFoundError("找不到附件");
   const role = await assertCanRead(ctx, attachment.task.projectId, "找不到附件");
   if (attachment.uploaderId !== ctx.userId && !can(role, "attachment.delete_any")) {
-    throw new ForbiddenError("只能刪除自己上傳的附件");
+    throw new ForbiddenError("附件只能由上傳者本人、Owner 或 PM 刪除");
   }
   await prisma.attachment.delete({ where: { id: attachmentId } });
   await logActivity(ctx.userId, "delete", "attachment", `刪除附件「${attachment.name}」`, attachment.task.projectId, attachmentId);

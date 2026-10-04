@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "../db";
 import { NotFoundError, parseInput } from "../errors";
-import { Ctx, assertCan, assertCanRead } from "./permissions";
+import { Ctx, assertCan, assertCanRead, assertLeaderAssignRules } from "./permissions";
 import { logActivity, createNotification } from "./activity";
 
 /** 5×5 風險矩陣的等級與分值（與前端 RISK_LEVELS 一致） */
@@ -38,7 +38,9 @@ export async function listRisks(ctx: Ctx, projectId: string) {
 
 export async function createRisk(ctx: Ctx, projectId: string, input: unknown) {
   const data = parseInput(riskCreateSchema, input);
-  await assertCan(ctx, projectId, "risk.manage");
+  const role = await assertCan(ctx, projectId, "risk.create");
+  // 組長只能把風險負責人指定為自己組的成員
+  await assertLeaderAssignRules(ctx, role, [{ current: "", next: data.ownerId || "" }], "風險");
   const risk = await prisma.risk.create({
     data: {
       title: data.title,
@@ -66,7 +68,11 @@ async function findRiskOr404(riskId: string) {
 export async function updateRisk(ctx: Ctx, riskId: string, input: unknown) {
   const data = parseInput(riskUpdateSchema, input);
   const risk = await findRiskOr404(riskId);
-  await assertCan(ctx, risk.projectId, "risk.manage", "權限不足", "找不到風險");
+  const role = await assertCan(ctx, risk.projectId, "risk.manage", "只有 Owner、PM 與組長可以編輯風險", "找不到風險");
+  // 組長不能更換別組成員負責的風險，也只能指定自己組的成員
+  if (data.ownerId !== undefined) {
+    await assertLeaderAssignRules(ctx, role, [{ current: risk.ownerId, next: data.ownerId }], "風險");
+  }
 
   const updated = await prisma.risk.update({ where: { id: riskId }, data });
 
@@ -84,6 +90,6 @@ export async function updateRisk(ctx: Ctx, riskId: string, input: unknown) {
 
 export async function deleteRisk(ctx: Ctx, riskId: string) {
   const risk = await findRiskOr404(riskId);
-  await assertCan(ctx, risk.projectId, "risk.manage", "權限不足", "找不到風險");
+  await assertCan(ctx, risk.projectId, "risk.manage", "只有 Owner、PM 與組長可以刪除風險", "找不到風險");
   await prisma.risk.delete({ where: { id: riskId } });
 }

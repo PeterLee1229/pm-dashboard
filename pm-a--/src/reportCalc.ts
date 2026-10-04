@@ -45,9 +45,19 @@ export function computeWeeklyReport(columns: Column[], groups: Group[], risks: R
     t.completedAt != null && isInWeek(t.completedAt)
   );
 
+  // 進行中：期間與本週重疊（startDate <= 週日 && endDate >= 週一），橫跨整週的長期任務也算。
+  // 只有一端有日期時，以該日是否落在本週判斷。有子工項時，任一子工項與本週重疊即算。
+  const overlapsWeek = (start: string, end: string): boolean => {
+    if (start && end) {
+      const s = new Date(start);
+      const e = new Date(end);
+      return s <= weekEnd && e >= weekStart;
+    }
+    return isInWeek(start) || isInWeek(end);
+  };
   const taskInWeek = (t: Task): boolean => {
-    if (t.subtasks.length === 0) return isInWeek(t.startDate) || isInWeek(t.endDate);
-    return t.subtasks.some((s) => isInWeek(s.startDate) || isInWeek(s.endDate));
+    if (t.subtasks.length === 0) return overlapsWeek(t.startDate, t.endDate);
+    return t.subtasks.some((s) => overlapsWeek(s.startDate, s.endDate));
   };
 
   const inProgressColumn = columns.find((c) => c.id === "inprogress");

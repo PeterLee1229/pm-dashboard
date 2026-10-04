@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "../db";
 import { parseInput } from "../errors";
-import { Ctx, assertCan, isAdmin } from "./permissions";
+import { Ctx, EffectiveRole, PROJECT_ROLES, ProjectRole, assertCan, can, isAdmin } from "./permissions";
 import { logActivity } from "./activity";
 
 const colorSchema = z.string().regex(/^#[0-9a-fA-F]{3,8}$/, "顏色格式錯誤");
@@ -34,7 +34,13 @@ export async function listProjects(ctx: Ctx) {
   });
   return projects.map((p) => {
     const mine = p.members.find((m) => m.userId === ctx.userId);
-    return { ...p, userRole: admin ? "admin" : (mine?.role || "viewer") };
+    const myRole: EffectiveRole = admin ? "admin"
+      : (PROJECT_ROLES as readonly string[]).includes(mine?.role ?? "") ? mine!.role as ProjectRole : "viewer";
+    // viewer 看不到其他成員的 email
+    const members = can(myRole, "member.view_email")
+      ? p.members
+      : p.members.map((m) => ({ ...m, user: { ...m.user, email: undefined } }));
+    return { ...p, members, userRole: admin ? "admin" : (mine?.role || "viewer") };
   });
 }
 

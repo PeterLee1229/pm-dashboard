@@ -8,7 +8,7 @@ import {
   normalizeText, normalizeKey, isBlank, parseDate, parseNumber, parseEnum,
   diffFields, findDuplicates, canonicalHeader, buildHeaderMap,
 } from "./diff";
-import { AssigneeInfo, checkLeaderAssignChange } from "../permissions";
+import { AssigneeInfo, checkLeaderAssignChange, checkLeaderGroupChange } from "../permissions";
 
 // ── 欄位定義 ─────────────────────────────────────────────────────────
 
@@ -459,6 +459,7 @@ export function buildImportPlan(
   const normDate = (v: string) => { const d = parseDate(v); return d.ok ? d.value : v; };
 
   const leaderUsers = new Map<string, AssigneeInfo>(ctx.users.map((u) => [u.memberId, { groupId: u.groupId, name: u.name }]));
+  const groupNames = new Map(ctx.groups.map((g) => [g.id, g.name]));
 
   const planRows: PlanRow[] = rows.map((row) => {
     const specs = row.kind === "task" ? taskSpecs : subSpecs;
@@ -495,19 +496,24 @@ export function buildImportPlan(
       changes = [];
     }
 
-    // 組長人力調整規則（與 PUT /api/tasks/:id 一致）
+    // 組長人力調整規則（與 PUT /api/tasks/:id 一致）：組別與負責人
     let createNewBlockedReason: string | undefined;
     if (perms.leader && status !== "error") {
+      const leaderGroupId = perms.leader.groupId;
+      const currentGroup = status === "new" ? "" : (row.target?.groupId ?? "");
+      const nextGroup = data.groupId ?? currentGroup;
       const current = status === "new" ? "" : (row.target?.assignee ?? "");
       const next = data.assignee ?? current;
-      const error = checkLeaderAssignChange(perms.leader.groupId, leaderUsers, current, next);
+      const error = checkLeaderGroupChange(leaderGroupId, groupNames, currentGroup, nextGroup)
+        ?? checkLeaderAssignChange(leaderGroupId, leaderUsers, current, next);
       if (error) {
         row.errors.push(error);
         status = "error";
         changes = [];
       } else if (status === "modified") {
-        // 另存為新工項 = 以 next 為負責人新增一筆，視同從未指派改為 next
-        createNewBlockedReason = checkLeaderAssignChange(perms.leader.groupId, leaderUsers, "", next) ?? undefined;
+        // 另存為新工項 = 以 nextGroup / next 新增一筆，視同從未分組、未指派改過去
+        createNewBlockedReason = (checkLeaderGroupChange(leaderGroupId, groupNames, "", nextGroup)
+          ?? checkLeaderAssignChange(leaderGroupId, leaderUsers, "", next)) ?? undefined;
       }
     }
 

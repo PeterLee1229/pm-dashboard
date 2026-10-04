@@ -42,6 +42,17 @@ const CASES: Case[] = [
     prepare: (f) => ({ path: `/api/tasks/${f.tasks.ofMember.id}`, body: { description: "更新" } }) },
   { name: "PUT 別人負責的任務", method: "put", allowed: ["owner", "pm", "group_leader"],
     prepare: (f) => ({ path: `/api/tasks/${f.tasks.ofMemberB.id}`, body: { description: "更新" } }) },
+  // 裁決 #5：member 不能改派（即使是自己負責的任務）
+  { name: "PUT 改派任務負責人（A組成員→A組組長）", method: "put", allowed: ["owner", "pm", "group_leader"],
+    prepare: async (f) => {
+      await prisma.task.update({ where: { id: f.tasks.ofMember.id }, data: { assignee: f.users.member.memberId } });
+      return { path: `/api/tasks/${f.tasks.ofMember.id}`, body: { assignee: f.users.leader.memberId } };
+    } },
+  // 裁決 #4：組長只能把未分組／自己組的任務改到自己的組
+  { name: "PUT 任務組別（未分組→A組）", method: "put", allowed: ["owner", "pm", "group_leader"],
+    prepare: async (f) => ({ path: `/api/tasks/${(await prisma.task.create({ data: { title: "未分組", projectId: f.p1.id } })).id}`, body: { groupId: f.groups.A.id } }) },
+  { name: "PUT 任務組別（B組→A組）", method: "put", allowed: ["owner", "pm"],
+    prepare: async (f) => ({ path: `/api/tasks/${(await prisma.task.create({ data: { title: "B組", groupId: f.groups.B.id, projectId: f.p1.id } })).id}`, body: { groupId: f.groups.A.id } }) },
   { name: "DELETE 任務", method: "delete", allowed: ["owner", "pm", "group_leader"],
     prepare: async (f) => ({ path: `/api/tasks/${(await prisma.task.create({ data: { title: "待刪", projectId: f.p1.id } })).id}` }) },
 
@@ -60,10 +71,22 @@ const CASES: Case[] = [
   // ── 風險 ──
   { name: "POST 風險", method: "post", allowed: ["owner", "pm", "group_leader", "member"],
     prepare: (f) => ({ path: `/api/projects/${f.p1.id}/risks`, body: { title: "新風險" } }) },
-  { name: "PUT 風險", method: "put", allowed: ["owner", "pm", "group_leader", "member"],
+  { name: "PUT 風險", method: "put", allowed: ["owner", "pm", "group_leader"],
     prepare: (f) => ({ path: `/api/risks/${f.risk.id}`, body: { countermeasure: "對策" } }) },
-  { name: "DELETE 風險", method: "delete", allowed: ["owner", "pm", "group_leader", "member"],
+  { name: "DELETE 風險", method: "delete", allowed: ["owner", "pm", "group_leader"],
     prepare: async (f) => ({ path: `/api/risks/${(await prisma.risk.create({ data: { title: "待刪", projectId: f.p1.id } })).id}` }) },
+
+  // 裁決 #6：組長只能指定自己組的成員為風險負責人，且不能更換別組成員負責的風險
+  { name: "POST 風險（負責人為A組成員）", method: "post", allowed: ["owner", "pm", "group_leader", "member"],
+    prepare: (f) => ({ path: `/api/projects/${f.p1.id}/risks`, body: { title: "x", ownerId: f.users.member.memberId } }) },
+  { name: "POST 風險（負責人為B組成員）", method: "post", allowed: ["owner", "pm", "member"],
+    prepare: (f) => ({ path: `/api/projects/${f.p1.id}/risks`, body: { title: "x", ownerId: f.users.memberB.memberId } }) },
+  { name: "PUT 風險負責人（未指定→A組成員）", method: "put", allowed: ["owner", "pm", "group_leader"],
+    prepare: async (f) => ({ path: `/api/risks/${(await prisma.risk.create({ data: { title: "x", projectId: f.p1.id } })).id}`, body: { ownerId: f.users.member.memberId } }) },
+  { name: "PUT 風險負責人（B組成員→A組成員）", method: "put", allowed: ["owner", "pm"],
+    prepare: async (f) => ({ path: `/api/risks/${(await prisma.risk.create({ data: { title: "x", ownerId: f.users.memberB.memberId, projectId: f.p1.id } })).id}`, body: { ownerId: f.users.member.memberId } }) },
+  { name: "PUT 別組成員負責的風險（負責人不變）", method: "put", allowed: ["owner", "pm", "group_leader"],
+    prepare: async (f) => ({ path: `/api/risks/${(await prisma.risk.create({ data: { title: "x", ownerId: f.users.memberB.memberId, projectId: f.p1.id } })).id}`, body: { ownerId: f.users.memberB.memberId, countermeasure: "對策" } }) },
 
   // ── 週報 ──
   { name: "PUT 週報備註", method: "put", allowed: ["owner", "pm"],
@@ -92,7 +115,7 @@ const CASES: Case[] = [
     prepare: (f) => ({ path: `/api/tasks/${f.tasks.ofMember.id}/attachments`, body: { name: "文件", url: "https://example.com/a" } }) },
   { name: "POST 附件到別人的任務", method: "post", allowed: ["owner", "pm", "group_leader"],
     prepare: (f) => ({ path: `/api/tasks/${f.tasks.ofMemberB.id}/attachments`, body: { name: "文件", url: "https://example.com/b" } }) },
-  { name: "DELETE 別人上傳的附件", method: "delete", allowed: ["owner", "pm", "group_leader"],
+  { name: "DELETE 別人上傳的附件", method: "delete", allowed: ["owner", "pm"],
     prepare: async (f) => ({
       path: `/api/attachments/${(await prisma.attachment.create({ data: { name: "x", url: "https://example.com/x", taskId: f.tasks.ofMember.id, uploaderId: f.users.memberB.id } })).id}`,
     }) },
@@ -161,5 +184,33 @@ describe("跨專案", () => {
   it("上傳者本人可刪除自己上傳的附件", async () => {
     const res = await api().delete(`/api/attachments/${f.attachment.id}`).set("Authorization", `Bearer ${f.tokens.member}`);
     expect(res.status).toBe(200);
+  });
+});
+
+// 裁決 #13：同專案成員（owner、pm、GL、member）與 admin 看得到 email，viewer 看不到
+describe("成員 email 的可見性", () => {
+  const SEES_EMAIL: Record<string, boolean> = {
+    admin: true, owner: true, pm: true, group_leader: true, member: true, viewer: false,
+  };
+
+  it.each(Object.entries(SEES_EMAIL))("%s：GET /members", async (role, sees) => {
+    const res = await api().get(`/api/projects/${f.p1.id}/members`).set("Authorization", `Bearer ${f.tokens[ROLE_USER[role]]}`);
+    expect(res.status).toBe(200);
+    for (const m of res.body) expect("email" in m.user, `${role} ${m.user.name}`).toBe(sees);
+  });
+
+  it.each(Object.entries(SEES_EMAIL))("%s：GET /projects 內的成員", async (role, sees) => {
+    const res = await api().get("/api/projects").set("Authorization", `Bearer ${f.tokens[ROLE_USER[role]]}`);
+    const p1 = res.body.find((p: any) => p.id === f.p1.id);
+    for (const m of p1.members) expect("email" in m.user).toBe(sees);
+  });
+
+  it("同一位使用者在 viewer 的專案看不到 email，在 member 的專案也只依該專案角色判斷", async () => {
+    // member 在專案一是 member、在專案二是 viewer
+    const res = await api().get("/api/projects").set("Authorization", `Bearer ${f.tokens.member}`);
+    const p1 = res.body.find((p: any) => p.id === f.p1.id);
+    const p2 = res.body.find((p: any) => p.id === f.p2.id);
+    expect(p1.members.every((m: any) => "email" in m.user)).toBe(true);
+    expect(p2.members.some((m: any) => "email" in m.user)).toBe(false);
   });
 });

@@ -121,7 +121,19 @@ export function orderForBoard<T extends { columnId: string }>(tasks: T[]): T[] {
 
 // ── 進度與逾期 ────────────────────────────────────────────────────────
 
-/** 任務完成率（已完成欄任務數 ÷ 總數）與加權進度（各任務完成度平均），皆為 0～100 整數 */
+/**
+ * 專案進度指標，皆為 0～100 整數。
+ *
+ * API 欄位與 UI 標籤對照（UI 不改名）：
+ * - taskCompletionRate（任務完成率）→ 看板頂部進度條「進度」（App.tsx 頂部列，滑鼠移上顯示「已完成 x / y」）
+ * - weightedProgress（加權進度）  → 儀表板統計卡片「整體完成度」（DashboardView）
+ * - totalTasks / doneTasks        → 儀表板「總任務數」／「已完成」卡片
+ *
+ * 任務完成率的算法：「已完成」欄的主任務數 ÷ 看板上的主任務總數。
+ * 只計算主任務、不展開子工項，原因是子工項沒有「已完成」狀態（只有完成度），
+ * 且現行 UI 的頂部進度條即以主任務計算；維持一致，本次不改（Phase 0 裁決 #7）。
+ * 加權進度：各主任務完成度的平均，有子工項的主任務以子工項完成度平均計（getCompletion）。
+ */
 export function computeProgress(tasks: ReportTask[]) {
   const board = orderForBoard(tasks);
   const totalTasks = board.length;
@@ -176,9 +188,19 @@ export function buildWeeklyReport(
 
   const completedTasks = allTasks.filter((t) => t.completedAt != null && isInWeek(t.completedAt));
 
+  // 進行中：期間與本週重疊（startDate <= 週日 && endDate >= 週一），橫跨整週的長期任務也算。
+  // 只有一端有日期時，以該日是否落在本週判斷。有子工項時，任一子工項與本週重疊即算。
+  const overlapsWeek = (start: string, end: string) => {
+    if (start && end) {
+      const s = toTaipeiDay(start);
+      const e = toTaipeiDay(end);
+      return !!s && !!e && s <= weekEnd && e >= weekStart;
+    }
+    return isInWeek(start) || isInWeek(end);
+  };
   const taskInWeek = (t: ReportTask) => t.subtasks.length === 0
-    ? isInWeek(t.startDate) || isInWeek(t.endDate)
-    : t.subtasks.some((s) => isInWeek(s.startDate) || isInWeek(s.endDate));
+    ? overlapsWeek(t.startDate, t.endDate)
+    : t.subtasks.some((s) => overlapsWeek(s.startDate, s.endDate));
   const inProgressTasks = allTasks.filter((t) => t.columnId === "inprogress" && getCompletion(t) < 100 && taskInWeek(t));
 
   const buildHoursMap = (isIn: (date: string) => boolean): Record<string, number> => {
@@ -288,14 +310,25 @@ export async function getWeeklyReportData(ctx: Ctx, projectId: string, weekStart
 
   const input = await loadReportInput(projectId);
   const report = buildWeeklyReport(input, parsed.data);
-  // 前端 formatDateStr 以 toISOString 取日期，在台灣時區會把週一存成前一天（週日），兩種 key 都要查
-  const legacyWeekStart = addDays(report.weekStart, -1);
-  const saved = await prisma.weeklyReport.findMany({
-    where: { projectId, weekStart: { in: [report.weekStart, legacyWeekStart] } },
-    select: { weekStart: true, notes: true },
+  return { projectId, ...report, notes: await findWeeklyNotes(projectId, report.weekStart) };
+}
+
+/**
+ * 讀取週報備註：先查週一 key，查不到再查前一天（週日）的 key。
+ * TODO(phase0-compat): 前端 formatDateStr 以 toISOString 取日期，在台灣時區會把週一存成前一天（週日），
+ * 正式 DB 的既有備註都是週日 key。修正前端並以 migration 把舊 key 往後平移一天後，移除週日 fallback。
+ */
+async function findWeeklyNotes(projectId: string, monday: string): Promise<string> {
+  const byMonday = await prisma.weeklyReport.findUnique({
+    where: { projectId_weekStart: { projectId, weekStart: monday } },
+    select: { notes: true },
   });
-  const notes = (saved.find((r) => r.weekStart === report.weekStart) ?? saved[0])?.notes ?? "";
-  return { projectId, ...report, notes };
+  if (byMonday) return byMonday.notes;
+  const bySunday = await prisma.weeklyReport.findUnique({
+    where: { projectId_weekStart: { projectId, weekStart: addDays(monday, -1) } },
+    select: { notes: true },
+  });
+  return bySunday?.notes ?? "";
 }
 
 export async function getProjectSummary(ctx: Ctx, projectId: string, now: Date = new Date()) {
@@ -340,6 +373,11 @@ export async function listWeeklyReports(ctx: Ctx, projectId: string) {
   return prisma.weeklyReport.findMany({ where: { projectId }, orderBy: { weekStart: "desc" } });
 }
 
+/**
+ * 儲存週報備註，weekStart 照前端送來的值存。
+ * TODO(phase0-compat): 目前前端送來的 weekStart 是週日（見 findWeeklyNotes）；此處不可自行轉成週一，
+ * 否則前端以週日 key 查不到剛存的備註。前端修正後，改為一律以週一（Asia/Taipei）為 key。
+ */
 export async function saveWeeklyNotes(ctx: Ctx, projectId: string, input: unknown) {
   const data = parseInput(weeklyNotesSchema, input);
   await assertCan(ctx, projectId, "weekly.manage");

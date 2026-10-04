@@ -2,7 +2,7 @@
 // 以同一份 fixture 計算，結果必須完全相同。setupEnv 已將 TZ 設為 Asia/Taipei，模擬台灣使用者的瀏覽器。
 import { beforeAll, describe, expect, it } from "vitest";
 import * as fe from "../../pm-a--/src/reportCalc";
-import { getCompletion as feGetCompletion, normalizeDate as feNormalizeDate } from "../../pm-a--/src/helpers";
+import { getCompletion as feGetCompletion, normalizeDate as feNormalizeDate, formatDateStr as feFormatDateStr, getWeekRange as feGetWeekRange } from "../../pm-a--/src/helpers";
 import type { Column, Group, Risk, Task } from "../../pm-a--/src/types";
 import * as be from "../src/services/reports";
 import { prisma } from "../src/db";
@@ -178,16 +178,81 @@ describe("逾期判斷：前後端一致", () => {
   }
 });
 
-describe("已知差異（待 Peter 裁決是否修正前端）", () => {
-  // 前端 computeWeeklyReport 的 nextWeekStart = 本週日 23:59:59.999 + 1 天 = 下週一 23:59:59.999，
+// 裁決 #10：「進行中」改為區間重疊（startDate <= 週日 && endDate >= 週一），前後端都改
+describe("週報「進行中」：區間重疊", () => {
+  const WEEK = "2026-09-28"; // 週一 9/28 ～ 週日 10/4
+  const cases: [string, string, string, boolean][] = [
+    ["完全落在本週內", "2026-09-29", "2026-10-02", true],
+    ["開始於上週、結束於下週（橫跨整週）", "2026-09-21", "2026-10-10", true],
+    ["只有開始日在本週", "2026-10-03", "2026-10-15", true],
+    ["只有結束日在本週", "2026-09-20", "2026-09-28", true],
+    ["開始於本週日當天", "2026-10-04", "2026-10-20", true],
+    ["完全不在本週（之後）", "2026-10-05", "2026-10-10", false],
+    ["完全不在本週（之前）", "2026-09-01", "2026-09-27", false],
+  ];
+
+  it.each(cases)("%s", (_name, startDate, endDate, expected) => {
+    const list = [task("x", { columnId: "inprogress", startDate, endDate, completion: 30 })];
+    const backend = be.buildWeeklyReport({ tasks: list, groups, risks: [] }, WEEK);
+    const frontend = fe.computeWeeklyReport(toColumns(list), feGroups, [], localNoon(WEEK));
+    expect(backend.inProgressTasks.map((t) => t.id)).toEqual(expected ? ["x"] : []);
+    expect(frontend.inProgressTasks.map((t) => t.id)).toEqual(expected ? ["x"] : []);
+  });
+
+  it("有子工項時，任一子工項與本週重疊即算", () => {
+    const list = [task("x", { columnId: "inprogress", subtasks: [
+      sub("a", { startDate: "2026-09-01", endDate: "2026-09-10", completion: 10 }),
+      sub("b", { startDate: "2026-09-15", endDate: "2026-10-31", completion: 10 }),
+    ] })];
+    const backend = be.buildWeeklyReport({ tasks: list, groups, risks: [] }, WEEK);
+    const frontend = fe.computeWeeklyReport(toColumns(list), feGroups, [], localNoon(WEEK));
+    expect(backend.inProgressTasks.map((t) => t.id)).toEqual(["x"]);
+    expect(frontend.inProgressTasks.map((t) => t.id)).toEqual(["x"]);
+  });
+
+  it("只有一端有日期時，以該日是否在本週判斷", () => {
+    const list = [
+      task("onlyStart", { columnId: "inprogress", startDate: "2026-09-30" }),
+      task("onlyEndOutside", { columnId: "inprogress", endDate: "2026-10-08" }),
+    ];
+    const backend = be.buildWeeklyReport({ tasks: list, groups, risks: [] }, WEEK);
+    const frontend = fe.computeWeeklyReport(toColumns(list), feGroups, [], localNoon(WEEK));
+    expect(backend.inProgressTasks.map((t) => t.id)).toEqual(["onlyStart"]);
+    expect(frontend.inProgressTasks.map((t) => t.id)).toEqual(["onlyStart"]);
+  });
+});
+
+// 裁決 #9：後端採正確語意，前端這次不修。以下兩項是明確的「預期差異」，其餘情況前後端必須一致
+describe("預期差異（前端 bug，下一批修正）", () => {
+  // 9(a) 前端 computeWeeklyReport 的 nextWeekStart = 本週日 23:59:59.999 + 1 天 = 下週一 23:59:59.999，
   // 而日期字串 "YYYY-MM-DD" 解析為 08:00（台灣），因此開始或結束日恰為「下週一」的任務會被漏掉。
   // 後端採正確語意（下週一 ~ 下週日，含頭尾）。
-  it("結束日恰為下週一的任務：前端漏列、後端列入", () => {
+  it("9(a) 結束日恰為下週一的任務：前端漏列、後端列入", () => {
     const edge = [task("edge", { columnId: "todo", startDate: "2026-09-30", endDate: "2026-10-05" })];
     const backend = be.buildWeeklyReport({ tasks: edge, groups, risks: [] }, "2026-09-28");
     const frontend = fe.computeWeeklyReport(toColumns(edge), feGroups, [], localNoon("2026-09-28"));
     expect(backend.nextWeekTasks.map((t) => t.id)).toEqual(["edge"]);
     expect(frontend.nextWeekTasks.map((t) => t.id)).toEqual([]);
+  });
+
+  // 有結束日時前端的重疊判斷仍會列入；只有開始日（下週一）、沒有結束日時才會漏掉
+  it("9(a) 只有開始日且恰為下週一的任務：前端漏列、後端列入", () => {
+    const edge = [task("edge", { columnId: "todo", startDate: "2026-10-05", endDate: "" })];
+    const backend = be.buildWeeklyReport({ tasks: edge, groups, risks: [] }, "2026-09-28");
+    const frontend = fe.computeWeeklyReport(toColumns(edge), feGroups, [], localNoon("2026-09-28"));
+    expect(backend.nextWeekTasks.map((t) => t.id)).toEqual(["edge"]);
+    expect(frontend.nextWeekTasks.map((t) => t.id)).toEqual([]);
+  });
+
+  // 9(b) 前端 formatDateStr 以 toISOString 截斷日期：台灣時區週一 00:00 = UTC 前一天 16:00，週次 key 變成週日。
+  // 後端一律以週一（Asia/Taipei）為 key。
+  it("9(b) 週次 key：前端得到週日，後端為週一", () => {
+    for (const day of ["2026-09-28", "2026-09-30", "2026-10-04", "2027-01-01"]) {
+      const feKey = feFormatDateStr(feGetWeekRange(localNoon(day)).start);
+      const beKey = be.buildWeeklyReport({ tasks: [], groups, risks: [] }, day).weekStart;
+      expect(be.mondayOf(day)).toBe(beKey);
+      expect(feKey).toBe(be.addDays(beKey, -1));
+    }
   });
 });
 
@@ -252,6 +317,13 @@ describe("GET /api/projects/:id/weekly-report-data 與前端以 API 資料計算
     expect(backend.activeRisks.map(({ title, status }: any) => ({ title, status }))).toEqual(frontend.activeRisks);
     expect(backend.notes).toBe(frontend.notes);
     expect(backend.completedTasks.length + backend.inProgressTasks.length + backend.weekHours.length).toBeGreaterThan(3);
+  });
+
+  it("相容讀取：週一 key 與週日 key 都存在時，以週一 key 為準", async () => {
+    await prisma.weeklyReport.create({ data: { projectId: f.p1.id, weekStart: "2026-09-28", weekEnd: "2026-10-04", notes: "新格式備註" } });
+    const res = await api().get(`/api/projects/${f.p1.id}/weekly-report-data?weekStart=2026-09-30`).set("Authorization", `Bearer ${f.tokens.viewer}`);
+    expect(res.body.notes).toBe("新格式備註");
+    await prisma.weeklyReport.deleteMany({ where: { projectId: f.p1.id, weekStart: "2026-09-28" } });
   });
 
   it("weekStart 格式錯誤回 400", async () => {
