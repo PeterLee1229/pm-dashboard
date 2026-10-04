@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { getProjectMembers, addProjectMember, removeProjectMember, updateProjectMemberRole, getUsers, transferOwner } from "../api";
 import { ListSkeleton, Skeleton, useDelayedLoading } from "./LoadingEmpty";
+import { hasPermission } from "../helpers";
 
 export function AddMemberModal({ availableUsers, onAdd, onClose, currentUser, currentProjectRole }: {
   availableUsers: any[];
@@ -216,6 +217,9 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
 }) {
   const [members, setMembers] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  // viewer 看不到成員 email（後端也不會回傳）
+  const showEmail = hasPermission(currentProjectRole, "view_member_email");
+  const memberColumns = showEmail ? "1fr 80px 100px 140px 120px 60px" : "1fr 80px 100px 120px 60px";
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -348,14 +352,14 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
         </div>
 
         <div style={{
-          display: "grid", gridTemplateColumns: "1fr 80px 100px 140px 120px 60px",
+          display: "grid", gridTemplateColumns: memberColumns,
           padding: "10px 20px", borderBottom: "1px solid #ffffff08",
           fontSize: 11, color: "#475569", fontWeight: 600
         }}>
           <span>姓名</span>
           <span>組別</span>
           <span>員工編號</span>
-          <span>Email</span>
+          {showEmail && <span>Email</span>}
           <span style={{ textAlign: "center" }}>專案角色</span>
           <span style={{ textAlign: "center" }}>操作</span>
         </div>
@@ -367,7 +371,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
           return (
             <div key={m.id} style={{
               display: "grid",
-              gridTemplateColumns: isConfirming ? "1fr" : "1fr 80px 100px 140px 120px 60px",
+              gridTemplateColumns: isConfirming ? "1fr" : memberColumns,
               padding: "12px 20px", borderBottom: "1px solid #ffffff06",
               alignItems: "center", fontSize: 13
             }}>
@@ -405,7 +409,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
                     )}
                   </div>
                   <span style={{ color: "#94a3b8" }}>{m.user?.memberId || ""}</span>
-                  <span style={{ color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>{m.user?.email || ""}</span>
+                  {showEmail && <span style={{ color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>{m.user?.email || ""}</span>}
                   <div style={{ textAlign: "center" }}>
                     {m.role === "owner" ? (
                       <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 99, background: "#ef444422", color: "#ef4444" }}>Owner</span>

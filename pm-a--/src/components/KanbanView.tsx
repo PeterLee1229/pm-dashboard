@@ -5,18 +5,13 @@ import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task, Column, Group } from "../types";
-import { PRIORITY_CONFIG, COLUMN_COLORS, getCompletion, getSubtaskAssigneeLabel, getEffectiveEndDate } from "../helpers";
+import { PRIORITY_CONFIG, COLUMN_COLORS, getCompletion, getSubtaskAssigneeLabel } from "../helpers";
+import { getDueStatus } from "../reportCalc";
 
 function DueDateBadge({ task }: { task: Task }) {
-  const dueDate = getEffectiveEndDate(task);
-  if (!dueDate) return null;
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const due = new Date(dueDate + "T00:00:00");
-  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
-  const isDone = getCompletion(task) >= 100;
-  const isOverdue = !isDone && diffDays < 0;
-  const isDueSoon = !isDone && diffDays >= 0 && diffDays <= 2;
+  const status = getDueStatus(task);
+  if (!status) return null;
+  const { due, isOverdue, isDueSoon } = status;
 
   const color = isOverdue ? "#ef4444" : isDueSoon ? "#f59e0b" : "#64748b";
   const label = `${due.getMonth() + 1}/${due.getDate()}`;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, CheckCircle2, User, AlignLeft, Flag, Timer, Calendar } from "lucide-react";
 import type { Priority, TimeLog, Group, Task, SubTask } from "../types";
-import { PRIORITY_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getTotalHours, hasPermission } from "../helpers";
+import { PRIORITY_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getTotalHours, hasPermission, normalizeUrl, safeHref } from "../helpers";
 import { getComments, addComment, deleteComment, getAttachments, addAttachment, deleteAttachment } from "../api";
 import { Skeleton } from "./LoadingEmpty";
 
@@ -71,9 +71,11 @@ const snapshotOf = (f: Task) => JSON.stringify({
 
 // ── Task Modal ────────────────────────────────────────────────────────
 
-export default function TaskModal({ task, groups, onSave, onClose, currentProjectRole, currentUser }: {
+export default function TaskModal({ task, groups, assigneeGroups, onSave, onClose, currentProjectRole, currentUser }: {
   task: Task;
   groups: Group[];
+  /** 系統組別（含全部使用者），用來判斷負責人所屬組別；與後端組長人力調整規則相同 */
+  assigneeGroups: Group[];
   onSave: (updated: Task) => void;
   onClose: () => void;
   currentProjectRole: string;
@@ -112,16 +114,47 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
     ? groups.filter((g) => g.id === currentUser?.group?.id)
     : groups;
 
+  // 人力調整規則（後端 services/permissions.ts 同步強制執行）：
+  // - member 不能變更任何負責人（assign_task）
+  // - 組長只能變更「目前負責人屬於自己組別，或尚未指派」的負責人
+  // - 組長只能變更「目前屬於自己組、或尚未分組」的組別，且只能改成自己的組
+  const isLeader = currentProjectRole === "group_leader";
+  const myGroupId = currentUser?.group?.id;
+  const myGroupMembers = assigneeGroups.find((g) => g.id === myGroupId)?.members || [];
+  const canAssign = hasPermission(currentProjectRole, "assign_task");
+  const canReassign = (originalAssignee: string) =>
+    canAssign && (!isLeader || !originalAssignee || myGroupMembers.some((m) => m.id === originalAssignee));
+  const canChangeGroup = (originalGroupId: string) => !isLeader || !originalGroupId || originalGroupId === myGroupId;
+  /** 組長不能把已分組的任務改回未分組 */
+  const showUngroupedOption = (originalGroupId: string) => !isLeader || !originalGroupId;
+  const assigneeLabel = (memberId: string) => {
+    if (!memberId) return "未指派";
+    for (const g of assigneeGroups) {
+      const m = g.members.find((x) => x.id === memberId);
+      if (m) return `${m.name}（${m.id}）`;
+    }
+    return memberId;
+  };
+  const originalSubAssignee = (subId: string) => task.subtasks.find((s) => s.id === subId)?.assignee || "";
+  const originalSubGroup = (subId: string) => task.subtasks.find((s) => s.id === subId)?.groupId || "";
+  // 變更組別會清空負責人，所以組別與負責人一起鎖定
+  const mainAssigneeLocked = !canReassign(task.assignee) || !canChangeGroup(task.groupId);
+  const lockedHint = canAssign ? "別組的任務，組長不可改派" : "僅 Owner、PM 與組長可變更負責人";
+  const canDeleteAttachment = (a: { uploaderId: string }) => a.uploaderId === currentUser?.id || hasPermission(currentProjectRole, "delete_attachments");
+
   useEffect(() => {
     loadComments();
     loadAttachments();
   }, [task.id]);
 
+  // 自動補上負責人所屬組別；組長只會補成自己的組（後端不允許組長改到別組）
+  const autoGroupAllowed = (groupId: string) => currentProjectRole !== "group_leader" || groupId === currentUser?.group?.id;
+
   useEffect(() => {
     if (form.assignee && !form.groupId) {
       for (const g of groups) {
         const found = g.members?.find((m: any) => m.id === form.assignee);
-        if (found) {
+        if (found && autoGroupAllowed(g.id)) {
           setForm(prev => ({ ...prev, groupId: g.id }));
           break;
         }
@@ -135,7 +168,7 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
       if (sub.assignee && !sub.groupId) {
         for (const g of groups) {
           const found = g.members?.find((m: any) => m.id === sub.assignee);
-          if (found) {
+          if (found && autoGroupAllowed(g.id)) {
             changed = true;
             return { ...sub, groupId: g.id };
           }
@@ -158,7 +191,7 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
   const handleAddAttachment = async () => {
     if (!newAttachName.trim() || !newAttachUrl.trim()) return;
     try {
-      const attachment = await addAttachment(task.id, newAttachName.trim(), newAttachUrl.trim());
+      const attachment = await addAttachment(task.id, newAttachName.trim(), normalizeUrl(newAttachUrl));
       setAttachments(prev => [attachment, ...prev]);
       setNewAttachName("");
       setNewAttachUrl("");
@@ -261,10 +294,11 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
     <div className="field">
       <label className="field-label"><User size={13} /> 所屬組別</label>
       <select className="field-input" value={form.groupId}
-        disabled={form.subtasks.length > 0}
+        disabled={form.subtasks.length > 0 || mainAssigneeLocked}
+        title={mainAssigneeLocked ? lockedHint : undefined}
         onChange={(e) => setForm({ ...form, groupId: e.target.value, assignee: "" })}
-        style={{ opacity: form.subtasks.length > 0 ? 0.4 : 1, cursor: form.subtasks.length > 0 ? "not-allowed" : "auto" }}>
-        <option value="">未分組</option>
+        style={{ opacity: form.subtasks.length > 0 || mainAssigneeLocked ? 0.4 : 1, cursor: form.subtasks.length > 0 || mainAssigneeLocked ? "not-allowed" : "auto" }}>
+        {showUngroupedOption(task.groupId) && <option value="">未分組</option>}
         {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
       </select>
     </div>
@@ -276,6 +310,10 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
       {form.subtasks.length > 0 ? (
         <div className="field-input" style={{ opacity: 0.4, cursor: "not-allowed", color: "#475569" }}>
           由子工項各自指派
+        </div>
+      ) : mainAssigneeLocked ? (
+        <div className="field-input" title={lockedHint} style={{ opacity: 0.6, cursor: "not-allowed", color: "#94a3b8" }}>
+          {assigneeLabel(task.assignee)}（{lockedHint}）
         </div>
       ) : (() => {
         const selectedGroup = groups.find((g) => g.id === form.groupId);
@@ -361,17 +399,20 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
           <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "#0f1117", borderRadius: 8, padding: "8px 12px", border: "1px solid #ffffff08" }}>
             <span style={{ fontSize: 16 }}>📄</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <a href={a.url} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 12, fontWeight: 600, color: "#6366f1", textDecoration: "none" }}>
-                {a.name}
-              </a>
+              {safeHref(a.url) ? (
+                <a href={safeHref(a.url)!} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 12, fontWeight: 600, color: "#6366f1", textDecoration: "none" }}>
+                  {a.name}
+                </a>
+              ) : (
+                <span title="連結格式不正確，無法開啟" style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8" }}>{a.name}</span>
+              )}
               <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
                 <span style={{ fontSize: 10, color: "#475569" }}>{a.uploader?.name || ""}（{a.uploader?.memberId || ""}）</span>
                 <span style={{ fontSize: 10, color: "#475569" }}>{new Date(a.createdAt).toLocaleDateString("zh-TW")}</span>
               </div>
             </div>
-            {(a.uploaderId === currentUser?.id || currentUser?.role === "admin" ||
-              hasPermission(currentProjectRole, "edit_all_tasks")) && (
+            {canDeleteAttachment(a) && (
               <button onClick={() => handleDeleteAttachment(a.id)}
                 style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
                 <X size={12} />
@@ -480,7 +521,11 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
         <p style={{ fontSize: 12, color: "#475569", textAlign: "center", padding: "12px 0" }}>尚無子工項</p>
       )}
 
-      {form.subtasks.map((sub, idx) => (
+      {form.subtasks.map((sub, idx) => {
+        const subLocked = !canReassign(originalSubAssignee(sub.id)) || !canChangeGroup(originalSubGroup(sub.id));
+        // 刪除有負責人的子工項等同移除負責人
+        const subDeletable = !originalSubAssignee(sub.id) || canReassign(originalSubAssignee(sub.id));
+        return (
         <div key={sub.id} style={{ background: "#0f1117", border: "1px solid #ffffff10", borderRadius: 8, padding: 12, marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <input value={sub.title} onChange={(e) => {
@@ -488,12 +533,19 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
               updated[idx] = { ...sub, title: e.target.value };
               setForm({ ...form, subtasks: updated });
             }} style={{ background: "transparent", border: "none", color: "#e2e8f0", fontSize: 13, fontWeight: 600, outline: "none", flex: 1 }} />
-            <button onClick={() => setForm({ ...form, subtasks: form.subtasks.filter((_, i) => i !== idx) })}
-              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2 }}>
-              <X size={13} />
-            </button>
+            {subDeletable && (
+              <button onClick={() => setForm({ ...form, subtasks: form.subtasks.filter((_, i) => i !== idx) })}
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2 }}>
+                <X size={13} />
+              </button>
+            )}
           </div>
 
+          {subLocked ? (
+            <div className="field-input" title={lockedHint} style={{ marginBottom: 6, fontSize: 12, opacity: 0.6, cursor: "not-allowed", color: "#94a3b8" }}>
+              {assigneeLabel(originalSubAssignee(sub.id))}（{lockedHint}）
+            </div>
+          ) : <>
           <select className="field-input" value={sub.groupId || ""}
             onChange={(e) => {
               const updated = [...form.subtasks];
@@ -501,7 +553,7 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
               setForm({ ...form, subtasks: updated });
             }}
             style={{ marginBottom: 6, fontSize: 12 }}>
-            <option value="">選擇組別</option>
+            {showUngroupedOption(originalSubGroup(sub.id)) && <option value="">選擇組別</option>}
             {availableGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
 
@@ -528,6 +580,7 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
                 style={{ marginBottom: 6, fontSize: 12, opacity: 0.5 }} />
             );
           })()}
+          </>}
 
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input type="date" value={sub.startDate} onChange={(e) => {
@@ -562,7 +615,8 @@ export default function TaskModal({ task, groups, onSave, onClose, currentProjec
             />
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 

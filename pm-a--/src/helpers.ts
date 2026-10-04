@@ -101,18 +101,41 @@ export function hasPermission(userRole: string, action: string): boolean {
     "delete_task":     ["owner", "pm", "group_leader"],
     "edit_all_tasks":  ["owner", "pm", "group_leader"],
     "edit_own_task":   ["owner", "pm", "group_leader", "member"],
+    "assign_task":     ["owner", "pm", "group_leader"],
+    "delete_attachments": ["owner", "pm"],
     "drag_to_done":    ["owner", "pm"],
     "drag_task":       ["owner", "pm", "group_leader", "member"],
     "manage_meetings": ["owner", "pm", "group_leader"],
     "view_risks":      ["owner", "pm", "group_leader", "member", "viewer"],
-    "manage_risks":    ["owner", "pm", "group_leader", "member"],
+    "create_risk":     ["owner", "pm", "group_leader", "member"],
+    "manage_risks":    ["owner", "pm", "group_leader"],
     "manage_weekly":   ["owner", "pm"],
+    "manage_okr":      ["owner", "pm"],
+    "view_member_email": ["owner", "pm", "group_leader", "member"],
     "export":          ["owner", "pm", "group_leader", "member"],
     "manage_members":  ["owner", "pm", "group_leader"],
     "invite_members":  ["owner", "pm", "group_leader"],
   };
   const allowed = permissions[action] || [];
   return allowed.includes(userRole) || userRole === "admin";
+}
+
+/** 使用者輸入的連結沒有 scheme 時自動補上 https://（後端只接受 http/https） */
+export function normalizeUrl(input: string): string {
+  const v = input.trim();
+  if (!v) return "";
+  return /^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`;
+}
+
+/** 只有 http/https 連結可以輸出為可點擊的 href；其他（例如 javascript:）回傳 null */
+export function safeHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 export function getWeekRange(date: Date): { start: Date; end: Date } {

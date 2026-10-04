@@ -2,7 +2,8 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, ResponsiveContainer, LabelList } from "recharts";
 import type { Column, Group } from "../types";
-import { getCompletion, getTotalHours, findMemberById, memberDisplay } from "../helpers";
+import { getTotalHours, findMemberById, memberDisplay } from "../helpers";
+import { computeProgress } from "../reportCalc";
 
 export default function DashboardView({ columns, groups }: { columns: Column[]; groups: Group[] }) {
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -45,11 +46,7 @@ export default function DashboardView({ columns, groups }: { columns: Column[]; 
     return { name: member ? member.name : memberId, 工時: Math.round(hours * 10) / 10 };
   });
 
-  const totalCompletion = allTasks.length > 0
-    ? Math.round(allTasks.reduce((sum, t) => sum + getCompletion(t), 0) / allTasks.length)
-    : 0;
-
-  const doneTasks = columns.find((c) => c.id === "done")?.tasks.length ?? 0;
+  const { doneTasks, weightedProgress: totalCompletion } = computeProgress(columns);
 
   const TOOLTIP_STYLE = {
     background: "#1a2030", border: "1px solid #ffffff15",

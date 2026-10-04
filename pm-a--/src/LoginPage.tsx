@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { login, register, getGroups } from "./api";
+import { login, register, getGroupOptions } from "./api";
 import { t } from "./i18n";
 
 export default function LoginPage({ onLogin }: { onLogin: () => void }) {
@@ -15,7 +15,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [registerSuccess, setRegisterSuccess] = useState(false);
 
   useEffect(() => {
-    getGroups().then(setGroups).catch(console.error);
+    getGroupOptions().then(setGroups).catch(console.error);
   }, []);
 
   const handleSubmit = async () => {

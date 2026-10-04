@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Flag } from "lucide-react";
 import type { MeetingRecord, MeetingSeries } from "../types";
+import { normalizeUrl, safeHref } from "../helpers";
 
 export const MEETING_TYPE_LEGEND: { type: "regular" | "adhoc"; label: string; color: string; description: string }[] = [
   { type: "regular", label: "定期", color: "#6366f1", description: "固定週期召開的會議，如每週站會、月會" },
@@ -179,7 +180,7 @@ export function NewRecordForm({ projectMembers, onSave, onCancel }: {
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn-cancel" style={{ flex: 1 }} onClick={onCancel}>取消</button>
         <button className="btn-save" style={{ flex: 2 }} onClick={() => {
-          if (date) onSave({ id: "mr" + Date.now(), date, attendees, summary, externalLink });
+          if (date) onSave({ id: "mr" + Date.now(), date, attendees, summary, externalLink: normalizeUrl(externalLink) });
         }}>儲存紀錄</button>
       </div>
     </div>
@@ -239,7 +240,7 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
   record: MeetingRecord;
   projectMembers: any[];
   seriesId: string;
-  onDelete: (seriesId: string, recordId: string) => void;
+  onDelete?: (seriesId: string, recordId: string) => void;
   onUpdate?: (seriesId: string, recordId: string, data: any) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -270,10 +271,12 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
               {editing ? "取消" : "編輯"}
             </button>
           )}
-          <button onClick={() => onDelete(seriesId, record.id)}
-            style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
-            <X size={12} />
-          </button>
+          {onDelete && (
+            <button onClick={() => onDelete(seriesId, record.id)}
+              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -306,7 +309,7 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
             style={{ marginBottom: 10 }} />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => {
-              if (onUpdate) { onUpdate(seriesId, record.id, { summary: editSummary, externalLink: editLink }); setEditing(false); }
+              if (onUpdate) { onUpdate(seriesId, record.id, { summary: editSummary, externalLink: normalizeUrl(editLink) }); setEditing(false); }
             }} style={{
               background: "#6366f1", border: "none", borderRadius: 6,
               color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 16px", cursor: "pointer",
@@ -338,8 +341,13 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
         )
       )}
 
-      {record.externalLink && !editing && (
-        <a href={record.externalLink} target="_blank" rel="noopener noreferrer"
+      {record.externalLink && !editing && !safeHref(record.externalLink) && (
+        <span title="連結格式不正確，無法開啟" style={{ fontSize: 11, color: "#94a3b8", display: "inline-block", marginTop: 8 }}>
+          📎 {record.externalLink}
+        </span>
+      )}
+      {safeHref(record.externalLink) && !editing && (
+        <a href={safeHref(record.externalLink)!} target="_blank" rel="noopener noreferrer"
           style={{ fontSize: 11, color: "#6366f1", textDecoration: "none", display: "inline-block", marginTop: 8 }}>
           📎 查看完整記錄 →
         </a>
@@ -348,8 +356,10 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
   );
 }
 
-export default function MeetingsView({ meetings, projectMembers, onCreateSeries, onDeleteSeries, onCreateRecord, onDeleteRecord, onUpdateRecord }: {
+export default function MeetingsView({ meetings, projectMembers, canManage, onCreateSeries, onDeleteSeries, onCreateRecord, onDeleteRecord, onUpdateRecord }: {
   meetings: MeetingSeries[];
+  /** manage_meetings：新增／刪除會議系列與紀錄、編輯紀錄 */
+  canManage: boolean;
   projectMembers: any[];
   onCreateSeries: (name: string, type: string) => void;
   onDeleteSeries: (id: string) => void;
@@ -399,17 +409,17 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
             <span style={{ fontSize: 11, color: "#475569" }}>{series.records.length} 筆紀錄</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={(e) => {
+            {canManage && <button onClick={(e) => {
               e.stopPropagation();
               setAddingRecordId(series.id);
               setExpandedIds((prev) => prev.includes(series.id) ? prev : [...prev, series.id]);
             }} style={{ background: "#10b98122", border: "1px solid #10b98144", borderRadius: 6, color: "#10b981", fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>
               + 新增紀錄
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleDeleteSeries(series.id); }}
+            </button>}
+            {canManage && <button onClick={(e) => { e.stopPropagation(); handleDeleteSeries(series.id); }}
               style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
               <X size={14} />
-            </button>
+            </button>}
             <span style={{ color: "#475569", fontSize: 14, transition: "transform .2s", display: "inline-block", transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
           </div>
         </div>
@@ -439,8 +449,8 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
                 record={record}
                 projectMembers={projectMembers}
                 seriesId={series.id}
-                onDelete={handleDeleteRecord}
-                onUpdate={onUpdateRecord}
+                onDelete={canManage ? handleDeleteRecord : undefined}
+                onUpdate={canManage ? onUpdateRecord : undefined}
               />
             ))}
           </div>
@@ -473,11 +483,11 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
             日期 {sortDir === "desc" ? "新→舊 ▾" : "舊→新 ▴"}
           </button>
         </div>
-        <button onClick={() => setShowSeriesModal(true)} style={{
+        {canManage && <button onClick={() => setShowSeriesModal(true)} style={{
           background: "#6366f122", border: "1px solid #6366f144",
           borderRadius: 8, color: "#6366f1", fontSize: 13, fontWeight: 600,
           padding: "8px 20px", cursor: "pointer", whiteSpace: "nowrap",
-        }}>+ 新增會議系列</button>
+        }}>+ 新增會議系列</button>}
       </div>
 
       {/* 標籤圖例 */}
@@ -511,7 +521,7 @@ export default function MeetingsView({ meetings, projectMembers, onCreateSeries,
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, color: "#475569", gap: 12 }}>
           <p style={{ fontSize: 48 }}>📋</p>
           <p style={{ fontSize: 15 }}>尚無會議紀錄</p>
-          <p style={{ fontSize: 13 }}>點右上角「+ 新增會議系列」開始</p>
+          {canManage && <p style={{ fontSize: 13 }}>點右上角「+ 新增會議系列」開始</p>}
         </div>
       )}
 
