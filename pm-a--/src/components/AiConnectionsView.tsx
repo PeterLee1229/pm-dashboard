@@ -58,7 +58,7 @@ export default function AiConnectionsView() {
               {items.map((c, i) => (
                 <tr key={c.id} style={{ borderTop: i > 0 ? "1px solid #ffffff08" : undefined }}>
                   <td style={{ padding: "12px 16px", color: "#e2e8f0", fontSize: 14 }}>{c.clientName}</td>
-                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{c.scope === "pm:read" ? "唯讀" : c.scope}</td>
+                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{c.scope.split(" ").map((s) => ({ "pm:read": "讀取", "pm:write": "寫入" } as Record<string, string>)[s] ?? s).join("、")}</td>
                   <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{formatDateTime(c.grantedAt)}</td>
                   <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{formatDateTime(c.lastUsedAt)}</td>
                   <td style={{ padding: "12px 16px", textAlign: "right" }}>

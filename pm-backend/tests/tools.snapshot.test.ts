@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { prisma } from "../src/db";
-import { buildMcpServer } from "../src/mcp/tools"; // PRE-MIGRATION
+import { buildMcpServer } from "../src/tools/adapters/mcp";
 import { todayInTaipei } from "../src/services/reports";
 import { Fixture, resetAndSeed } from "./fixtures";
 
@@ -72,7 +72,25 @@ async function call(userKey: keyof Fixture["users"], name: string, args: Record<
   await Promise.all([server.connect(a), client.connect(b)]);
   clients.push(client);
   const res = await client.callTool({ name, arguments: args });
-  return { isError: !!res.isError, body: normalize(JSON.parse((res.content as { text: string }[])[0].text)) };
+  const body = JSON.parse((res.content as { text: string }[])[0].text);
+  return { isError: !!res.isError, body: normalize(withoutPhase2Additions(name, body)) };
+}
+
+/**
+ * Phase 2 刻意新增、遷移前不存在的欄位（其餘輸出必須與遷移前完全相同）：
+ * - get_task.updatedAt：update_task 的 expectedUpdatedAt（樂觀鎖）需要
+ * - get_activity_log 每筆的 source / clientName：標示經由 AI 工具的操作（spec 第 4 節）
+ */
+function withoutPhase2Additions(name: string, body: any) {
+  if (name === "get_task" && body && !body.error) {
+    expect(body.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const { updatedAt: _u, ...rest } = body;
+    return rest;
+  }
+  if (name === "get_activity_log" && Array.isArray(body?.items)) {
+    return { ...body, items: body.items.map(({ source: _s, clientName: _c, ...rest }: any) => { expect(_s).toBeTruthy(); return rest; }) };
+  }
+  return body;
 }
 
 describe("12 支唯讀工具的輸出與遷移前相同", () => {

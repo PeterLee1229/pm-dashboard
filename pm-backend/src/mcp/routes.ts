@@ -10,12 +10,23 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { prisma } from "../db";
 import { parseInput } from "../errors";
 import type { Ctx } from "../services/permissions";
-import { getSystemSettings, isMcpEnabled, updateSystemSettings } from "../services/systemSettings";
-import { SCOPE_READ, SUPPORTED_SCOPES, getMcpConfig } from "./config";
+import { getSystemSettings, isMcpEnabled, isMcpWriteEnabled, updateSystemSettings } from "../services/systemSettings";
+import { SCOPE_READ, SCOPE_WRITE, SUPPORTED_SCOPES, getMcpConfig } from "./config";
 import {
-  PrismaOAuthProvider, decideAuthorization, describeAuthorizationRequest, listConnections, revokeConnection, sha256,
+  PrismaOAuthProvider, decideAuthorization, describeAuthorizationRequest, getClientName, listConnections, revokeConnection, sha256,
 } from "./oauthProvider";
-import { buildMcpServer } from "./tools";
+import { buildMcpServer } from "../tools/adapters/mcp";
+import { isWriteTool } from "../tools/registry";
+import { INSUFFICIENT_SCOPE_MESSAGE, WRITE_DISABLED_MESSAGE } from "../tools/execute";
+
+/** 這個 JSON-RPC 請求（可能是批次）中呼叫到的寫入工具 */
+function writeToolCalls(body: unknown): string[] {
+  const msgs = Array.isArray(body) ? body : [body];
+  return msgs
+    .filter((m): m is { method: string; params?: { name?: unknown } } => !!m && typeof m === "object" && (m as any).method === "tools/call")
+    .map((m) => String(m.params?.name ?? ""))
+    .filter(isWriteTool);
+}
 
 /**
  * /mcp 與 /.well-known/* 允許 claude.ai 與 claude.com 跨來源存取（現有 API 的 CORS 不變）。
@@ -61,12 +72,21 @@ export function mountMcp(app: Express, deps: { authMiddleware: RequestHandler; r
 
   // ── /mcp（Streamable HTTP，stateless：每個請求建立獨立的 server 與 transport） ──
 
+  // 不在 requireBearerAuth 指定 requiredScopes：SDK 會把它寫進 401 的 WWW-Authenticate scope，
+  // 而 MCP client 會依此決定要求哪些 scope（只寫 pm:read 時就永遠不會要求 pm:write）。
+  // 不指定時 client 改用 metadata 的 scopes_supported（pm:read pm:write），由使用者在同意頁決定是否勾選寫入。
   const bearer = requireBearerAuth({
     verifier: provider,
-    requiredScopes: [SCOPE_READ],
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceUrl),
     expectedResource: resourceUrl,
   });
+
+  const requireReadScope: RequestHandler = (req: any, res, next) => {
+    if (req.auth.scopes.includes(SCOPE_READ)) return next();
+    res.status(403)
+      .set("WWW-Authenticate", `Bearer error="insufficient_scope", scope="${SCOPE_READ}"`)
+      .json({ jsonrpc: "2.0", error: { code: -32003, message: "需要讀取權限（pm:read）" }, id: null });
+  };
 
   const requireMcpEnabled: RequestHandler = async (_req, res, next) => {
     if (!(await isMcpEnabled())) {
@@ -86,11 +106,43 @@ export function mountMcp(app: Express, deps: { authMiddleware: RequestHandler; r
     message: { jsonrpc: "2.0", error: { code: -32002, message: "請求過於頻繁，請稍後再試" }, id: null },
   });
 
-  app.post("/mcp", bearer, requireMcpEnabled, mcpLimiter, async (req: any, res) => {
+  // 寫入工具：token 需有 pm:write（否則 403 insufficient_scope，提示重新授權），且系統寫入開關需開啟
+  const requireWriteAccess: RequestHandler = async (req: any, res, next) => {
+    if (writeToolCalls(req.body).length === 0) return next();
+    if (!req.auth.scopes.includes(SCOPE_WRITE)) {
+      const { resourceUrl: rs } = getMcpConfig();
+      res.status(403)
+        .set("WWW-Authenticate", `Bearer error="insufficient_scope", scope="${SCOPE_READ} ${SCOPE_WRITE}", resource_metadata="${getOAuthProtectedResourceMetadataUrl(rs)}"`)
+        .json({ jsonrpc: "2.0", error: { code: -32003, message: INSUFFICIENT_SCOPE_MESSAGE, data: { error: "insufficient_scope" } }, id: (req.body as any)?.id ?? null });
+      return;
+    }
+    if (!(await isMcpWriteEnabled())) {
+      res.status(403).json({ jsonrpc: "2.0", error: { code: -32001, message: WRITE_DISABLED_MESSAGE }, id: (req.body as any)?.id ?? null });
+      return;
+    }
+    next();
+  };
+
+  // 寫入工具另外計算：每位使用者每分鐘 20 次（不與讀取共用額度）
+  const writeLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 20,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    skip: (req) => writeToolCalls(req.body).length === 0,
+    keyGenerator: (req) => `write:${String((req as any).auth?.extra?.userId ?? "anonymous")}`,
+    message: { jsonrpc: "2.0", error: { code: -32002, message: "寫入操作過於頻繁，請稍後再試" }, id: null },
+  });
+
+  app.post("/mcp", bearer, requireReadScope, requireMcpEnabled, mcpLimiter, requireWriteAccess, writeLimiter, async (req: any, res) => {
     const userId = String(req.auth.extra.userId);
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     const ctx: Ctx = { userId, systemRole: user?.role ?? "user" };
-    const server = buildMcpServer(ctx, { clientId: req.auth.clientId });
+    const server = buildMcpServer(ctx, {
+      clientId: req.auth.clientId,
+      clientName: await getClientName(req.auth.clientId),
+      scopes: req.auth.scopes,
+    });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { transport.close(); server.close(); });
     await server.connect(transport);
@@ -111,8 +163,13 @@ export function mountMcp(app: Express, deps: { authMiddleware: RequestHandler; r
   });
 
   app.post("/api/oauth/consent", deps.authMiddleware, async (req: any, res) => {
-    const { request, approve } = parseInput(z.object({ request: z.string().min(1), approve: z.boolean() }), req.body);
-    res.json(await decideAuthorization(req.ctx.userId, request, approve));
+    const { request, approve, scopes } = parseInput(z.object({
+      request: z.string().min(1),
+      approve: z.boolean(),
+      /** 使用者勾選要授權的權限；未提供時授權全部要求的權限 */
+      scopes: z.array(z.string()).optional(),
+    }), req.body);
+    res.json(await decideAuthorization(req.ctx.userId, request, approve, scopes));
   });
 
   // ── 個人設定：已授權的 AI 連線 ──

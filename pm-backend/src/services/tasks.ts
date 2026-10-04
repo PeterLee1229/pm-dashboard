@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "../db";
-import { ForbiddenError, NotFoundError, parseInput } from "../errors";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, parseInput } from "../errors";
 import { Change, Ctx, assertCan, assertCanAssign, assertCanChangeGroup, assertCanRead, can, canEditTask } from "./permissions";
 import { logActivity, notifyAssignee } from "./activity";
 
@@ -157,10 +157,18 @@ export async function createTask(ctx: Ctx, projectId: string, input: unknown) {
   return task;
 }
 
-export async function updateTask(ctx: Ctx, taskId: string, input: unknown) {
+/**
+ * 更新任務。opts.expectedUpdatedAt 為樂觀鎖：與目前的 updatedAt 不同時丟 ConflictError（附上最新內容），不寫入。
+ */
+export async function updateTask(ctx: Ctx, taskId: string, input: unknown, opts: { expectedUpdatedAt?: string | Date } = {}) {
   const data = parseInput(taskUpdateSchema, input);
   const task = await findTaskOr404(taskId);
   const role = await assertCanRead(ctx, task.projectId, "找不到任務");
+
+  const expected = opts.expectedUpdatedAt !== undefined ? new Date(opts.expectedUpdatedAt) : null;
+  if (expected && isNaN(expected.getTime())) throw new BadRequestError("expectedUpdatedAt 不是有效的時間");
+  const conflict = () => new ConflictError("任務在讀取後已被修改，未寫入；請以最新內容重新確認", task);
+  if (expected && expected.getTime() !== task.updatedAt.getTime()) throw conflict();
 
   if (!(await canEditTask(ctx, role, task))) {
     throw new ForbiddenError(role === "member" ? "只能編輯自己的任務" : "權限不足");
@@ -202,7 +210,13 @@ export async function updateTask(ctx: Ctx, taskId: string, input: unknown) {
   if (data.columnId === "done" && task.columnId !== "done") patch.completedAt = new Date();
   else if (data.columnId && data.columnId !== "done" && task.columnId === "done") patch.completedAt = null;
 
-  await prisma.task.update({ where: { id: taskId }, data: patch });
+  if (expected) {
+    // 條件更新：讀取到寫入之間若被他人修改也不會覆蓋
+    const res = await prisma.task.updateMany({ where: { id: taskId, updatedAt: task.updatedAt }, data: patch });
+    if (res.count === 0) throw new ConflictError("任務在讀取後已被修改，未寫入；請以最新內容重新確認", await findTaskOr404(taskId));
+  } else {
+    await prisma.task.update({ where: { id: taskId }, data: patch });
+  }
 
   if (subtasks) {
     // 保留既有子工項 id（CSV 匯入以工項ID比對），只刪除這次沒送來的

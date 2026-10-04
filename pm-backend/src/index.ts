@@ -7,7 +7,7 @@ import cron from "node-cron";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import { prisma } from "./db";
-import { HttpError, parseInput } from "./errors";
+import { ConflictError, HttpError, parseInput } from "./errors";
 import { checkDueTasks } from "./scheduler";
 import { PreviewStore } from "./services/import/diff";
 import {
@@ -719,6 +719,7 @@ mountMcp(app, { authMiddleware, requireAdmin });
 // ── 錯誤處理：service 丟出的錯誤統一轉成 HTTP 回應 ─────────────────────
 
 app.use((err: any, _req: any, res: any, _next: any) => {
+  if (err instanceof ConflictError) return res.status(409).json({ error: err.message, details: err.details });
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
   if (err?.code === "P2025") return res.status(404).json({ error: "找不到資料" });
   if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "JSON 格式錯誤" });
