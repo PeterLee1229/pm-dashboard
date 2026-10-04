@@ -7,6 +7,7 @@ import { prisma } from "../db";
 import { BadRequestError, parseInput } from "../errors";
 import { Ctx, assertCan, assertCanRead } from "./permissions";
 import { riskScore } from "./risks";
+import { getReadableProject, listVisibleProjects } from "./projects";
 
 export const REPORT_TIME_ZONE = "Asia/Taipei";
 /** 風險矩陣紅色區（分數 ≥ 16，與前端 RiskMatrixView 一致）視為高風險 */
@@ -262,6 +263,33 @@ export function buildWeeklyReport(
 
 // ── 資料載入 ──────────────────────────────────────────────────────────
 
+type DbSubTask = {
+  id: string; title: string; assignee: string; groupId: string; startDate: string; endDate: string; completion: number; timeLogs: unknown;
+};
+type DbTask = Omit<DbSubTask, never> & { priority: string; columnId: string; completedAt: Date | null; subtasks: DbSubTask[] };
+
+/** 資料庫的任務（含子工項）→ 報表計算用的形狀；日期正規化方式與前端 App.tsx 相同 */
+export function toReportTask(t: DbTask): ReportTask {
+  return {
+    id: t.id, title: t.title, priority: t.priority, assignee: t.assignee, groupId: t.groupId,
+    startDate: normalizeDate(t.startDate || ""), endDate: normalizeDate(t.endDate || ""),
+    completion: t.completion, timeLogs: (t.timeLogs as ReportTimeLog[]) || [],
+    columnId: t.columnId || "todo", completedAt: t.completedAt,
+    subtasks: t.subtasks.map((s) => ({
+      id: s.id, title: s.title, assignee: s.assignee, groupId: s.groupId,
+      startDate: normalizeDate(s.startDate || ""), endDate: normalizeDate(s.endDate || ""),
+      completion: s.completion, timeLogs: (s.timeLogs as ReportTimeLog[]) || [],
+    })),
+  };
+}
+
+/** 專案進度指標（含讀取權限檢查） */
+export async function getProjectProgress(ctx: Ctx, projectId: string) {
+  await assertCanRead(ctx, projectId);
+  const input = await loadReportInput(projectId);
+  return computeProgress(input.tasks);
+}
+
 /** 載入報表所需資料；日期正規化與組別建構方式與前端 App.tsx 相同 */
 export async function loadReportInput(projectId: string) {
   const [tasks, members, risks] = await Promise.all([
@@ -274,17 +302,7 @@ export async function loadReportInput(projectId: string) {
     prisma.risk.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
   ]);
 
-  const reportTasks: ReportTask[] = tasks.map((t) => ({
-    id: t.id, title: t.title, priority: t.priority, assignee: t.assignee, groupId: t.groupId,
-    startDate: normalizeDate(t.startDate || ""), endDate: normalizeDate(t.endDate || ""),
-    completion: t.completion, timeLogs: (t.timeLogs as ReportTimeLog[]) || [],
-    columnId: t.columnId || "todo", completedAt: t.completedAt,
-    subtasks: t.subtasks.map((s) => ({
-      id: s.id, title: s.title, assignee: s.assignee, groupId: s.groupId,
-      startDate: normalizeDate(s.startDate || ""), endDate: normalizeDate(s.endDate || ""),
-      completion: s.completion, timeLogs: (s.timeLogs as ReportTimeLog[]) || [],
-    })),
-  }));
+  const reportTasks = tasks.map(toReportTask);
 
   // 專案成員依系統組別分組（前端 projectMemberGroups）
   const groupMap = new Map<string, ReportGroup>();
@@ -331,18 +349,54 @@ async function findWeeklyNotes(projectId: string, monday: string): Promise<strin
   return bySunday?.notes ?? "";
 }
 
+/** 未來幾天內到期（含今天）的範圍；「即將到期」主任務清單使用 */
+export const UPCOMING_DAYS = 14;
+
+/** 逾期主任務（依逾期天數由多到少排序），使用 getDueStatus 的逾期判斷 */
+export function findOverdueTasks(tasks: ReportTask[], today: string) {
+  return orderForBoard(tasks)
+    .map((t) => ({ t, due: getDueStatus(t, today) }))
+    .filter((x) => x.due?.isOverdue)
+    .map(({ t, due }) => ({
+      id: t.id, title: t.title, assignee: t.assignee, groupId: t.groupId, columnId: t.columnId,
+      dueDate: due!.dueDate, overdueDays: -due!.diffDays, completion: getCompletion(t),
+    }))
+    .sort((a, b) => b.overdueDays - a.overdueDays);
+}
+
+/** 未來 days 天內（含今天）到期、尚未完成的主任務，依到期日排序 */
+export function findUpcomingTasks(tasks: ReportTask[], today: string, days = UPCOMING_DAYS) {
+  return orderForBoard(tasks)
+    .map((t) => ({ t, due: getDueStatus(t, today) }))
+    .filter((x) => x.due && getCompletion(x.t) < 100 && x.due.diffDays >= 0 && x.due.diffDays <= days)
+    .map(({ t, due }) => ({
+      id: t.id, title: t.title, assignee: t.assignee, groupId: t.groupId,
+      dueDate: due!.dueDate, daysLeft: due!.diffDays, completion: getCompletion(t),
+    }))
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+}
+
+/** 跨可見專案的逾期主任務（未指定 projectId 時涵蓋所有可見專案） */
+export async function listOverdueTasks(ctx: Ctx, opts: { projectId?: string; now?: Date } = {}) {
+  const projects = opts.projectId ? [await getReadableProject(ctx, opts.projectId)] : await listVisibleProjects(ctx);
+  const today = todayInTaipei(opts.now);
+  const result = [];
+  for (const p of projects) {
+    await assertCanRead(ctx, p.id);
+    const input = await loadReportInput(p.id);
+    for (const t of findOverdueTasks(input.tasks, today)) result.push({ project: { id: p.id, name: p.name }, ...t });
+  }
+  return { today, tasks: result.sort((a, b) => b.overdueDays - a.overdueDays) };
+}
+
 export async function getProjectSummary(ctx: Ctx, projectId: string, now: Date = new Date()) {
   await assertCanRead(ctx, projectId);
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, name: true } });
   const input = await loadReportInput(projectId);
   const today = todayInTaipei(now);
-  const board = orderForBoard(input.tasks);
 
-  const overdueTasks = board
-    .map((t) => ({ t, due: getDueStatus(t, today) }))
-    .filter((x) => x.due?.isOverdue)
-    .map(({ t, due }) => ({ id: t.id, title: t.title, dueDate: due!.dueDate, overdueDays: -due!.diffDays, completion: getCompletion(t) }))
-    .sort((a, b) => b.overdueDays - a.overdueDays);
+  const overdueTasks = findOverdueTasks(input.tasks, today);
+  const upcomingTasks = findUpcomingTasks(input.tasks, today);
 
   const activeRisks = input.risks.filter((r) => r.status !== "resolved");
   const highRisks = activeRisks
@@ -357,6 +411,8 @@ export async function getProjectSummary(ctx: Ctx, projectId: string, now: Date =
     activeRiskCount: activeRisks.length,
     highRiskCount: highRisks.length,
     highRisks,
+    upcomingDays: UPCOMING_DAYS,
+    upcomingTasks,
   };
 }
 

@@ -31,6 +31,8 @@ const CalendarView = lazy(() => import("./components/CalendarView"));
 const ActivityView = lazy(() => import("./components/ActivityView"));
 const OKRView = lazy(() => import("./components/OKRView"));
 const AdminView = lazy(() => import("./components/AdminView"));
+const McpAdminView = lazy(() => import("./components/McpAdminView"));
+const AiConnectionsView = lazy(() => import("./components/AiConnectionsView"));
 const ProjectMembersView = lazy(() => import("./components/ProjectMembersView"));
 const ImportModal = lazy(() => import("./components/ImportModal"));
 
@@ -62,7 +64,7 @@ export default function App() {
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr">("kanban");
+  const [view, setView] = useState<"kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr" | "ai_connections">("kanban");
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -1086,6 +1088,11 @@ export default function App() {
             }>{view === "admin" && currentUser?.role === "admin" ? (
         <div className="main-content page-content" style={{ marginLeft: 200 }}>
           <AdminView currentUser={currentUser} />
+          <McpAdminView />
+        </div>
+      ) : view === "ai_connections" ? (
+        <div className="main-content page-content" style={{ marginLeft: 200 }}>
+          <AiConnectionsView />
         </div>
       ) : view === "project_members" && activeProject ? (
         <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
@@ -1120,7 +1127,7 @@ export default function App() {
         </div>
       ) : null}</Suspense>}
 
-      <div className="main-content" style={{ marginLeft: 200, display: (view === "admin" || view === "project_members" || view === "activities" || view === "calendar" || view === "okr") ? "none" : undefined }}>
+      <div className="main-content" style={{ marginLeft: 200, display: (view === "admin" || view === "project_members" || view === "activities" || view === "calendar" || view === "okr" || view === "ai_connections") ? "none" : undefined }}>
         <div className="app">
           <div className="topbar">
             <div className="topbar-left">

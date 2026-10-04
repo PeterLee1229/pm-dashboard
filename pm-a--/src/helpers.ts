@@ -154,3 +154,12 @@ export function getWeekRange(date: Date): { start: Date; end: Date } {
 export function formatDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
+
+/** 西元日期時間（本地時區），例如 2026/10/04 14:05；空值回傳「—」 */
+export function formatDateTime(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
