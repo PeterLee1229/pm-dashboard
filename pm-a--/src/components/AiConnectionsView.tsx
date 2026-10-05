@@ -32,7 +32,7 @@ export default function AiConnectionsView() {
   const showSkeleton = useDelayedLoading(loading);
 
   return (
-    <div style={{ padding: "32px 40px", maxWidth: 860 }}>
+    <div className="ai-page" style={{ padding: "32px 40px", maxWidth: 860 }}>
       <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>已授權的 AI 連線</h2>
       <p style={{ fontSize: 13, color: "#64748b", marginBottom: 24, lineHeight: 1.6 }}>
         這些 AI 服務可以用你的身分「唯讀」PM Dashboard 資料，範圍與你在網頁上看到的相同。撤銷後，該服務需要重新授權才能再讀取。
@@ -45,7 +45,7 @@ export default function AiConnectionsView() {
           目前沒有已授權的 AI 連線
         </div>
       ) : (
-        <div style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
+        <div className="admin-table-wrap" style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#0f172a" }}>

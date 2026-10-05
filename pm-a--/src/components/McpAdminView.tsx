@@ -58,12 +58,12 @@ export default function McpAdminView() {
   const setFilter = (k: keyof typeof filters, v: string) => { setOffset(0); setFilters((f) => ({ ...f, [k]: v })); };
 
   return (
-    <div style={{ padding: "0 40px 40px", maxWidth: 960 }}>
+    <div className="ai-page" style={{ padding: "0 40px 40px", maxWidth: 960 }}>
       <h3 style={{ color: "#f1f5f9", fontSize: 18, fontWeight: 700, marginBottom: 16 }}>AI 連線（MCP）</h3>
       {error && <p style={{ fontSize: 13, color: "#f87171", marginBottom: 12 }}>{error}</p>}
 
       {/* 系統開關 */}
-      <div style={{ background: "#1e293b", borderRadius: 12, padding: "20px 24px", border: "1px solid #ffffff10", marginBottom: 24, display: "flex", alignItems: "center", gap: 16 }}>
+      <div className="mcp-switch-card" style={{ background: "#1e293b", borderRadius: 12, padding: "20px 24px", border: "1px solid #ffffff10", marginBottom: 24, display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ flex: 1 }}>
           <p style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
             允許 AI 服務連線
@@ -101,7 +101,7 @@ export default function McpAdminView() {
 
       {/* 稽核紀錄 */}
       <p style={{ fontSize: 14, fontWeight: 600, color: "#e2e8f0", marginBottom: 12 }}>稽核紀錄（共 {logs.total} 筆）</p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      <div className="mcp-filters" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <select value={filters.userId} onChange={(e) => setFilter("userId", e.target.value)} style={input}>
           <option value="">全部使用者</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.name}（{u.memberId}）</option>)}
@@ -110,12 +110,21 @@ export default function McpAdminView() {
           <option value="">全部工具</option>
           {TOOLS.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <input type="date" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} style={input} />
-        <span style={{ color: "#64748b", alignSelf: "center" }}>～</span>
-        <input type="date" value={filters.to} onChange={(e) => setFilter("to", e.target.value)} style={input} />
+        {/* 日期區間：手機版「起 ~ 迄」維持同一列並顯示欄位名稱 */}
+        <span className="mcp-date-range" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+          <label>
+            <span className="mobile-only-label">起始日期</span>
+            <input type="date" aria-label="起始日期" title="起始日期" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} style={input} />
+          </label>
+          <span style={{ color: "#64748b", alignSelf: "center", paddingTop: 0 }}>～</span>
+          <label>
+            <span className="mobile-only-label">結束日期</span>
+            <input type="date" aria-label="結束日期" title="結束日期" value={filters.to} onChange={(e) => setFilter("to", e.target.value)} style={input} />
+          </label>
+        </span>
       </div>
 
-      <div style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
+      <div className="admin-table-wrap" style={{ background: "#1e293b", borderRadius: 12, overflow: "hidden", border: "1px solid #ffffff10" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#0f172a" }}>
