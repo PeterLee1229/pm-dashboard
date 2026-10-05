@@ -351,6 +351,9 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
           </div>
         </div>
 
+        {/* 手機版：成員列表可左右滑動（與其他列表頁相同的 .admin-table-wrap） */}
+        <div className="admin-table-wrap">
+        <div className="member-grid">
         <div style={{
           display: "grid", gridTemplateColumns: memberColumns,
           padding: "10px 20px", borderBottom: "1px solid #ffffff08",
@@ -443,6 +446,8 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
         {members.length === 0 && (
           <div style={{ padding: 24, textAlign: "center", color: "#475569", fontSize: 13 }}>尚無成員</div>
         )}
+        </div>
+        </div>
       </div>
 
       {showAddModal && (

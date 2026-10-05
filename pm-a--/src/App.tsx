@@ -908,6 +908,11 @@ export default function App() {
           to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
+        /* 列表表格：表頭與儲存格一律靠左（#root 預設 text-align: center，會讓儲存格置中、與表頭錯開） */
+        .admin-table-wrap th,
+        .admin-table-wrap td { text-align: left; }
+        .mobile-only-label { display: none; }
+
         /* 手機版 RWD */
         /* 手機版適配 */
         @media (max-width: 768px) {
@@ -1015,7 +1020,15 @@ export default function App() {
           }
           .admin-page {
             max-width: none !important;
+            padding: 0 !important;
           }
+          /* 頁面自帶的內距在手機版歸零，改用 .page-content 的間距（與其他頁面相同，避開漢堡選單） */
+          .ai-page {
+            max-width: none !important;
+            padding: 0 0 24px !important;
+          }
+          /* 系統管理頁中，AI 連線區塊與上方使用者表格保持間距 */
+          .admin-page + .ai-page { padding-top: 32px !important; }
           .admin-stats {
             display: grid !important;
             grid-template-columns: 1fr !important;
@@ -1024,7 +1037,13 @@ export default function App() {
           .admin-table-wrap {
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch;
+            /* 顯示橫向捲軸，提示可以左右滑動 */
+            scrollbar-width: thin;
+            scrollbar-color: #475569 transparent;
           }
+          .admin-table-wrap::-webkit-scrollbar { height: 6px; }
+          .admin-table-wrap::-webkit-scrollbar-thumb { background: #475569; border-radius: 99px; }
+          .admin-table-wrap::-webkit-scrollbar-track { background: transparent; }
           .admin-table-wrap table {
             min-width: 720px !important;
           }
@@ -1032,6 +1051,9 @@ export default function App() {
           .admin-table-wrap td {
             white-space: nowrap !important;
           }
+          /* 以 CSS grid 排版的列表（專案成員）：同樣維持最小寬度、單行顯示 */
+          .admin-table-wrap .member-grid { min-width: 640px; }
+          .admin-table-wrap .member-grid > div > * { white-space: nowrap; }
           .modal {
             width: 95vw !important;
             max-height: 85vh !important;
@@ -1040,6 +1062,27 @@ export default function App() {
           .calendar-layout { flex-direction: column !important; }
           .calendar-detail { width: 100% !important; }
           .desktop-only { display: none !important; }
+        }
+
+        /* 小螢幕（< 640px）：AI 連線（MCP）的開關卡片與稽核紀錄篩選列 */
+        @media (max-width: 639px) {
+          .mcp-switch-card {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 12px !important;
+            text-align: left;
+          }
+          .mcp-switch-card button { align-self: flex-end; }
+          .mcp-filters {
+            display: grid !important;
+            grid-template-columns: 1fr;
+            gap: 8px !important;
+          }
+          .mcp-filters select { width: 100%; }
+          .mcp-date-range { display: flex !important; align-items: flex-end; gap: 8px; }
+          .mcp-date-range label { flex: 1 1 0; min-width: 0; }
+          .mcp-date-range input { width: 100%; }
+          .mobile-only-label { display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; text-align: left; }
         }
 
         @media (min-width: 769px) {
