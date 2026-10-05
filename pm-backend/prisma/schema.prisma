@@ -179,6 +179,10 @@ model ActivityLog {
   targetId  String?
   detail    String   @default("")
   projectId String?
+  /// 操作來源：web（網頁）、mcp（AI connector）、assistant（內建助理，Phase 3）
+  source     String   @default("web")
+  /// 經由 AI 工具操作時的 client 名稱（例如 Claude）
+  clientName String?
   createdAt DateTime @default(now())
 }
 
@@ -283,6 +287,23 @@ model McpAuditLog {
 model SystemSetting {
   id         Int      @id @default(1) // 整張表只有一列
   mcpEnabled Boolean  @default(false)
+  /// AI 寫入工具開關；mcpEnabled 與 mcpWriteEnabled 都為 true 時寫入工具才能使用
+  mcpWriteEnabled Boolean @default(false)
   updatedAt  DateTime @updatedAt
   updatedBy  String?
+}
+
+/// 寫入工具的冪等紀錄：同一使用者以同一個 key 重送時，回傳第一次的結果（24 小時內有效）
+model ToolIdempotency {
+  id          String   @id @default(cuid())
+  key         String
+  userId      String
+  tool        String
+  requestHash String
+  resultJson  Json
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, tool, key])
+  @@index([expiresAt])
 }

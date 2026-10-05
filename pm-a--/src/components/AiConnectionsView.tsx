@@ -35,7 +35,7 @@ export default function AiConnectionsView() {
     <div style={{ padding: "32px 40px", maxWidth: 860 }}>
       <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>已授權的 AI 連線</h2>
       <p style={{ fontSize: 13, color: "#64748b", marginBottom: 24, lineHeight: 1.6 }}>
-        這些 AI 服務可以用你的身分「唯讀」PM Dashboard 資料，範圍與你在網頁上看到的相同。撤銷後，該服務需要重新授權才能再讀取。
+        這些 AI 服務可以用你的身分存取 PM Dashboard 資料：每一筆授權的「權限」欄顯示它能讀取，或也能寫入（建立與更新任務、留言、會議紀錄與風險）。可存取的範圍與你在網頁上的權限相同。撤銷後，該服務需要重新授權才能再存取。
       </p>
 
       {error && <p style={{ fontSize: 13, color: "#f87171", marginBottom: 16 }}>{error}</p>}
@@ -58,7 +58,7 @@ export default function AiConnectionsView() {
               {items.map((c, i) => (
                 <tr key={c.id} style={{ borderTop: i > 0 ? "1px solid #ffffff08" : undefined }}>
                   <td style={{ padding: "12px 16px", color: "#e2e8f0", fontSize: 14 }}>{c.clientName}</td>
-                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{c.scope === "pm:read" ? "唯讀" : c.scope}</td>
+                  <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{c.scope.split(" ").map((s) => ({ "pm:read": "讀取", "pm:write": "寫入" } as Record<string, string>)[s] ?? s).join("、")}</td>
                   <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{formatDateTime(c.grantedAt)}</td>
                   <td style={{ padding: "12px 16px", color: "#94a3b8", fontSize: 13 }}>{formatDateTime(c.lastUsedAt)}</td>
                   <td style={{ padding: "12px 16px", textAlign: "right" }}>

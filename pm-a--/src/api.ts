@@ -428,8 +428,8 @@ export async function getOAuthConsent(request: string) {
 }
 
 /** 同意頁：允許或拒絕，回傳要導回 AI 服務的網址 */
-export async function decideOAuthConsent(request: string, approve: boolean): Promise<{ redirectUrl: string }> {
-  return apiFetch("/oauth/consent", { method: "POST", body: JSON.stringify({ request, approve }) });
+export async function decideOAuthConsent(request: string, approve: boolean, scopes?: string[]): Promise<{ redirectUrl: string }> {
+  return apiFetch("/oauth/consent", { method: "POST", body: JSON.stringify({ request, approve, ...(scopes ? { scopes } : {}) }) });
 }
 
 export async function getAiConnections() {
@@ -444,8 +444,8 @@ export async function getMcpSettings() {
   return apiFetch("/admin/mcp/settings");
 }
 
-export async function updateMcpSettings(mcpEnabled: boolean) {
-  return apiFetch("/admin/mcp/settings", { method: "PUT", body: JSON.stringify({ mcpEnabled }) });
+export async function updateMcpSettings(patch: { mcpEnabled?: boolean; mcpWriteEnabled?: boolean }) {
+  return apiFetch("/admin/mcp/settings", { method: "PUT", body: JSON.stringify(patch) });
 }
 
 export async function getMcpAuditLogs(filters: { userId?: string; tool?: string; from?: string; to?: string; limit?: number; offset?: number }) {

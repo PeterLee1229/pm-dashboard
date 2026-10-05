@@ -1,0 +1,795 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > get_activity_log 1`] = `
+{
+  "body": {
+    "items": [],
+    "nextCursor": null,
+    "total": 0,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > get_meeting 1`] = `
+{
+  "body": {
+    "attendees": [
+      {
+        "id": "E-member",
+        "name": "A組成員",
+      },
+      {
+        "id": "E-pm",
+        "name": "專案經理",
+      },
+    ],
+    "date": "2026-09-01",
+    "externalLink": null,
+    "id": "<id1>",
+    "project": {
+      "id": "<id2>",
+      "name": "專案一",
+    },
+    "series": {
+      "id": "<id3>",
+      "name": "週會",
+      "type": "regular",
+    },
+    "summary": "會議摘要",
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > get_project_summary 1`] = `
+{
+  "body": {
+    "activeRiskCount": 1,
+    "doneTasks": 1,
+    "highRiskCount": 1,
+    "highRisks": [
+      {
+        "id": "<id4>",
+        "score": 25,
+        "title": "風險一",
+      },
+    ],
+    "overdueCount": 1,
+    "overdueTasks": [
+      {
+        "assignee": {
+          "id": "E-member",
+          "name": "A組成員",
+        },
+        "completion": 20,
+        "dueDate": "2026-01-10",
+        "group": {
+          "id": "<id3>",
+          "name": "A組",
+        },
+        "id": "<id2>",
+        "overdueDays": "<n>",
+        "title": "A組成員的任務",
+      },
+    ],
+    "project": {
+      "id": "<id1>",
+      "name": "專案一",
+    },
+    "taskCompletionRate": {
+      "uiLabel": "進度",
+      "value": 20,
+    },
+    "today": "<today>",
+    "totalTasks": 5,
+    "upcomingDays": 14,
+    "upcomingTasks": [],
+    "weightedProgress": {
+      "uiLabel": "整體完成度",
+      "value": 24,
+    },
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > get_task 1`] = `
+{
+  "body": {
+    "assignee": null,
+    "attachments": [],
+    "comments": [],
+    "completedAt": null,
+    "completion": 0,
+    "description": "",
+    "endDate": null,
+    "group": null,
+    "id": "<id1>",
+    "priority": {
+      "id": "medium",
+      "label": "中",
+    },
+    "project": {
+      "id": "<id2>",
+      "name": "專案一",
+    },
+    "startDate": null,
+    "status": {
+      "id": "todo",
+      "label": "待處理",
+    },
+    "subtasks": [
+      {
+        "assignee": {
+          "id": "E-member",
+          "name": "A組成員",
+        },
+        "completion": 0,
+        "endDate": null,
+        "group": {
+          "id": "<id4>",
+          "name": "A組",
+        },
+        "id": "<id3>",
+        "parentTaskId": "<id1>",
+        "startDate": null,
+        "timeLogs": [],
+        "title": "A組子工項",
+        "totalHours": 0,
+      },
+      {
+        "assignee": {
+          "id": "E-memberB",
+          "name": "B組成員",
+        },
+        "completion": 0,
+        "endDate": null,
+        "group": {
+          "id": "<id6>",
+          "name": "B組",
+        },
+        "id": "<id5>",
+        "parentTaskId": "<id1>",
+        "startDate": null,
+        "timeLogs": [],
+        "title": "B組子工項",
+        "totalHours": 0,
+      },
+    ],
+    "timeLogs": [],
+    "title": "有子工項的任務",
+    "totalHours": 0,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > get_task（含工時、留言、附件） 1`] = `
+{
+  "body": {
+    "assignee": {
+      "id": "E-member",
+      "name": "A組成員",
+    },
+    "attachments": [
+      {
+        "date": "<today>",
+        "id": "<id6>",
+        "name": "規格書",
+        "uploader": {
+          "id": "<id5>",
+          "name": "A組成員",
+        },
+        "url": "https://example.com/spec",
+      },
+    ],
+    "comments": [
+      {
+        "author": {
+          "id": "<id5>",
+          "name": "A組成員",
+        },
+        "content": "評論",
+        "date": "<today>",
+        "id": "<id4>",
+      },
+    ],
+    "completedAt": null,
+    "completion": 20,
+    "description": "",
+    "endDate": "2026-01-10",
+    "group": {
+      "id": "<id3>",
+      "name": "A組",
+    },
+    "id": "<id1>",
+    "priority": {
+      "id": "medium",
+      "label": "中",
+    },
+    "project": {
+      "id": "<id2>",
+      "name": "專案一",
+    },
+    "startDate": null,
+    "status": {
+      "id": "inprogress",
+      "label": "進行中",
+    },
+    "subtasks": [],
+    "timeLogs": [
+      {
+        "date": "2026-01-05",
+        "hours": 3,
+      },
+    ],
+    "title": "A組成員的任務",
+    "totalHours": 3,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > get_weekly_report_data 1`] = `
+{
+  "body": {
+    "activeRisks": [
+      {
+        "id": "<id3>",
+        "score": 25,
+        "status": "監控中",
+        "title": "風險一",
+      },
+    ],
+    "allHours": [
+      {
+        "hours": 3,
+        "name": "A組成員（E-member）",
+      },
+    ],
+    "allTotalHours": 3,
+    "completedTasks": [
+      {
+        "group": "未分組",
+        "id": "<id2>",
+        "title": "已完成任務",
+      },
+    ],
+    "inProgressTasks": [],
+    "monthHours": [],
+    "monthTotalHours": 0,
+    "nextWeekTasks": [],
+    "notes": "",
+    "project": {
+      "id": "<id1>",
+      "name": "專案一",
+    },
+    "totalHours": 0,
+    "weekEnd": "<today>",
+    "weekEndROC": "115/10/04",
+    "weekHours": [],
+    "weekStart": "2026-09-28",
+    "weekStartROC": "115/09/28",
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_meetings 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "attendees": [
+          {
+            "id": "E-member",
+            "name": "A組成員",
+          },
+          {
+            "id": "E-pm",
+            "name": "專案經理",
+          },
+        ],
+        "date": "2026-09-01",
+        "hasExternalLink": false,
+        "id": "<id1>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "series": {
+          "id": "<id3>",
+          "name": "週會",
+          "type": "regular",
+        },
+        "summaryPreview": "會議摘要",
+      },
+    ],
+    "nextCursor": null,
+    "total": 1,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_okrs 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "description": "",
+        "endDate": "2026-06-30",
+        "id": "<id1>",
+        "keyResults": [
+          {
+            "currentValue": 4,
+            "id": "<id3>",
+            "progress": 40,
+            "targetValue": 10,
+            "title": "KR 一",
+            "unit": "%",
+          },
+        ],
+        "progress": 40,
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": "2026-01-01",
+        "title": "目標一",
+      },
+    ],
+    "nextCursor": null,
+    "total": 1,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_overdue_tasks 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "assignee": {
+          "id": "E-member",
+          "name": "A組成員",
+        },
+        "completion": 20,
+        "dueDate": "2026-01-10",
+        "group": {
+          "id": "<id3>",
+          "name": "A組",
+        },
+        "id": "<id1>",
+        "overdueDays": "<n>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "status": {
+          "id": "inprogress",
+          "label": "進行中",
+        },
+        "title": "A組成員的任務",
+      },
+    ],
+    "nextCursor": null,
+    "today": "<today>",
+    "total": 1,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_projects 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "description": "",
+        "doneTasks": 1,
+        "id": "<id1>",
+        "memberCount": 6,
+        "myRole": "pm",
+        "name": "專案一",
+        "status": "active",
+        "taskCompletionRate": {
+          "uiLabel": "進度",
+          "value": 20,
+        },
+        "totalTasks": 5,
+        "weightedProgress": {
+          "uiLabel": "整體完成度",
+          "value": 24,
+        },
+      },
+    ],
+    "nextCursor": null,
+    "total": 1,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_risks 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "countermeasure": "",
+        "createdDate": null,
+        "description": "",
+        "id": "<id2>",
+        "impact": {
+          "id": "high",
+          "label": "高",
+          "value": 5,
+        },
+        "owner": null,
+        "ownerGroup": null,
+        "probability": {
+          "id": "high",
+          "label": "高",
+          "value": 5,
+        },
+        "score": 25,
+        "status": {
+          "id": "monitoring",
+          "label": "監控中",
+        },
+        "title": "風險一",
+      },
+    ],
+    "nextCursor": null,
+    "project": {
+      "id": "<id1>",
+      "name": "專案一",
+    },
+    "total": 1,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_tasks 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "assignee": null,
+        "completion": 100,
+        "endDate": null,
+        "group": null,
+        "id": "<id1>",
+        "isOverdue": false,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "done",
+          "label": "已完成",
+        },
+        "subtasks": [],
+        "title": "已完成任務",
+      },
+      {
+        "assignee": null,
+        "completion": 0,
+        "endDate": null,
+        "group": null,
+        "id": "<id3>",
+        "isOverdue": false,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "todo",
+          "label": "待處理",
+        },
+        "subtasks": [],
+        "title": "未指派任務",
+      },
+      {
+        "assignee": null,
+        "completion": 0,
+        "endDate": null,
+        "group": null,
+        "id": "<id4>",
+        "isOverdue": false,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "todo",
+          "label": "待處理",
+        },
+        "subtasks": [
+          {
+            "assignee": {
+              "id": "E-member",
+              "name": "A組成員",
+            },
+            "completion": 0,
+            "endDate": null,
+            "group": {
+              "id": "<id6>",
+              "name": "A組",
+            },
+            "id": "<id5>",
+            "parentTaskId": "<id4>",
+            "startDate": null,
+            "title": "A組子工項",
+          },
+          {
+            "assignee": {
+              "id": "E-memberB",
+              "name": "B組成員",
+            },
+            "completion": 0,
+            "endDate": null,
+            "group": {
+              "id": "<id8>",
+              "name": "B組",
+            },
+            "id": "<id7>",
+            "parentTaskId": "<id4>",
+            "startDate": null,
+            "title": "B組子工項",
+          },
+        ],
+        "title": "有子工項的任務",
+      },
+      {
+        "assignee": {
+          "id": "E-member",
+          "name": "A組成員",
+        },
+        "completion": 20,
+        "endDate": "2026-01-10",
+        "group": {
+          "id": "<id6>",
+          "name": "A組",
+        },
+        "id": "<id9>",
+        "isOverdue": true,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "inprogress",
+          "label": "進行中",
+        },
+        "subtasks": [],
+        "title": "A組成員的任務",
+      },
+      {
+        "assignee": {
+          "id": "E-memberB",
+          "name": "B組成員",
+        },
+        "completion": 0,
+        "endDate": "2099-12-31",
+        "group": {
+          "id": "<id8>",
+          "name": "B組",
+        },
+        "id": "<id10>",
+        "isOverdue": false,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "todo",
+          "label": "待處理",
+        },
+        "subtasks": [],
+        "title": "B組成員的任務",
+      },
+    ],
+    "nextCursor": null,
+    "total": 5,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > list_tasks（篩選） 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "assignee": null,
+        "completion": 0,
+        "endDate": null,
+        "group": null,
+        "id": "<id1>",
+        "isOverdue": false,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "todo",
+          "label": "待處理",
+        },
+        "subtasks": [
+          {
+            "assignee": {
+              "id": "E-member",
+              "name": "A組成員",
+            },
+            "completion": 0,
+            "endDate": null,
+            "group": {
+              "id": "<id4>",
+              "name": "A組",
+            },
+            "id": "<id3>",
+            "parentTaskId": "<id1>",
+            "startDate": null,
+            "title": "A組子工項",
+          },
+          {
+            "assignee": {
+              "id": "E-memberB",
+              "name": "B組成員",
+            },
+            "completion": 0,
+            "endDate": null,
+            "group": {
+              "id": "<id6>",
+              "name": "B組",
+            },
+            "id": "<id5>",
+            "parentTaskId": "<id1>",
+            "startDate": null,
+            "title": "B組子工項",
+          },
+        ],
+        "title": "有子工項的任務",
+      },
+      {
+        "assignee": {
+          "id": "E-memberB",
+          "name": "B組成員",
+        },
+        "completion": 0,
+        "endDate": "2099-12-31",
+        "group": {
+          "id": "<id6>",
+          "name": "B組",
+        },
+        "id": "<id7>",
+        "isOverdue": false,
+        "priority": {
+          "id": "medium",
+          "label": "中",
+        },
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "startDate": null,
+        "status": {
+          "id": "todo",
+          "label": "待處理",
+        },
+        "subtasks": [],
+        "title": "B組成員的任務",
+      },
+    ],
+    "nextCursor": null,
+    "total": 2,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > search 1`] = `
+{
+  "body": {
+    "items": [
+      {
+        "id": "<id1>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "status": "已完成",
+        "title": "已完成任務",
+        "type": "task",
+      },
+      {
+        "id": "<id3>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "status": "待處理",
+        "title": "未指派任務",
+        "type": "task",
+      },
+      {
+        "id": "<id4>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "status": "待處理",
+        "title": "有子工項的任務",
+        "type": "task",
+      },
+      {
+        "id": "<id5>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "status": "進行中",
+        "title": "A組成員的任務",
+        "type": "task",
+      },
+      {
+        "id": "<id6>",
+        "project": {
+          "id": "<id2>",
+          "name": "專案一",
+        },
+        "status": "待處理",
+        "title": "B組成員的任務",
+        "type": "task",
+      },
+    ],
+    "nextCursor": null,
+    "total": 5,
+  },
+  "isError": false,
+}
+`;
+
+exports[`12 支唯讀工具的輸出與遷移前相同 > 錯誤：非成員讀取任務 1`] = `
+{
+  "body": {
+    "code": "NOT_FOUND",
+    "error": "找不到任務",
+  },
+  "isError": true,
+}
+`;

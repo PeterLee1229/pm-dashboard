@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { prisma } from "../src/db";
-import { buildMcpServer, paginate, toROC } from "../src/mcp/tools";
+import { buildMcpServer } from "../src/tools/adapters/mcp";
+import { paginate, toROC } from "../src/tools/format";
 import { Fixture, ROLE_USER, api, resetAndSeed } from "./fixtures";
 
 let f: Fixture;
@@ -48,15 +49,19 @@ const rest = (role: Role, path: string) => api().get(path).set("Authorization", 
 const ids = (xs: { id: string }[]) => xs.map((x) => x.id).sort();
 
 describe("工具清單", () => {
-  it("12 支工具都有繁體中文描述，且標註 readOnlyHint", async () => {
+  const READ = [
+    "get_activity_log", "get_meeting", "get_project_summary", "get_task", "get_weekly_report_data",
+    "list_meetings", "list_okrs", "list_overdue_tasks", "list_projects", "list_risks", "list_tasks", "search",
+  ];
+  const WRITE = ["add_comment", "create_meeting_record", "create_risk", "create_tasks", "update_task"];
+
+  it("12 支唯讀工具與 5 支寫入工具都有繁體中文描述，annotations 正確", async () => {
     const { tools } = await (await clientFor("member")).listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      "get_activity_log", "get_meeting", "get_project_summary", "get_task", "get_weekly_report_data",
-      "list_meetings", "list_okrs", "list_overdue_tasks", "list_projects", "list_risks", "list_tasks", "search",
-    ]);
+    expect(tools.map((t) => t.name).sort()).toEqual([...READ, ...WRITE].sort());
     for (const t of tools) {
-      expect(t.annotations?.readOnlyHint, t.name).toBe(true);
       expect(t.description, t.name).toMatch(/[一-鿿]/);
+      expect(t.annotations?.readOnlyHint, t.name).toBe(READ.includes(t.name));
+      expect(t.annotations?.destructiveHint, t.name).toBe(false);
     }
   });
 });

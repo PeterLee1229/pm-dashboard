@@ -15,10 +15,10 @@ import {
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import { prisma } from "../db";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors";
-import { isMcpEnabled } from "../services/systemSettings";
+import { getSystemSettings, isMcpEnabled } from "../services/systemSettings";
 import {
   ACCESS_TOKEN_TTL_MS, AUTH_CODE_TTL_MS, AUTH_REQUEST_TTL_SECONDS, REFRESH_TOKEN_TTL_MS,
-  SCOPE_READ, SCOPE_WRITE, SUPPORTED_SCOPES, getMcpConfig,
+  SCOPE_READ, SUPPORTED_SCOPES, getMcpConfig,
 } from "./config";
 
 export const sha256 = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
@@ -108,19 +108,27 @@ export async function describeAuthorizationRequest(requestToken: unknown) {
   const req = readAuthorizationRequest(requestToken);
   const client = await prisma.oAuthClient.findUnique({ where: { clientId: req.clientId } });
   if (!client) throw new NotFoundError("找不到要求授權的應用程式");
+  const settings = await getSystemSettings();
   return {
-    mcpEnabled: await isMcpEnabled(),
+    mcpEnabled: settings.mcpEnabled,
+    /** 寫入工具的系統開關；關閉時仍可授權 pm:write，但在開啟前無法使用寫入工具 */
+    mcpWriteEnabled: settings.mcpWriteEnabled,
     clientName: client.clientName || "未命名的應用程式",
     redirectHost: new URL(req.redirectUri).host,
     scopes: req.scope.split(" "),
   };
 }
 
+export async function getClientName(clientId: string): Promise<string | undefined> {
+  const c = await prisma.oAuthClient.findUnique({ where: { clientId }, select: { clientName: true } });
+  return c?.clientName ?? undefined;
+}
+
 /**
  * 使用者在同意頁按下「允許」或「拒絕」。回傳要導回 client 的網址。
  * 允許時核發 auth code（綁定目前登入的使用者），拒絕時帶 error=access_denied。
  */
-export async function decideAuthorization(userId: string, requestToken: unknown, approve: boolean) {
+export async function decideAuthorization(userId: string, requestToken: unknown, approve: boolean, grantedScopes?: string[]) {
   const req = readAuthorizationRequest(requestToken);
   const client = await prisma.oAuthClient.findUnique({ where: { clientId: req.clientId } });
   if (!client || !client.redirectUris.includes(req.redirectUri)) throw new BadRequestError("授權請求無效");
@@ -130,6 +138,13 @@ export async function decideAuthorization(userId: string, requestToken: unknown,
   }
   if (!(await isMcpEnabled())) throw new ForbiddenError("系統未開放 AI 連線");
 
+  // 使用者在同意頁可取消勾選寫入；只能核發要求範圍內的 scope，且讀取為必要
+  const requested = req.scope.split(" ");
+  const granted = grantedScopes ?? requested;
+  if (granted.some((s) => !requested.includes(s))) throw new BadRequestError("不可授權超出要求範圍的權限");
+  if (!granted.includes(SCOPE_READ)) throw new BadRequestError("讀取權限為必要");
+  const scope = SUPPORTED_SCOPES.filter((s) => granted.includes(s)).join(" ");
+
   const code = newSecret();
   await prisma.oAuthAuthCode.create({
     data: {
@@ -138,7 +153,7 @@ export async function decideAuthorization(userId: string, requestToken: unknown,
       userId,
       redirectUri: req.redirectUri,
       codeChallenge: req.codeChallenge,
-      scope: req.scope,
+      scope,
       resource: req.resource ?? null,
       expiresAt: new Date(Date.now() + AUTH_CODE_TTL_MS),
     },
@@ -184,10 +199,11 @@ export class PrismaOAuthProvider implements OAuthServerProvider {
 
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response): Promise<void> {
     const { resourceUrl, frontendUrl } = getMcpConfig();
-    const scopes = params.scopes && params.scopes.length > 0 ? params.scopes : [SCOPE_READ];
-    if (scopes.includes(SCOPE_WRITE)) throw new InvalidScopeError("pm:write 尚未開放");
-    const unknown = scopes.filter((s) => !SUPPORTED_SCOPES.includes(s));
+    // 未指定 scope 時要求全部（使用者可在同意頁取消勾選寫入）；讀取為必要，一律包含
+    const requested = params.scopes && params.scopes.length > 0 ? params.scopes : SUPPORTED_SCOPES;
+    const unknown = requested.filter((s) => !SUPPORTED_SCOPES.includes(s));
     if (unknown.length > 0) throw new InvalidScopeError(`不支援的 scope：${unknown.join(" ")}`);
+    const scopes = SUPPORTED_SCOPES.filter((s) => s === SCOPE_READ || requested.includes(s));
     if (params.resource && !sameResource(params.resource, resourceUrl)) {
       throw new InvalidTargetError("resource 必須是本伺服器的 MCP endpoint");
     }
