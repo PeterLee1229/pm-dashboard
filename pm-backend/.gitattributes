@@ -1,0 +1,2 @@
+# vitest snapshot 以 LF 比對，避免 Windows 的 autocrlf 轉成 CRLF
+*.snap text eol=lf

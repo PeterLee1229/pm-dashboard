@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import LoginPage from "../LoginPage";
 import { decideOAuthConsent, getCurrentUser, getOAuthConsent, isLoggedIn } from "../api";
 
-type ConsentInfo = { mcpEnabled: boolean; clientName: string; redirectHost: string; scopes: string[] };
+type ConsentInfo = { mcpEnabled: boolean; mcpWriteEnabled: boolean; clientName: string; redirectHost: string; scopes: string[] };
+
+const scopeRow: React.CSSProperties = {
+  display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 14px", borderRadius: 10,
+  border: "1px solid #ffffff12", background: "#0f1117",
+};
 
 const page: React.CSSProperties = {
   minHeight: "100vh", background: "#0f1117", color: "#e2e8f0",
@@ -21,6 +26,8 @@ export default function ConsentPage() {
   const [info, setInfo] = useState<ConsentInfo | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // 寫入預設勾選（AI 服務有要求時）；使用者可以取消
+  const [writeChoice, setWriteChoice] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!loggedIn || !request) return;
@@ -39,7 +46,8 @@ export default function ConsentPage() {
   const decide = async (approve: boolean) => {
     setSubmitting(true);
     try {
-      const { redirectUrl } = await decideOAuthConsent(request, approve);
+      const scopes = approve ? ["pm:read", ...(writeRequested && allowWrite ? ["pm:write"] : [])] : undefined;
+      const { redirectUrl } = await decideOAuthConsent(request, approve, scopes);
       window.location.href = redirectUrl;
     } catch (err) {
       setError((err as Error).message);
@@ -48,6 +56,8 @@ export default function ConsentPage() {
   };
 
   const user = getCurrentUser();
+  const writeRequested = !!info?.scopes.includes("pm:write");
+  const allowWrite = writeChoice ?? true;
 
   return (
     <div style={page}>
@@ -69,11 +79,39 @@ export default function ConsentPage() {
             <p style={{ fontSize: 15, lineHeight: 1.7, marginBottom: 16 }}>
               <strong style={{ color: "#f1f5f9" }}>{info.clientName}</strong>
               <span style={{ color: "#94a3b8" }}>（{info.redirectHost}）</span>
-              要求以你的身分讀取 PM Dashboard 資料。
+              要求以你的身分存取 PM Dashboard 資料。
             </p>
-            <ul style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.9, paddingLeft: 20, marginBottom: 20 }}>
-              <li><strong style={{ color: "#e2e8f0" }}>唯讀</strong>：只能讀取，不能新增、修改或刪除任何資料</li>
-              <li>可讀取的範圍依你在各專案的角色而定，與你在網頁上看到的相同</li>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              <label style={{ ...scopeRow, cursor: "default" }}>
+                <input type="checkbox" checked disabled style={{ marginTop: 3 }} />
+                <span>
+                  <strong style={{ fontSize: 14, color: "#e2e8f0" }}>讀取</strong>
+                  <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>（必要）</span>
+                  <span style={{ display: "block", fontSize: 12, color: "#94a3b8", marginTop: 2, lineHeight: 1.6 }}>
+                    讀取專案、任務、會議、風險、週報、OKR 與活動紀錄
+                  </span>
+                </span>
+              </label>
+              {writeRequested && (
+                <label style={{ ...scopeRow, cursor: "pointer", borderColor: allowWrite ? "#6366f155" : "#ffffff12" }}>
+                  <input type="checkbox" checked={allowWrite} onChange={(e) => setWriteChoice(e.target.checked)} style={{ marginTop: 3 }} />
+                  <span>
+                    <strong style={{ fontSize: 14, color: "#e2e8f0" }}>寫入</strong>
+                    <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>（可取消）</span>
+                    <span style={{ display: "block", fontSize: 12, color: "#94a3b8", marginTop: 2, lineHeight: 1.6 }}>
+                      建立與更新任務、新增留言、會議紀錄與風險。不能刪除任何資料，操作會標示「via {info.clientName}」並留下稽核紀錄
+                    </span>
+                    {!info.mcpWriteEnabled && (
+                      <span style={{ display: "block", fontSize: 11, color: "#f59e0b", marginTop: 4 }}>
+                        系統目前尚未開放 AI 寫入，管理員開啟後才能使用
+                      </span>
+                    )}
+                  </span>
+                </label>
+              )}
+            </div>
+            <ul style={{ fontSize: 12, color: "#64748b", lineHeight: 1.8, paddingLeft: 18, marginBottom: 20 }}>
+              <li>可存取的範圍依你在各專案的角色而定，與你在網頁上的權限相同</li>
               <li>資料會傳送到這個 AI 服務；你可以隨時在「已授權的 AI 連線」撤銷</li>
             </ul>
             {user && (

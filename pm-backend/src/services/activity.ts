@@ -1,9 +1,29 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { prisma } from "../db";
 import { Ctx, assertCanRead } from "./permissions";
 
+// ── 操作來源 ──────────────────────────────────────────────────────────
+// 經由 AI 工具（MCP connector / Phase 3 內建助理）執行的操作，活動紀錄要標示來源。
+// 工具 adapter 以 runWithOrigin 包住整次呼叫，services 內的 logActivity 會自動帶上來源，不必逐層傳遞。
+
+export type ActivitySource = "web" | "mcp" | "assistant";
+export type ActivityOrigin = { source: ActivitySource; clientName?: string | null };
+
+const originStore = new AsyncLocalStorage<ActivityOrigin>();
+
+export function runWithOrigin<T>(origin: ActivityOrigin, fn: () => Promise<T>): Promise<T> {
+  return originStore.run(origin, fn);
+}
+
+/** 目前操作的來源欄位（寫入 ActivityLog 用）；不在工具呼叫中時為 web */
+export function currentOrigin(): { source: ActivitySource; clientName: string | null } {
+  const o = originStore.getStore();
+  return { source: o?.source ?? "web", clientName: o?.clientName ?? null };
+}
+
 export async function logActivity(userId: string, action: string, target: string, detail: string, projectId?: string, targetId?: string) {
   return prisma.activityLog.create({
-    data: { userId, action, target, detail, projectId, targetId },
+    data: { userId, action, target, detail, projectId, targetId, ...currentOrigin() },
   });
 }
 

@@ -158,6 +158,12 @@ export default function ActivityView({ projectId }: { projectId: string }) {
                         fontSize: 10, padding: "1px 6px", borderRadius: 99,
                         background: actionCfg.color + "18", color: actionCfg.color
                       }}>{actionCfg.label}{TARGET_LABELS[a.target] || a.target}</span>
+                      {a.source && a.source !== "web" && (
+                        <span title={`經由 AI 工具操作（${a.clientName || a.source}）`} style={{
+                          fontSize: 10, padding: "1px 6px", borderRadius: 99,
+                          background: "#d9770618", color: "#f59e0b", border: "1px solid #f59e0b33",
+                        }}>via {a.clientName || "Claude"}</span>
+                      )}
                     </div>
                     <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>{a.detail}</p>
                   </div>

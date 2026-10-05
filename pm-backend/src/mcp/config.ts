@@ -15,9 +15,9 @@ export function getMcpConfig() {
 }
 
 export const SCOPE_READ = "pm:read";
-/** 結構上預留，Phase 1 不核發 */
+/** Phase 2 起核發：使用者可在同意頁取消勾選 */
 export const SCOPE_WRITE = "pm:write";
-export const SUPPORTED_SCOPES = [SCOPE_READ];
+export const SUPPORTED_SCOPES = [SCOPE_READ, SCOPE_WRITE];
 
 export const AUTH_CODE_TTL_MS = 10 * 60 * 1000;
 export const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;

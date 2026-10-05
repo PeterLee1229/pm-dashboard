@@ -33,7 +33,7 @@ async function register(redirectUris = [CLAUDE_CALLBACK]) {
 }
 
 /** 走完 authorize → 同意頁 → 取得 auth code */
-async function authorize(client: { client_id: string }, userToken: string, opts: { scope?: string; approve?: boolean } = {}) {
+async function authorize(client: { client_id: string }, userToken: string, opts: { scope?: string; approve?: boolean; grant?: string[] } = {}) {
   const { verifier, challenge } = pkce();
   const auth = await api().get("/authorize").query({
     response_type: "code", client_id: client.client_id, redirect_uri: CLAUDE_CALLBACK,
@@ -45,7 +45,7 @@ async function authorize(client: { client_id: string }, userToken: string, opts:
   if (consentUrl.pathname !== "/oauth/consent") return { verifier, redirect: consentUrl, code: null as string | null };
   const request = consentUrl.searchParams.get("request")!;
   const decision = await api().post("/api/oauth/consent").set("Authorization", `Bearer ${userToken}`)
-    .send({ request, approve: opts.approve ?? true });
+    .send({ request, approve: opts.approve ?? true, ...(opts.grant ? { scopes: opts.grant } : {}) });
   const redirect = decision.body.redirectUrl ? new URL(decision.body.redirectUrl) : (null as unknown as URL);
   return { verifier, redirect, code: redirect?.searchParams.get("code") ?? null, decision, request };
 }
@@ -80,7 +80,7 @@ describe("metadata", () => {
       registration_endpoint: "http://localhost:3000/register",
       revocation_endpoint: "http://localhost:3000/revoke",
       code_challenge_methods_supported: ["S256"],
-      scopes_supported: ["pm:read"],
+      scopes_supported: ["pm:read", "pm:write"],
     });
   });
 
@@ -96,6 +96,10 @@ describe("metadata", () => {
     const res = await api().post("/mcp").send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(res.status).toBe(401);
     expect(res.headers["www-authenticate"]).toContain("resource_metadata=\"http://localhost:3000/.well-known/oauth-protected-resource/mcp\"");
+    // 不在 401 限縮 scope：MCP client 會依此決定要求哪些 scope，限縮成 pm:read 會讓使用者無法選擇寫入
+    expect(res.headers["www-authenticate"]).not.toContain("scope=");
+    const prm = await api().get("/.well-known/oauth-protected-resource/mcp");
+    expect(prm.body.scopes_supported).toEqual(["pm:read", "pm:write"]);
   });
 
   it("/mcp 與 /.well-known 允許 claude.ai 跨來源；其他來源不允許", async () => {
@@ -164,11 +168,64 @@ describe("授權流程", () => {
     expect(await prisma.oAuthAuthCode.count()).toBe(0);
   });
 
-  it("要求 pm:write 時導回 error=invalid_scope（Phase 1 不核發）", async () => {
+  // Phase 2：開始核發 pm:write；使用者可在同意頁取消勾選寫入
+  it("同意頁勾選讀取與寫入：核發 pm:read pm:write", async () => {
     const client = (await register()).body;
-    const { redirect } = await authorize(client, f.tokens.member, { scope: "pm:read pm:write" });
+    const { code, verifier } = await authorize(client, f.tokens.member, { scope: "pm:read pm:write", grant: ["pm:read", "pm:write"] });
+    const t = await exchange(client, { grant_type: "authorization_code", code: code!, code_verifier: verifier, redirect_uri: CLAUDE_CALLBACK });
+    expect(t.body.scope).toBe("pm:read pm:write");
+  });
+
+  it("同意頁取消勾選寫入：只核發 pm:read", async () => {
+    const client = (await register()).body;
+    const { code, verifier } = await authorize(client, f.tokens.member, { scope: "pm:read pm:write", grant: ["pm:read"] });
+    const t = await exchange(client, { grant_type: "authorization_code", code: code!, code_verifier: verifier, redirect_uri: CLAUDE_CALLBACK });
+    expect(t.body.scope).toBe("pm:read");
+  });
+
+  it("未指定 scope 時同意頁列出讀取與寫入；不帶勾選結果則全部核發", async () => {
+    const client = (await register()).body;
+    const res = await api().get("/authorize").query({
+      response_type: "code", client_id: client.client_id, redirect_uri: CLAUDE_CALLBACK,
+      code_challenge: pkce().challenge, code_challenge_method: "S256",
+    });
+    const request = new URL(res.headers.location).searchParams.get("request");
+    const info = await api().get("/api/oauth/consent").query({ request }).set("Authorization", `Bearer ${f.tokens.member}`);
+    expect(info.body).toMatchObject({ scopes: ["pm:read", "pm:write"], mcpWriteEnabled: false });
+  });
+
+  it("只要求 pm:write 時一併要求 pm:read（讀取為必要）", async () => {
+    const client = (await register()).body;
+    const { code, verifier } = await authorize(client, f.tokens.member, { scope: "pm:write" });
+    const t = await exchange(client, { grant_type: "authorization_code", code: code!, code_verifier: verifier, redirect_uri: CLAUDE_CALLBACK });
+    expect(t.body.scope).toBe("pm:read pm:write");
+  });
+
+  it("不能授權超出要求範圍的權限、不能取消讀取", async () => {
+    const client = (await register()).body;
+    const a = await authorize(client, f.tokens.member, { scope: "pm:read", grant: ["pm:read", "pm:write"] });
+    expect(a.decision!.status).toBe(400);
+    const b = await authorize(client, f.tokens.member, { scope: "pm:read pm:write", grant: ["pm:write"] });
+    expect(b.decision!.status).toBe(400);
+  });
+
+  it("不支援的 scope 導回 error=invalid_scope", async () => {
+    const client = (await register()).body;
+    const { redirect } = await authorize(client, f.tokens.member, { scope: "pm:read pm:admin" });
     expect(redirect.origin + redirect.pathname).toBe(CLAUDE_CALLBACK);
     expect(redirect.searchParams.get("error")).toBe("invalid_scope");
+  });
+
+  it("既有的 pm:read token 不會自動升級：refresh 時不能要求 pm:write", async () => {
+    const client = (await register()).body;
+    const { code, verifier } = await authorize(client, f.tokens.member, { scope: "pm:read" });
+    const t = (await exchange(client, { grant_type: "authorization_code", code: code!, code_verifier: verifier, redirect_uri: CLAUDE_CALLBACK })).body;
+    expect(t.scope).toBe("pm:read");
+    const up = await exchange(client, { grant_type: "refresh_token", refresh_token: t.refresh_token, scope: "pm:read pm:write" });
+    expect(up.status).toBe(400);
+    expect(up.body.error).toBe("invalid_scope");
+    const same = await exchange(client, { grant_type: "refresh_token", refresh_token: t.refresh_token });
+    expect(same.body.scope).toBe("pm:read");
   });
 
   it("authorize 的 redirect URI 未註冊時拒絕", async () => {

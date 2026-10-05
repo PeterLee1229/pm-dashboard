@@ -16,19 +16,26 @@ npm test             # 執行 vitest（每個測試檔會清空並重新 seed �
 
 - `src/index.ts`：路由。只負責解析請求、呼叫 service、回傳結果
 - `src/services/`：查詢與權限邏輯（REST API 與 MCP 工具共用）。權限矩陣在 `services/permissions.ts`
-- `src/mcp/`：MCP connector（OAuth 授權伺服器、`/mcp` endpoint、12 支唯讀工具）
+- `src/mcp/`：MCP connector（OAuth 授權伺服器、`/mcp` endpoint）
+- `src/tools/`：工具註冊表。工具只定義一次（`read/`、`write/`），由 `adapters/mcp.ts` 提供給 MCP server、`adapters/anthropic.ts` 轉成 Anthropic API 格式（Phase 3 內建助理用）。參數驗證、scope、寫入開關、活動紀錄來源與稽核統一在 `execute.ts` 處理
 
 ## MCP connector
 
-讓 claude.ai 等 AI 服務透過自訂 connector，以使用者本人身分**唯讀** PM Dashboard 資料。
+讓 claude.ai 等 AI 服務透過自訂 connector，以使用者本人身分讀取 PM Dashboard 資料；使用者授權寫入時，也可以建立與更新資料。
 
-- **系統開關**：在系統管理 → AI 連線（MCP）開啟，預設為關閉。關閉時，`/mcp` 一律回 403
+- **系統開關**：在系統管理 → AI 連線（MCP）設定，預設皆為關閉
+  - 「允許 AI 服務連線」（`mcpEnabled`）：關閉時，`/mcp` 一律回 403
+  - 「允許 AI 寫入」（`mcpWriteEnabled`）：兩個開關都開啟時，寫入工具才能使用
+- **工具**：
+  - 12 支唯讀工具
+  - 5 支寫入工具：`create_tasks`、`update_task`、`add_comment`、`create_meeting_record`、`create_risk`。不提供刪除；每位使用者每分鐘最多 20 次（與讀取分開計算）
+- **活動紀錄**：經由工具寫入的操作，`ActivityLog.source` 為 `mcp`、`clientName` 為 AI 服務名稱，網頁上顯示「via Claude」
 - **端點**：
   - `/mcp`（Streamable HTTP，stateless）
   - `/authorize`、`/token`、`/register`、`/revoke`
   - `/.well-known/oauth-authorization-server`、`/.well-known/oauth-protected-resource[/mcp]`
 - **授權同意頁**：前端的 `/oauth/consent`
-- **Scope**：只核發 `pm:read`。`pm:write` 在結構上已預留，但 Phase 1 不核發
+- **Scope**：`pm:read`（必要）與 `pm:write`（使用者可以在同意頁取消勾選）。用 `pm:read` 的 token 呼叫寫入工具時回 403 `insufficient_scope`，需要中斷並重新連接 connector 才能取得寫入權限
 - **安全**：
   - token、auth code、client secret 只存 SHA-256 hash
   - 授權時強制 PKCE S256
