@@ -35,7 +35,7 @@ export default function AiConnectionsView() {
     <div style={{ padding: "32px 40px", maxWidth: 860 }}>
       <h2 style={{ color: "#f1f5f9", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>已授權的 AI 連線</h2>
       <p style={{ fontSize: 13, color: "#64748b", marginBottom: 24, lineHeight: 1.6 }}>
-        這些 AI 服務可以用你的身分「唯讀」PM Dashboard 資料，範圍與你在網頁上看到的相同。撤銷後，該服務需要重新授權才能再讀取。
+        這些 AI 服務可以用你的身分存取 PM Dashboard 資料：每一筆授權的「權限」欄顯示它能讀取，或也能寫入（建立與更新任務、留言、會議紀錄與風險）。可存取的範圍與你在網頁上的權限相同。撤銷後，該服務需要重新授權才能再存取。
       </p>
 
       {error && <p style={{ fontSize: 13, color: "#f87171", marginBottom: 16 }}>{error}</p>}
