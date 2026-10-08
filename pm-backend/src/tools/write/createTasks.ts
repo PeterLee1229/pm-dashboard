@@ -14,7 +14,7 @@ export const createTasksTool = defineTool({
     "dryRun=false：單一交易，全部成功或全部不寫入；只要有一筆錯誤（欄位或權限）整批拒絕並列出每筆錯誤。疑似重複不會擋下寫入。",
     "batchKey：冪等鍵（例如 UUID），24 小時內以相同 batchKey 重送會直接回傳第一次的結果，不會重複建立。",
     "子任務：parentTaskId 掛在既有任務底下，或 parentRef 填同批次另一筆主任務的 clientRef；子任務只有一層，沒有狀態與優先級。",
-    "assigneeId 為員工編號（memberId，可由 list_tasks / get_task 回傳的 assignee.id 取得），必須是專案成員；groupId 為組別 id。權限與網頁相同：只有 Owner、PM、組長可以建立；組長只能指派給自己組的成員、設為自己的組。",
+    "assigneeId 為員工編號（memberId，可由 list_tasks / get_task 回傳的 assignee.id 取得），必須是專案成員；groupId 為組別 id。已封存的專案為唯讀，無法寫入（需先在網頁解除封存）。權限與網頁相同：只有 Owner、PM、組長可以建立；組長只能指派給自己組的成員、設為自己的組。",
   ].join("\n"),
   inputSchema: z.object({
     projectId: z.string().describe("專案 id"),

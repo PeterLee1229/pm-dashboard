@@ -453,3 +453,13 @@ export async function getMcpAuditLogs(filters: { userId?: string; tool?: string;
   for (const [k, v] of Object.entries(filters)) if (v !== undefined && v !== "") params.set(k, String(v));
   return apiFetch(`/admin/mcp/audit-logs?${params.toString()}`);
 }
+
+// ── 專案封存 ────────────────────────────────
+
+export async function archiveProject(id: string) {
+  return apiFetch(`/projects/${id}/archive`, { method: "POST" });
+}
+
+export async function unarchiveProject(id: string) {
+  return apiFetch(`/projects/${id}/unarchive`, { method: "POST" });
+}

@@ -68,6 +68,10 @@ model Project {
   color         String           @default("#6366f1")
   ownerId       String?
   owner         User?            @relation(fields: [ownerId], references: [id])
+  /// 封存時間；封存的專案為唯讀，預設不出現在專案清單、逾期提醒與跨專案查詢
+  archivedAt    DateTime?
+  /// 封存者的使用者 id
+  archivedBy    String?
   tasks         Task[]
   members       ProjectMember[]
   meetingSeries MeetingSeries[]

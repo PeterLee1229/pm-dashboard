@@ -16,7 +16,7 @@ export const updateTaskTool = defineTool({
     "更新單一主任務的欄位（名稱、描述、狀態、完成度、日期、負責人、組別、優先級），回傳修改前後的差異。",
     "【使用流程】先用 get_task 讀取目前狀態，把回傳的 updatedAt 帶入 expectedUpdatedAt；若任務在這之間被他人修改，會拒絕寫入並回傳最新內容，請以最新內容與使用者重新確認。",
     "只需填入要修改的欄位。status 為看板欄位：todo、inprogress、review、done。assigneeId 為員工編號（memberId），填 null 代表取消指派；groupId 填 null 代表未分組。",
-    "權限與網頁相同：Member 只能編輯自己負責的任務且不能改派；組長受組別規則限制；只有 PM 以上可以將任務移入或移出「已完成」。",
+    "已封存的專案為唯讀，無法寫入（需先在網頁解除封存）。權限與網頁相同：Member 只能編輯自己負責的任務且不能改派；組長受組別規則限制；只有 PM 以上可以將任務移入或移出「已完成」。",
   ].join("\n"),
   inputSchema: z.object({
     taskId: z.string().describe("任務 id"),

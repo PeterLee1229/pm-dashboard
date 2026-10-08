@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "../db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, parseInput } from "../errors";
-import { Change, Ctx, assertCan, assertCanAssign, assertCanChangeGroup, assertCanRead, can, canEditTask } from "./permissions";
+import { Change, Ctx, assertCan, assertCanAssign, assertCanChangeGroup, assertCanRead, assertProjectWritable, can, canEditTask } from "./permissions";
 import { logActivity, notifyAssignee } from "./activity";
 
 // ── 輸入白名單 ────────────────────────────────────────────────────────
@@ -164,6 +164,7 @@ export async function updateTask(ctx: Ctx, taskId: string, input: unknown, opts:
   const data = parseInput(taskUpdateSchema, input);
   const task = await findTaskOr404(taskId);
   const role = await assertCanRead(ctx, task.projectId, "找不到任務");
+  await assertProjectWritable(task.projectId);
 
   const expected = opts.expectedUpdatedAt !== undefined ? new Date(opts.expectedUpdatedAt) : null;
   if (expected && isNaN(expected.getTime())) throw new BadRequestError("expectedUpdatedAt 不是有效的時間");
@@ -301,6 +302,7 @@ export async function deleteComment(ctx: Ctx, commentId: string) {
   const comment = await prisma.comment.findUnique({ where: { id: commentId }, include: { task: { select: { projectId: true } } } });
   if (!comment) throw new NotFoundError("找不到評論");
   const role = await assertCanRead(ctx, comment.task.projectId, "找不到評論");
+  await assertProjectWritable(comment.task.projectId);
   if (comment.userId !== ctx.userId && role !== "admin") throw new ForbiddenError("只能刪除自己的評論");
   await prisma.comment.delete({ where: { id: commentId } });
 }
@@ -323,6 +325,7 @@ export async function createAttachment(ctx: Ctx, taskId: string, input: unknown)
   const data = parseInput(attachmentSchema, input);
   const task = await findTaskOr404(taskId);
   const role = await assertCanRead(ctx, task.projectId, "找不到任務");
+  await assertProjectWritable(task.projectId);
   if (!(await canEditTask(ctx, role, task))) {
     throw new ForbiddenError(role === "member" ? "只能在自己的任務新增附件" : "權限不足");
   }
@@ -339,6 +342,7 @@ export async function deleteAttachment(ctx: Ctx, attachmentId: string) {
   const attachment = await prisma.attachment.findUnique({ where: { id: attachmentId }, include: { task: { select: { projectId: true } } } });
   if (!attachment) throw new NotFoundError("找不到附件");
   const role = await assertCanRead(ctx, attachment.task.projectId, "找不到附件");
+  await assertProjectWritable(attachment.task.projectId);
   if (attachment.uploaderId !== ctx.userId && !can(role, "attachment.delete_any")) {
     throw new ForbiddenError("附件只能由上傳者本人、Owner 或 PM 刪除");
   }

@@ -15,7 +15,7 @@ const WRITE_ANNOTATIONS = { readOnlyHint: false, destructiveHint: false, idempot
 export const addCommentTool = defineTool({
   name: "add_comment",
   title: "新增留言",
-  description: "在任務上新增一則留言（以你的身分發表，任務負責人會收到通知）。權限與網頁相同：Owner、PM、組長、Member 可以留言，Viewer 不行。",
+  description: "在任務上新增一則留言（以你的身分發表，任務負責人會收到通知）。已封存的專案為唯讀，無法寫入（需先在網頁解除封存）。權限與網頁相同：Owner、PM、組長、Member 可以留言，Viewer 不行。",
   inputSchema: z.object({
     taskId: z.string().describe("任務 id"),
     content: z.string().trim().min(1).max(2000).describe("留言內容（1～2000 字）"),
@@ -41,7 +41,7 @@ export const createMeetingRecordTool = defineTool({
     "2. 在專案底下新建一個會議系列並附上第一筆紀錄：填 projectId 與 seriesName（可選 seriesType：regular 定期會議、adhoc 臨時會議）。",
     "紀錄內容：date（YYYY-MM-DD）、attendees（與會者的員工編號 memberId）、summary（會議摘要與決議事項）、externalLink（完整紀錄的 http/https 連結）。",
     "會議紀錄沒有獨立的決議事項或待辦欄位：決議請寫在 summary；需要追蹤的後續待辦，請另外用 create_tasks 建立任務。",
-    "權限與網頁相同：只有 Owner、PM、組長可以管理會議。",
+    "已封存的專案為唯讀，無法寫入（需先在網頁解除封存）。權限與網頁相同：只有 Owner、PM、組長可以管理會議。",
   ].join("\n"),
   inputSchema: z.object({
     seriesId: z.string().optional().describe("既有會議系列 id"),
@@ -93,7 +93,7 @@ const LEVEL_BY_SCORE = { 5: "high", 4: "mid-high", 3: "medium", 2: "mid-low", 1:
 export const createRiskTool = defineTool({
   name: "create_risk",
   title: "新增風險",
-  description: "在專案的 5×5 風險矩陣新增一個風險項目。probability（發生機率）與 impact（衝擊程度）為 1～5 分（5 最高），風險分數 = 機率 × 衝擊。ownerId 為負責人的員工編號（memberId）；組長只能指定自己組的成員。權限與網頁相同：Owner、PM、組長、Member 都可以新增風險。",
+  description: "在專案的 5×5 風險矩陣新增一個風險項目。probability（發生機率）與 impact（衝擊程度）為 1～5 分（5 最高），風險分數 = 機率 × 衝擊。ownerId 為負責人的員工編號（memberId）；組長只能指定自己組的成員。已封存的專案為唯讀，無法寫入（需先在網頁解除封存）。權限與網頁相同：Owner、PM、組長、Member 都可以新增風險。",
   inputSchema: z.object({
     projectId: z.string().describe("專案 id"),
     title: z.string().trim().min(1).max(500).describe("風險名稱"),

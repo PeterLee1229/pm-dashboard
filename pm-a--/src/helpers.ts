@@ -93,9 +93,18 @@ export function toROCDate(dateStr: string): string {
   return `${rocYear}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/**
+ * 已封存專案的「寫入角色」：一律唯讀。只用於寫入功能的判斷（導覽、Email 顯示等仍用實際角色）。
+ * 對應後端 permissions.ts 的 assertProjectWritable。
+ */
+export const ARCHIVED_ROLE = "archived";
+const ARCHIVED_ALLOWED_ACTIONS = ["view_risks", "export"];
+
 export function hasPermission(userRole: string, action: string): boolean {
+  if (userRole === ARCHIVED_ROLE) return ARCHIVED_ALLOWED_ACTIONS.includes(action);
   const permissions: Record<string, string[]> = {
     "delete_project":  ["owner"],
+    "archive_project": ["owner"],
     "manage_groups":   ["owner", "pm"],
     "create_task":     ["owner", "pm", "group_leader"],
     "delete_task":     ["owner", "pm", "group_leader"],

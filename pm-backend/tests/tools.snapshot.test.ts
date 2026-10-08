@@ -19,12 +19,16 @@ beforeAll(async () => {
   await prisma.meetingRecord.update({ where: { id: f.record.id }, data: { attendees: [f.users.member.memberId, f.users.pm.memberId] } });
   await prisma.objective.update({ where: { id: f.objective.id }, data: { startDate: "2026-01-01", endDate: "2026-06-30" } });
   await prisma.keyResult.update({ where: { id: f.keyResult.id }, data: { targetValue: 10, currentValue: 4 } });
+  // 固定完成時間：fixture 預設為「現在」，會讓週報的「本週完成」隨執行日期改變（snapshot 於 2026-10-04 產生，該週為 9/28～10/4）
+  await prisma.task.update({ where: { id: f.tasks.done.id }, data: { completedAt: new Date("2026-09-30T02:00:00Z") } });
 });
 afterAll(async () => { await Promise.all(clients.map((c) => c.close())); });
 
 const CUID = /^c[a-z0-9]{20,}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 const RELATIVE_NUMBERS = new Set(["overdueDays", "daysLeft"]);
+/** 固定日期欄位：即使剛好等於今天也不替換（否則 snapshot 會隨執行日期改變） */
+const FIXED_DATE_KEYS = new Set(["weekStart", "weekEnd"]);
 
 /** 去除隨機與時間相關的值，陣列依內容排序，再依出現順序替換 id */
 function normalize(value: unknown): unknown {
@@ -35,7 +39,7 @@ function normalize(value: unknown): unknown {
       return items.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     }
     if (v && typeof v === "object") {
-      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, RELATIVE_NUMBERS.has(k) ? "<n>" : strip(x)]));
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, RELATIVE_NUMBERS.has(k) ? "<n>" : FIXED_DATE_KEYS.has(k) ? x : strip(x)]));
     }
     if (typeof v === "string") {
       if (CUID.test(v)) return "<id>";
@@ -86,6 +90,10 @@ function withoutPhase2Additions(name: string, body: any) {
     expect(body.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     const { updatedAt: _u, ...rest } = body;
     return rest;
+  }
+  // 專案封存（Phase 2 之後）：list_projects 每筆新增 archived
+  if (name === "list_projects" && Array.isArray(body?.items)) {
+    return { ...body, items: body.items.map(({ archived: _a, ...rest }: any) => { expect(_a).toBe(false); return rest; }) };
   }
   if (name === "get_activity_log" && Array.isArray(body?.items)) {
     return { ...body, items: body.items.map(({ source: _s, clientName: _c, ...rest }: any) => { expect(_s).toBeTruthy(); return rest; }) };

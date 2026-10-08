@@ -71,7 +71,7 @@ const snapshotOf = (f: Task) => JSON.stringify({
 
 // ── Task Modal ────────────────────────────────────────────────────────
 
-export default function TaskModal({ task, groups, assigneeGroups, onSave, onClose, currentProjectRole, currentUser }: {
+export default function TaskModal({ task, groups, assigneeGroups, onSave, onClose, currentProjectRole, currentUser, readOnly = false }: {
   task: Task;
   groups: Group[];
   /** 系統組別（含全部使用者），用來判斷負責人所屬組別；與後端組長人力調整規則相同 */
@@ -80,6 +80,8 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   onClose: () => void;
   currentProjectRole: string;
   currentUser: any;
+  /** 專案已封存：所有編輯、留言、附件操作都隱藏 */
+  readOnly?: boolean;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [comments, setComments] = useState<any[]>([]);
@@ -140,7 +142,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   // 變更組別會清空負責人，所以組別與負責人一起鎖定
   const mainAssigneeLocked = !canReassign(task.assignee) || !canChangeGroup(task.groupId);
   const lockedHint = canAssign ? "別組的任務，組長不可改派" : "僅 Owner、PM 與組長可變更負責人";
-  const canDeleteAttachment = (a: { uploaderId: string }) => a.uploaderId === currentUser?.id || hasPermission(currentProjectRole, "delete_attachments");
+  const canDeleteAttachment = (a: { uploaderId: string }) => !readOnly && (a.uploaderId === currentUser?.id || hasPermission(currentProjectRole, "delete_attachments"));
 
   useEffect(() => {
     loadComments();
@@ -245,7 +247,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
 
   const canEditBanner = !canEdit ? (
     <div style={{ background: "#f59e0b18", border: "1px solid #f59e0b33", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#f59e0b" }}>
-      你只有檢視權限，無法編輯此任務
+      {readOnly ? "專案已封存，僅供檢視" : "你只有檢視權限，無法編輯此任務"}
     </div>
   ) : null;
 
@@ -472,7 +474,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
                 )}
                 <span style={{ fontSize: 10, color: "#475569" }}>{new Date(c.createdAt).toLocaleString("zh-TW")}</span>
               </div>
-              {(c.userId === currentUser?.id || currentUser?.role === "admin") && (
+              {!readOnly && (c.userId === currentUser?.id || currentUser?.role === "admin") && (
                 <button onClick={() => handleDeleteComment(c.id)}
                   style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
                   <X size={11} />

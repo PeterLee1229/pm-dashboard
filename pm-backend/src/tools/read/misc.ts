@@ -36,7 +36,7 @@ export const listOkrsTool = defineTool({
   title: "OKR",
   description: "列出 OKR 目標與關鍵結果（KR）進度。KR 進度 = 目前值 ÷ 目標值（上限 100%），目標進度為各 KR 進度的平均（與網頁相同）。from / to 篩選與目標期間（startDate～endDate）有重疊的目標。未指定 projectId 時涵蓋所有可見專案。",
   inputSchema: z.object({
-    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見專案"),
+    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見且未封存的專案（指定已封存專案的 id 仍可查詢）"),
     from: dateParam("期間下限，YYYY-MM-DD"),
     to: dateParam("期間上限，YYYY-MM-DD"),
     ...pageShape,
@@ -82,7 +82,7 @@ export const searchTool = defineTool({
   inputSchema: z.object({
     query: z.string().min(1).max(200).describe("搜尋關鍵字"),
     types: z.array(z.enum(["tasks", "subtasks", "risks", "meetings"])).optional().describe("只搜尋指定類型；不填則全部"),
-    projectId: z.string().optional().describe("專案 id；不填則搜尋所有可見專案"),
+    projectId: z.string().optional().describe("專案 id；不填則搜尋所有可見且未封存的專案（指定已封存專案的 id 仍可搜尋）"),
     ...pageShape,
   }),
   scope: "pm:read",
@@ -110,7 +110,7 @@ export const getActivityLogTool = defineTool({
   title: "活動紀錄",
   description: "列出活動紀錄（誰在什麼時候對什麼做了哪些操作），依時間新到舊。未指定 projectId 時涵蓋所有可見專案。from / to 為台灣時區日期（含頭尾），userId 為操作者的使用者 id。source 為 web（網頁）或 mcp（經由 AI 工具）。",
   inputSchema: z.object({
-    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見專案"),
+    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見且未封存的專案（指定已封存專案的 id 仍可查詢）"),
     from: dateParam("日期下限（含），YYYY-MM-DD"),
     to: dateParam("日期上限（含），YYYY-MM-DD"),
     userId: z.string().optional().describe("操作者的使用者 id"),

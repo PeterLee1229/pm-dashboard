@@ -27,4 +27,6 @@ export type Project = {
   id: string; name: string; description: string; color: string;
   columns: Column[]; groups: Group[]; meetings?: MeetingSeries[];
   risks?: Risk[]; weeklyReports?: WeeklyReport[]; userRole?: string;
+  /** 封存時間；有值代表專案已封存（唯讀） */
+  archivedAt?: string | null;
 };

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { BadRequestError, ForbiddenError } from "../errors";
 import {
-  AssigneeInfo, Ctx, assertCanRead, can, canEditTask, checkLeaderAssignChange, checkLeaderGroupChange,
+  AssigneeInfo, Ctx, assertCanRead, assertProjectWritable, can, canEditTask, checkLeaderAssignChange, checkLeaderGroupChange,
   loadGroupNames, loadLeaderGroupId,
 } from "./permissions";
 import { createNotification, currentOrigin } from "./activity";
@@ -123,6 +123,7 @@ export async function createTasksBatch(
   }
   const items = parsed.data.tasks;
   const role = await assertCanRead(ctx, projectId);
+  await assertProjectWritable(projectId);
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, name: true } });
 
   // 冪等：已處理過的 batchKey 直接回傳第一次的結果

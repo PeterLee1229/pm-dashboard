@@ -2,7 +2,7 @@ import { useState, useEffect, Suspense, lazy } from "react";
 import { t, getLanguage, setLanguage, type Language } from "./i18n";
 import LoginPage from "./LoginPage";
 import {
-  isLoggedIn, clearToken, getCurrentUser, getProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject, getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup, getGroups, getProjectMembers, getNotifications, getUnreadCount, markAsRead, markAllAsRead, searchProject, getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries, deleteMeetingSeries as apiDeleteMeetingSeries, createMeetingRecord as apiCreateMeetingRecord, updateMeetingRecord as apiUpdateMeetingRecord, deleteMeetingRecord as apiDeleteMeetingRecord, getProjectRisks, createRisk as apiCreateRisk, updateRisk as apiUpdateRisk, deleteRisk as apiDeleteRisk, getWeeklyReports, saveWeeklyReport as apiSaveWeeklyReport,
+  isLoggedIn, clearToken, getCurrentUser, getProjects, createProject as apiCreateProject, archiveProject as apiArchiveProject, unarchiveProject as apiUnarchiveProject, deleteProject as apiDeleteProject, getProjectTasks, createProjectTask, updateTask as apiUpdateTask, deleteTask as apiDeleteTask, createGroup as apiCreateGroup, updateGroup as apiUpdateGroup, deleteGroup as apiDeleteGroup, getGroups, getProjectMembers, getNotifications, getUnreadCount, markAsRead, markAllAsRead, searchProject, getProjectMeetings, createMeetingSeries as apiCreateMeetingSeries, deleteMeetingSeries as apiDeleteMeetingSeries, createMeetingRecord as apiCreateMeetingRecord, updateMeetingRecord as apiUpdateMeetingRecord, deleteMeetingRecord as apiDeleteMeetingRecord, getProjectRisks, createRisk as apiCreateRisk, updateRisk as apiUpdateRisk, deleteRisk as apiDeleteRisk, getWeeklyReports, saveWeeklyReport as apiSaveWeeklyReport,
 } from "./api";
 import { exportTaskListCSV, exportTaskListPDF, exportTimeReportCSV, exportTimeReportPDF, exportGanttPNG } from "./exportUtils";
 import {
@@ -14,6 +14,8 @@ import MultiSelect from "./components/MultiSelect";
 import type { Member, Group, Task, Column, MeetingSeries, Risk, WeeklyReport, Project } from "./types";
 import { getCompletion, getEffectiveStartDate, getEffectiveEndDate, memberDisplay, findMemberById, normalizeDate, hasPermission, PRIORITY_CONFIG } from "./helpers";
 import { computeProgress } from "./reportCalc";
+import { ARCHIVED_ROLE } from "./helpers";
+import { ArchivedBanner, ArchiveConfirmModal } from "./components/ArchiveControls";
 
 import Sidebar from "./components/Sidebar";
 import TaskModal from "./components/TaskModal";
@@ -280,6 +282,33 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(getCurrentUser());
 
   const currentProjectRole = currentUser?.role === "admin" ? "admin" : (activeProject?.userRole || "viewer");
+  // 已封存的專案唯讀：寫入功能一律用 writeRole 判斷（導覽、匯出、Email 顯示仍用實際角色）
+  const isArchived = !!activeProject?.archivedAt;
+  const writeRole = isArchived ? ARCHIVED_ROLE : currentProjectRole;
+  const activeProjects = projects.filter((p) => !p.archivedAt);
+  const archivedProjects = projects.filter((p) => p.archivedAt);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+
+  const handleArchive = async () => {
+    try {
+      await apiArchiveProject(activeProjectId);
+      setShowArchiveConfirm(false);
+      await loadProjects();
+      setToast("專案已封存");
+    } catch (err) {
+      showError("封存失敗", err);
+    }
+  };
+
+  const handleUnarchive = async () => {
+    try {
+      await apiUnarchiveProject(activeProjectId);
+      await loadProjects();
+      setToast("已解除封存");
+    } catch (err) {
+      showError("解除封存失敗", err);
+    }
+  };
 
   const [systemGroups, setSystemGroups] = useState<any[]>([]);
   const [projectMembers, setProjectMembers] = useState<any[]>([]);
@@ -383,6 +412,7 @@ export default function App() {
             description: p.description || "",
             color: p.color || "#6366f1",
             userRole: p.userRole || "viewer",
+            archivedAt: p.archivedAt ?? null,
             groups: [],
             columns: [
               { id: "todo",       title: "待處理", tasks: columnMap.todo },
@@ -397,7 +427,7 @@ export default function App() {
       setProjects(formatted);
       setActiveProjectId((prev) => {
         if (formatted.length > 0 && !formatted.find((p) => p.id === prev)) {
-          return formatted[0].id;
+          return (formatted.find((p) => !p.archivedAt) ?? formatted[0]).id;
         }
         return prev;
       });
@@ -488,11 +518,11 @@ export default function App() {
     const { active, over } = e;
     if (!over) return;
 
-    if (!hasPermission(currentProjectRole, "drag_task")) return;
+    if (!hasPermission(writeRole, "drag_task")) return;
 
     const activeCol = findColumn(active.id as string);
     const draggedTask = activeCol?.tasks.find((t) => t.id === active.id);
-    if (draggedTask && !hasPermission(currentProjectRole, "edit_all_tasks") && draggedTask.assignee !== currentUser?.memberId) {
+    if (draggedTask && !hasPermission(writeRole, "edit_all_tasks") && draggedTask.assignee !== currentUser?.memberId) {
       setToast("只能移動自己負責的任務");
       return;
     }
@@ -501,14 +531,14 @@ export default function App() {
     if (!activeCol || !overCol || activeCol.id === overCol.id) return;
 
     // 從「已完成」拖出：只有 PM 以上可以
-    if (activeCol.id === "done" && !hasPermission(currentProjectRole, "drag_to_done")) {
+    if (activeCol.id === "done" && !hasPermission(writeRole, "drag_to_done")) {
       setToast("只有 PM 以上可以將任務從已完成移出");
       return;
     }
 
     // 拖到「已完成」：檢查權限 + 完成度
     if (overCol.id === "done") {
-      if (!hasPermission(currentProjectRole, "drag_to_done")) {
+      if (!hasPermission(writeRole, "drag_to_done")) {
         setToast("只有 PM 以上可以將任務移至已完成");
         return;
       }
@@ -548,14 +578,14 @@ export default function App() {
     if (!activeCol || !overCol) return;
 
     // 從「已完成」拖出：只有 PM 以上可以
-    if (activeCol.id === "done" && overCol.id !== "done" && !hasPermission(currentProjectRole, "drag_to_done")) {
+    if (activeCol.id === "done" && overCol.id !== "done" && !hasPermission(writeRole, "drag_to_done")) {
       setToast("只有 PM 以上可以將任務從已完成移出");
       return;
     }
 
     // 拖到「已完成」：檢查權限 + 完成度
     if (activeCol.id !== overCol.id && overCol.id === "done") {
-      if (!hasPermission(currentProjectRole, "drag_to_done")) {
+      if (!hasPermission(writeRole, "drag_to_done")) {
         setToast("只有 PM 以上可以將任務移至已完成");
         return;
       }
@@ -1108,7 +1138,8 @@ export default function App() {
       <Sidebar
         view={view}
         setView={setView}
-        projects={projects}
+        projects={activeProjects}
+        archivedProjects={archivedProjects}
         activeProjectId={activeProjectId}
         setActiveProjectId={setActiveProjectId}
         onAddProject={handleAddProject}
@@ -1138,16 +1169,25 @@ export default function App() {
         </div>
       ) : view === "project_members" && activeProject ? (
         <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+          {isArchived && activeProject?.archivedAt && (
+            <ArchivedBanner archivedAt={activeProject.archivedAt}
+              canUnarchive={hasPermission(currentProjectRole, "archive_project")} onUnarchive={handleUnarchive} />
+          )}
           <ProjectMembersView
             projectId={activeProject.id}
             projectName={activeProject.name}
             currentUser={currentUser}
             currentProjectRole={currentProjectRole}
+            readOnly={isArchived}
             onMembersChange={() => loadProjectMembers(activeProjectId)}
           />
         </div>
       ) : view === "activities" && activeProject ? (
         <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+          {isArchived && activeProject?.archivedAt && (
+            <ArchivedBanner archivedAt={activeProject.archivedAt}
+              canUnarchive={hasPermission(currentProjectRole, "archive_project")} onUnarchive={handleUnarchive} />
+          )}
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             活動紀錄 · {activeProject.name}
           </h2>
@@ -1155,6 +1195,10 @@ export default function App() {
         </div>
       ) : view === "calendar" && activeProject ? (
         <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+          {isArchived && activeProject?.archivedAt && (
+            <ArchivedBanner archivedAt={activeProject.archivedAt}
+              canUnarchive={hasPermission(currentProjectRole, "archive_project")} onUnarchive={handleUnarchive} />
+          )}
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             行事曆 · {activeProject.name}
           </h2>
@@ -1162,10 +1206,14 @@ export default function App() {
         </div>
       ) : view === "okr" && activeProject ? (
         <div className="main-content page-content" style={{ marginLeft: 200, padding: "32px 40px" }}>
+          {isArchived && activeProject?.archivedAt && (
+            <ArchivedBanner archivedAt={activeProject.archivedAt}
+              canUnarchive={hasPermission(currentProjectRole, "archive_project")} onUnarchive={handleUnarchive} />
+          )}
           <h2 style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0", marginBottom: 20 }}>
             OKR · {activeProject.name}
           </h2>
-          <OKRView projectId={activeProject.id} canManage={hasPermission(currentProjectRole, "manage_okr")} />
+          <OKRView projectId={activeProject.id} canManage={hasPermission(writeRole, "manage_okr")} />
         </div>
       ) : null}</Suspense>}
 
@@ -1277,7 +1325,15 @@ export default function App() {
                 )}
               </div>
 
-              {hasPermission(currentProjectRole, "create_task") && (
+              {!isArchived && hasPermission(currentProjectRole, "archive_project") && (
+                <button onClick={() => setShowArchiveConfirm(true)} title="封存後專案變成唯讀" style={{
+                  background: "transparent", border: "1px solid #f59e0b55",
+                  borderRadius: 8, color: "#f59e0b", fontSize: 13, fontWeight: 600,
+                  padding: "6px 14px", cursor: "pointer"
+                }}>封存</button>
+              )}
+
+              {hasPermission(writeRole, "create_task") && (
                 <button onClick={() => setShowImportModal(true)} style={{
                   background: "#10b98122", border: "1px solid #10b98144",
                   borderRadius: 8, color: "#10b981", fontSize: 13, fontWeight: 600,
@@ -1336,6 +1392,10 @@ export default function App() {
               </div>}
             </div>
           </div>
+          {isArchived && activeProject?.archivedAt && (
+            <ArchivedBanner archivedAt={activeProject.archivedAt}
+              canUnarchive={hasPermission(currentProjectRole, "archive_project")} onUnarchive={handleUnarchive} />
+          )}
 
           {(view === "kanban" || view === "gantt") && (
             <div className="filter-row" style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
@@ -1408,14 +1468,14 @@ export default function App() {
                 <EmptyState
                   icon="📋"
                   title="此看板尚未建立任務，點此新增第一個任務"
-                  actionLabel={hasPermission(currentProjectRole, "create_task") ? "+ 新增任務" : undefined}
-                  onAction={hasPermission(currentProjectRole, "create_task") ? () => setAddTaskSignal((n) => n + 1) : undefined}
+                  actionLabel={hasPermission(writeRole, "create_task") ? "+ 新增任務" : undefined}
+                  onAction={hasPermission(writeRole, "create_task") ? () => setAddTaskSignal((n) => n + 1) : undefined}
                 />
               )}
               <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
                 <div className="board">
                   {filteredColumns.map((col) => (
-                    <ColumnComponent key={col.id} column={col} canAdd={hasPermission(currentProjectRole, "create_task")} canDrag={hasPermission(currentProjectRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={projectMemberGroups} forceOpenSignal={col.id === "todo" ? addTaskSignal : undefined} />
+                    <ColumnComponent key={col.id} column={col} canAdd={hasPermission(writeRole, "create_task")} canDrag={hasPermission(writeRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={projectMemberGroups} forceOpenSignal={col.id === "todo" ? addTaskSignal : undefined} />
                   ))}
                 </div>
                 <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={projectMemberGroups} />}</DragOverlay>
@@ -1429,7 +1489,7 @@ export default function App() {
             <MeetingsView
               meetings={meetings}
               projectMembers={projectMembers}
-              canManage={hasPermission(currentProjectRole, "manage_meetings")}
+              canManage={hasPermission(writeRole, "manage_meetings")}
               onCreateSeries={handleCreateMeetingSeries}
               onDeleteSeries={handleDeleteMeetingSeries}
               onCreateRecord={handleCreateMeetingRecord}
@@ -1443,8 +1503,8 @@ export default function App() {
               onCreateRisk={handleCreateRisk}
               onUpdateRisk={handleUpdateRisk}
               onDeleteRisk={handleDeleteRisk}
-              canCreate={hasPermission(currentProjectRole, "create_risk")}
-              canManage={hasPermission(currentProjectRole, "manage_risks")}
+              canCreate={hasPermission(writeRole, "create_risk")}
+              canManage={hasPermission(writeRole, "manage_risks")}
               projectMembers={projectMembers}
               currentProjectRole={currentProjectRole}
               currentUser={currentUser}
@@ -1457,14 +1517,14 @@ export default function App() {
               weeklyReports={weeklyReports}
               onSaveNotes={handleSaveWeeklyNotes}
               projectName={activeProject?.name || ""}
-              canEditNotes={hasPermission(currentProjectRole, "manage_weekly")}
+              canEditNotes={hasPermission(writeRole, "manage_weekly")}
             />
           )}</Suspense>}
         </div>
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={projectMemberGroups} assigneeGroups={formattedGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={currentProjectRole} currentUser={currentUser} />
+        <TaskModal task={editingTask} groups={projectMemberGroups} assigneeGroups={formattedGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={writeRole} readOnly={isArchived} currentUser={currentUser} />
       )}
 
       {<Suspense fallback={null}>{showImportModal && (
@@ -1479,6 +1539,15 @@ export default function App() {
         <ProjectModal
           onSave={handleSaveProject}
           onClose={() => setShowProjectModal(false)}
+        />
+      )}
+
+      {showArchiveConfirm && activeProject && (
+        <ArchiveConfirmModal
+          projectName={activeProject.name}
+          unfinishedCount={columns.filter((c) => c.id !== "done").reduce((s, c) => s + c.tasks.length, 0)}
+          onConfirm={handleArchive}
+          onClose={() => setShowArchiveConfirm(false)}
         />
       )}
 

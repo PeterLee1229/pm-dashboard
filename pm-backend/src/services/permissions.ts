@@ -18,6 +18,7 @@ export type EffectiveRole = ProjectRole | "admin";
 export const PERMISSIONS = {
   "project.update":        ["owner", "pm"],
   "project.delete":        ["owner"],                                    // delete_project
+  "project.archive":       ["owner"],                                    // archive_project（封存與解除封存）
   "task.create":           ["owner", "pm", "group_leader"],              // create_task
   "task.delete":           ["owner", "pm", "group_leader"],              // delete_task
   "task.edit_all":         ["owner", "pm", "group_leader"],              // edit_all_tasks
@@ -69,10 +70,25 @@ export async function assertCanRead(ctx: Ctx, projectId: string, notFoundMessage
   return role;
 }
 
-/** 寫入權限：先確認可讀（非成員 404），再依權限矩陣檢查（不足 403） */
+/** 封存的專案仍可執行的操作：刪除專案、封存與解除封存（其餘寫入一律拒絕） */
+const ALLOWED_WHEN_ARCHIVED: ReadonlySet<Action> = new Set<Action>(["project.delete", "project.archive", "member.view_email"]);
+
+export const ARCHIVED_MESSAGE = "專案已封存，無法修改；如需修改請先解除封存";
+
+/**
+ * 專案必須未封存才能寫入。寫在 service 層，REST 與 MCP 寫入工具都會套用。
+ * assertCan 會自動檢查；不經 assertCan 的寫入路徑（例如以 canEditTask 判斷的任務編輯）需自行呼叫。
+ */
+export async function assertProjectWritable(projectId: string): Promise<void> {
+  const p = await prisma.project.findUnique({ where: { id: projectId }, select: { archivedAt: true } });
+  if (p?.archivedAt) throw new ForbiddenError(ARCHIVED_MESSAGE);
+}
+
+/** 寫入權限：先確認可讀（非成員 404），再依權限矩陣檢查（不足 403），最後確認專案未封存（403） */
 export async function assertCan(ctx: Ctx, projectId: string, action: Action, message = "權限不足", notFoundMessage?: string): Promise<EffectiveRole> {
   const role = await assertCanRead(ctx, projectId, notFoundMessage);
   if (!can(role, action)) throw new ForbiddenError(message);
+  if (!ALLOWED_WHEN_ARCHIVED.has(action)) await assertProjectWritable(projectId);
   return role;
 }
 
