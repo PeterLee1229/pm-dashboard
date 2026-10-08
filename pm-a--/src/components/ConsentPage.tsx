@@ -63,7 +63,7 @@ export default function ConsentPage() {
     <div style={page}>
       <div style={card}>
         <p style={{ fontSize: 12, color: "#6366f1", fontWeight: 600, marginBottom: 8 }}>PM Dashboard</p>
-        <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>授權 AI 連線</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20, color: "#f1f5f9" }}>授權 AI 連線</h1>
 
         {!request || error ? (
           <p style={{ fontSize: 14, color: "#f87171", lineHeight: 1.6 }}>{error || "缺少授權請求，請回到 AI 服務重新連線"}</p>
