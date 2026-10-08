@@ -908,9 +908,6 @@ export default function App() {
           to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
-        /* 列表表格：表頭與儲存格一律靠左（#root 預設 text-align: center，會讓儲存格置中、與表頭錯開） */
-        .admin-table-wrap th,
-        .admin-table-wrap td { text-align: left; }
         .mobile-only-label { display: none; }
 
         /* 手機版 RWD */
@@ -940,6 +937,8 @@ export default function App() {
             align-items: stretch !important;
             padding-bottom: 12px !important;
           }
+          /* 左上角固定的漢堡按鈕約 44px 寬：標題區留出空間，避免被蓋住 */
+          .topbar-left { padding-left: 52px; min-height: 40px; }
           .topbar-left h1 { font-size: 18px !important; }
           .topbar-left p { font-size: 12px !important; }
           .progress-wrap { justify-content: flex-start !important; }
