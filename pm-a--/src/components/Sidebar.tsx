@@ -1,12 +1,16 @@
+import { useState } from "react";
 import { t, type Language } from "../i18n";
 import { Plus, X, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Calendar, BarChart2 } from "lucide-react";
 import type { Project } from "../types";
 import { hasPermission } from "../helpers";
+import { useConfirm } from "./ConfirmDialog";
 
-export default function Sidebar({ view, setView, projects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange, sidebarOpen, onClose }: {
+export default function Sidebar({ view, setView, projects, archivedProjects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange, sidebarOpen, onClose }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr" | "ai_connections";
   setView: (v: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr" | "ai_connections") => void;
   projects: Project[];
+  /** 已封存的專案：清單底部可展開的「已封存（N）」區塊 */
+  archivedProjects: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
   onAddProject: () => void;
@@ -20,6 +24,17 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
   sidebarOpen: boolean;
   onClose: () => void;
 }) {
+  // 目前在已封存的專案時預設展開，讓使用者看得到自己在哪個專案
+  const [showArchived, setShowArchived] = useState(() => archivedProjects.some((p) => p.id === activeProjectId));
+  const [confirmDialog, confirm] = useConfirm();
+  const deleteProject = async (p: Project) => {
+    if (await confirm({
+      title: `刪除專案「${p.name}」？`,
+      warning: "專案內所有任務、會議紀錄、風險、OKR 與週報都會一併刪除。",
+      message: "刪除後無法復原；只是不再使用的專案可以改用「封存」。",
+    })) onDeleteProject(p.id);
+  };
+
   const nav = (id: typeof view, label: string, icon: React.ReactNode) => {
     const active = view === id;
     return (
@@ -80,8 +95,8 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
                   <div style={{ width: 8, height: 8, borderRadius: 99, background: p.color, flexShrink: 0 }} />
                   {p.name}
                 </button>
-                {projects.length > 1 && (
-                  <button onClick={() => onDeleteProject(p.id)} style={{
+                {projects.length > 1 && hasPermission(p.userRole ?? "viewer", "delete_project") && (
+                  <button aria-label="刪除專案" onClick={() => deleteProject(p)} style={{
                     position: "absolute", right: 6,
                     background: "none", border: "none", color: "#ef4444",
                     cursor: "pointer", padding: 2, display: "none", borderRadius: 4
@@ -92,6 +107,33 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
               </div>
             );
           })}
+
+          {archivedProjects.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <button onClick={() => setShowArchived((v) => !v)} aria-expanded={showArchived} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
+                background: "none", border: "none", color: "#475569", fontSize: 11, cursor: "pointer", textAlign: "left",
+              }}>
+                <span style={{ display: "inline-block", transform: showArchived ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
+                已封存（{archivedProjects.length}）
+              </button>
+              {showArchived && archivedProjects.map((p) => {
+                const active = p.id === activeProjectId;
+                return (
+                  <button key={p.id} onClick={() => { setActiveProjectId(p.id); onClose(); }} title="已封存（唯讀）" style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 8,
+                    padding: "6px 12px 6px 24px", borderRadius: 8, border: "none",
+                    background: active ? "#ffffff0d" : "transparent",
+                    color: active ? "#94a3b8" : "#475569", fontSize: 12, cursor: "pointer", textAlign: "left",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    <div style={{ width: 8, height: 8, borderRadius: 99, border: `1px solid ${p.color}`, flexShrink: 0 }} />
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* 分隔線 */}
@@ -196,6 +238,7 @@ export default function Sidebar({ view, setView, projects, activeProjectId, setA
           <X size={14} /> {t("app.logout")}
         </button>
       </div>
+      {confirmDialog}
     </div>
   );
 }

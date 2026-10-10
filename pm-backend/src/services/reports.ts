@@ -85,7 +85,7 @@ export function normalizeDate(dateStr: string): string {
 
 // ── 任務層級計算（對應前端 helpers.ts） ──────────────────────────────
 
-export function getCompletion(task: ReportTask): number {
+export function getCompletion(task: { completion: number; subtasks: { completion: number }[] }): number {
   if (task.subtasks.length === 0) return task.completion;
   const avg = task.subtasks.reduce((sum, s) => sum + s.completion, 0) / task.subtasks.length;
   return Math.round(avg);

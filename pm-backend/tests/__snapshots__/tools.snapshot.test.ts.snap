@@ -266,7 +266,7 @@ exports[`12 支唯讀工具的輸出與遷移前相同 > get_weekly_report_data 
       "name": "專案一",
     },
     "totalHours": 0,
-    "weekEnd": "<today>",
+    "weekEnd": "2026-10-04",
     "weekEndROC": "115/10/04",
     "weekHours": [],
     "weekStart": "2026-09-28",

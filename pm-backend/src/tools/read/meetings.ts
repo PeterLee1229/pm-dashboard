@@ -10,7 +10,7 @@ export const listMeetingsTool = defineTool({
   title: "會議紀錄列表",
   description: "列出會議紀錄（依日期新到舊），每筆附會議系列、出席者與摘要開頭。完整內容請用 get_meeting。未指定 projectId 時涵蓋所有可見專案。",
   inputSchema: z.object({
-    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見專案"),
+    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見且未封存的專案（指定已封存專案的 id 仍可查詢）"),
     from: dateParam("會議日期下限（含），YYYY-MM-DD"),
     to: dateParam("會議日期上限（含），YYYY-MM-DD"),
     ...pageShape,

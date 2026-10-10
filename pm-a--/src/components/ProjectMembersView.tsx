@@ -208,11 +208,13 @@ function TransferOwnerModal({ projectId, projectName, members, currentOwnerId, o
 
 // ── AdminView ────────────────────────────────────────────────────────
 
-export default function ProjectMembersView({ projectId, projectName, currentUser, currentProjectRole, onMembersChange }: {
+export default function ProjectMembersView({ projectId, projectName, currentUser, currentProjectRole, onMembersChange, readOnly = false }: {
   projectId: string;
   projectName: string;
   currentUser: any;
   currentProjectRole: string;
+  /** 專案已封存：隱藏邀請、轉移、角色變更與移除 */
+  readOnly?: boolean;
   onMembersChange?: () => void;
 }) {
   const [members, setMembers] = useState<any[]>([]);
@@ -332,7 +334,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
             {projectName} — 專案成員
           </span>
           <div style={{ display: "flex", gap: 8 }}>
-            {(currentProjectRole === "owner" || currentProjectRole === "admin") && (
+            {!readOnly && (currentProjectRole === "owner" || currentProjectRole === "admin") && (
               <button onClick={() => setShowTransferModal(true)} style={{
                 background: "#ef444418", border: "1px solid #ef444444",
                 borderRadius: 8, color: "#ef4444", fontSize: 12, fontWeight: 600,
@@ -341,13 +343,13 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
                 轉移 Owner
               </button>
             )}
-            <button onClick={() => setShowAddModal(true)} style={{
+            {!readOnly && <button onClick={() => setShowAddModal(true)} style={{
               background: "#6366f122", border: "1px solid #6366f144",
               borderRadius: 8, color: "#6366f1", fontSize: 12, fontWeight: 600,
               padding: "6px 16px", cursor: "pointer"
             }}>
               + 邀請成員
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -368,7 +370,7 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
         </div>
 
         {members.map((m) => {
-          const canRemove = m.role !== "owner" && m.userId !== currentUser?.id &&
+          const canRemove = !readOnly && m.role !== "owner" && m.userId !== currentUser?.id &&
             (currentProjectRole !== "group_leader" || m.user?.group?.id === currentUser?.group?.id);
           const isConfirming = confirmRemove === m.userId;
           return (
@@ -416,6 +418,8 @@ export default function ProjectMembersView({ projectId, projectName, currentUser
                   <div style={{ textAlign: "center" }}>
                     {m.role === "owner" ? (
                       <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 99, background: "#ef444422", color: "#ef4444" }}>Owner</span>
+                    ) : readOnly ? (
+                      <span style={{ fontSize: 11, color: "#94a3b8" }}>{({ pm: "PM", group_leader: "Group Leader", member: "Member", viewer: "Viewer" } as Record<string, string>)[m.role] ?? m.role}</span>
                     ) : (
                       <select value={m.role} onChange={(e) => handleRoleChange(m.userId, e.target.value)} style={{
                         background: "#0f1117", border: "1px solid #ffffff12", borderRadius: 6,

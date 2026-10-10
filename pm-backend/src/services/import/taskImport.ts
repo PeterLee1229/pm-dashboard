@@ -9,6 +9,7 @@ import {
   diffFields, findDuplicates, canonicalHeader, buildHeaderMap,
 } from "./diff";
 import { AssigneeInfo, checkLeaderAssignChange, checkLeaderGroupChange } from "../permissions";
+import { StatusAutoChange, loadEffectiveCompletions, syncStatusWithCompletion } from "../completionSync";
 
 // ── 欄位定義 ─────────────────────────────────────────────────────────
 
@@ -598,6 +599,8 @@ export type CommitResult = {
   skipped: number;
   conflicts: { key: string; rowNumber: number; title: string; reason: string }[];
   notImported: { key: string; rowNumber: number; title: string; reason: string }[];
+  /** 完成度達 100%（或從 100% 降下）而自動移動狀態的主工項 */
+  statusAutoChanged: ({ taskId: string } & StatusAutoChange)[];
 };
 
 type Tx = Prisma.TransactionClient;
@@ -622,7 +625,7 @@ export async function commitImportPlan(
   };
 
   return prisma.$transaction(async (tx: Tx) => {
-    const result: CommitResult = { created: 0, updated: 0, skipped: 0, conflicts: [], notImported: [] };
+    const result: CommitResult = { created: 0, updated: 0, skipped: 0, conflicts: [], notImported: [], statusAutoChanged: [] };
     const active = plan.rows.filter((r) => decisionOf(r) !== "skip");
     result.skipped = plan.rows.filter((r) => (r.status === "new" || r.status === "modified") && decisionOf(r) === "skip").length;
 
@@ -673,6 +676,11 @@ export async function commitImportPlan(
       }
     }
 
+    // 完成度連動狀態：寫入前先記下既有主工項的實際完成度，全部寫完後再比對
+    const completionBefore = await loadEffectiveCompletions(baselineIds, tx);
+    const touchedTaskIds = new Set<string>();
+    const explicitStatusTaskIds = new Set<string>(); // 這次匯入明確指定了狀態的主工項，以指定的為準
+
     // 2. 主工項
     const createdTaskIdByKey = new Map<string, string>();
     for (const r of active.filter((x) => x.kind === "task" && !blocked.has(x.key))) {
@@ -688,6 +696,8 @@ export async function commitImportPlan(
           result.conflicts.push({ key: r.key, rowNumber: r.rowNumber, title: r.title, reason: "預覽後此工項已被他人修改，未覆蓋" });
           continue;
         }
+        touchedTaskIds.add(r.targetId!);
+        if (r.changes.some((c) => c.field === "columnId")) explicitStatusTaskIds.add(r.targetId!);
         await tx.activityLog.create({
           data: {
             userId, action: "update", target: "task", targetId: r.targetId, projectId: plan.projectId,
@@ -720,6 +730,8 @@ export async function commitImportPlan(
         },
       });
       createdTaskIdByKey.set(r.key, task.id);
+      touchedTaskIds.add(task.id);
+      if (r.data.columnId !== undefined) explicitStatusTaskIds.add(task.id);
       await tx.activityLog.create({
         data: {
           userId, action: "create", target: "task", targetId: task.id, projectId: plan.projectId,
@@ -738,6 +750,7 @@ export async function commitImportPlan(
         continue;
       }
       const label = `${r.parentTitle ? `${r.parentTitle} › ` : ""}${r.title}`;
+      touchedTaskIds.add(parentId);
 
       if (decision === "update") {
         const patch = Object.fromEntries(r.changes.map((c) => [c.field, r.data[c.field as keyof TaskData]]));
@@ -773,6 +786,13 @@ export async function commitImportPlan(
         },
       });
       result.created++;
+    }
+
+    // 4. 完成度連動狀態（新建的主工項以 0% 為寫入前的完成度）
+    for (const taskId of touchedTaskIds) {
+      if (explicitStatusTaskIds.has(taskId)) continue;
+      const change = await syncStatusWithCompletion(tx, userId, taskId, completionBefore.get(taskId) ?? 0);
+      if (change) result.statusAutoChanged.push({ taskId, ...change });
     }
 
     return result;

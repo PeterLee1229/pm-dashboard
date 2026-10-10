@@ -19,9 +19,16 @@ function visibleProjectsWhere(ctx: Ctx) {
   return isAdmin(ctx) ? {} : { members: { some: { userId: ctx.userId } } };
 }
 
-/** 使用者可見的專案（只有 id 與名稱），依建立時間排序；跨專案查詢（例如 MCP 工具）使用 */
-export async function listVisibleProjects(ctx: Ctx): Promise<{ id: string; name: string }[]> {
-  return prisma.project.findMany({ where: visibleProjectsWhere(ctx), select: { id: true, name: true }, orderBy: { createdAt: "asc" } });
+/**
+ * 使用者可見的專案（只有 id 與名稱），依建立時間排序；跨專案查詢（例如 MCP 工具、逾期清單）使用。
+ * 預設排除已封存的專案。
+ */
+export async function listVisibleProjects(ctx: Ctx, opts: { includeArchived?: boolean } = {}): Promise<{ id: string; name: string }[]> {
+  return prisma.project.findMany({
+    where: { ...visibleProjectsWhere(ctx), ...(opts.includeArchived ? {} : { archivedAt: null }) },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" },
+  });
 }
 
 /** 讀取單一專案的 id 與名稱；非成員與不存在的專案丟 NotFoundError */
@@ -80,6 +87,26 @@ export async function updateProject(ctx: Ctx, projectId: string, input: unknown)
   const data = parseInput(projectUpdateSchema, input);
   await assertCan(ctx, projectId, "project.update");
   return prisma.project.update({ where: { id: projectId }, data });
+}
+
+/** 封存專案：Owner 與 Admin 可以操作，任何時候都可以封存。已封存時不重複寫入 */
+export async function archiveProject(ctx: Ctx, projectId: string) {
+  await assertCan(ctx, projectId, "project.archive", "只有專案擁有者或管理員可以封存專案");
+  const p = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+  if (p.archivedAt) return { id: p.id, archivedAt: p.archivedAt, archivedBy: p.archivedBy };
+  const updated = await prisma.project.update({ where: { id: projectId }, data: { archivedAt: new Date(), archivedBy: ctx.userId } });
+  await logActivity(ctx.userId, "archive", "project", p.name, projectId, projectId);
+  return { id: updated.id, archivedAt: updated.archivedAt, archivedBy: updated.archivedBy };
+}
+
+/** 解除封存：權限與封存相同 */
+export async function unarchiveProject(ctx: Ctx, projectId: string) {
+  await assertCan(ctx, projectId, "project.archive", "只有專案擁有者或管理員可以解除封存");
+  const p = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+  if (!p.archivedAt) return { id: p.id, archivedAt: null, archivedBy: null };
+  await prisma.project.update({ where: { id: projectId }, data: { archivedAt: null, archivedBy: null } });
+  await logActivity(ctx.userId, "unarchive", "project", p.name, projectId, projectId);
+  return { id: p.id, archivedAt: null, archivedBy: null };
 }
 
 export async function deleteProject(ctx: Ctx, projectId: string) {

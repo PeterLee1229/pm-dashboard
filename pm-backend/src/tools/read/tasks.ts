@@ -10,7 +10,7 @@ export const listTasksTool = defineTool({
   title: "列出任務",
   description: "列出 WBS 任務（主任務，子任務附在 subtasks 中並標示 parentTaskId）。未指定 projectId 時涵蓋你可見的所有專案。status 為看板欄位：todo（待處理）、inprogress（進行中）、review（審查中）、done（已完成）。assigneeId 為員工編號（memberId），主任務或任一子任務符合即列出。dueFrom / dueTo 以有效結束日（有子任務時取子任務最晚的結束日）篩選。keyword 比對任務與子任務的名稱和描述。",
   inputSchema: z.object({
-    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見專案"),
+    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見且未封存的專案（指定已封存專案的 id 仍可查詢）"),
     status: z.enum(["todo", "inprogress", "review", "done"]).optional().describe("看板欄位"),
     assigneeId: z.string().optional().describe("負責人的員工編號（memberId）"),
     groupId: z.string().optional().describe("組別 id"),
@@ -118,7 +118,7 @@ export const listOverdueTasksTool = defineTool({
   title: "逾期任務",
   description: "列出逾期的主任務（有效結束日早於今天且完成度未達 100%，判斷方式與看板上的「已逾期」標籤相同），依逾期天數由多到少排序。未指定 projectId 時涵蓋所有可見專案。",
   inputSchema: z.object({
-    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見專案"),
+    projectId: z.string().optional().describe("專案 id；不填則查詢所有可見且未封存的專案（指定已封存專案的 id 仍可查詢）"),
     assigneeId: z.string().optional().describe("負責人的員工編號（memberId）"),
     ...pageShape,
   }),

@@ -15,8 +15,8 @@ export const updateTaskTool = defineTool({
   description: [
     "更新單一主任務的欄位（名稱、描述、狀態、完成度、日期、負責人、組別、優先級），回傳修改前後的差異。",
     "【使用流程】先用 get_task 讀取目前狀態，把回傳的 updatedAt 帶入 expectedUpdatedAt；若任務在這之間被他人修改，會拒絕寫入並回傳最新內容，請以最新內容與使用者重新確認。",
-    "只需填入要修改的欄位。status 為看板欄位：todo、inprogress、review、done。assigneeId 為員工編號（memberId），填 null 代表取消指派；groupId 填 null 代表未分組。",
-    "權限與網頁相同：Member 只能編輯自己負責的任務且不能改派；組長受組別規則限制；只有 PM 以上可以將任務移入或移出「已完成」。",
+    "只需填入要修改的欄位。status 為看板欄位：todo、inprogress、review、done。完成度從未滿 100 改成 100 時，待處理／進行中的任務會自動移到審查中（回傳 statusAutoChanged）；同時指定 status 時以指定的為準。assigneeId 為員工編號（memberId），填 null 代表取消指派；groupId 填 null 代表未分組。",
+    "已封存的專案為唯讀，無法寫入（需先在網頁解除封存）。權限與網頁相同：Member 只能編輯自己負責的任務且不能改派；組長受組別規則限制；只有 PM 以上可以將任務移入或移出「已完成」。",
   ].join("\n"),
   inputSchema: z.object({
     taskId: z.string().describe("任務 id"),
@@ -45,8 +45,9 @@ export const updateTaskTool = defineTool({
       groupId: changes.groupId === undefined ? undefined : (changes.groupId ?? ""),
     };
     for (const k of Object.keys(input)) if (input[k] === undefined) delete input[k];
+    let statusAutoChanged = null;
     try {
-      await updateTask(serviceCtx(tc), taskId, input, { expectedUpdatedAt });
+      ({ statusAutoChanged } = await updateTask(serviceCtx(tc), taskId, input, { expectedUpdatedAt }));
     } catch (err) {
       if (err instanceof ConflictError) throw new ConflictError(err.message, { latest: await formatTaskDetail(tc, taskId) });
       throw err;
@@ -60,7 +61,7 @@ export const updateTaskTool = defineTool({
       return s && s.length > 80 ? `${s.slice(0, 80)}…` : s;
     };
     return {
-      data: { task: after, diff },
+      data: { task: after, diff, ...(statusAutoChanged ? { statusAutoChanged } : {}) },
       count: 1,
       audit: { affected: 1, diff: diff.map((d) => ({ field: d.field, before: summarize(d.before), after: summarize(d.after) })) },
     };

@@ -2,15 +2,19 @@ import { useState } from "react";
 import { X, AlertCircle, AlignLeft, Flag, User } from "lucide-react";
 import type { RiskLevel, RiskStatus, Group, Risk } from "../types";
 import { RISK_LEVELS, RISK_STATUS_CONFIG, findMemberById, memberDisplay } from "../helpers";
+import { useConfirm } from "./ConfirmDialog";
 
-export function RiskModal({ risk, onSave, onClose, projectMembers, currentProjectRole, currentUser }: {
+export function RiskModal({ risk, onSave, onDelete, onClose, projectMembers, currentProjectRole, currentUser }: {
   risk: Risk | null;
   onSave: (risk: Risk) => void;
+  /** 編輯既有風險且有管理權限時才傳入；刪除按鈕放在視窗左下角，與儲存分開 */
+  onDelete?: (id: string) => void;
   onClose: () => void;
   projectMembers: any[];
   currentProjectRole: string;
   currentUser: any;
 }) {
+  const [confirmDialog, confirm] = useConfirm();
   const [form, setForm] = useState<Risk>(risk || {
     id: "r" + Date.now(),
     title: "",
@@ -113,12 +117,18 @@ export function RiskModal({ risk, onSave, onClose, projectMembers, currentProjec
           </div>
         </div>
         <div className="modal-footer">
+          {risk && onDelete && (
+            <button className="btn-delete-text" onClick={async () => {
+              if (await confirm({ title: `刪除風險「${risk.title}」？` })) { onDelete(risk.id); onClose(); }
+            }}>刪除風險</button>
+          )}
           <button className="btn-cancel" onClick={onClose}>取消</button>
           <button className="btn-save" onClick={() => {
             if (form.title.trim()) { onSave(form); onClose(); }
           }}>{risk ? "儲存變更" : "建立風險"}</button>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }
@@ -279,12 +289,6 @@ export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRi
                         border: `1px solid ${statusCfg.color}44`
                       }}>{statusCfg.label}</span>
                     </div>
-                    {canManage && (
-                      <button onClick={(e) => { e.stopPropagation(); handleDelete(risk.id); }}
-                        style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
-                        <X size={14} />
-                      </button>
-                    )}
                   </div>
                   {risk.description && (
                     <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5, marginBottom: 8 }}>{risk.description}</p>
@@ -319,6 +323,7 @@ export default function RiskMatrixView({ risks, groups, onCreateRisk, onUpdateRi
             }
             setShowRiskModal(false);
           }}
+          onDelete={editingRisk && canManage ? handleDelete : undefined}
           onClose={() => setShowRiskModal(false)}
         />
       )}

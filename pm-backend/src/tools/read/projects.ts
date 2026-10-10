@@ -7,16 +7,17 @@ import { UI_LABELS, isoDay, makeDirectory, pageShape, paginate } from "../format
 export const listProjectsTool = defineTool({
   name: "list_projects",
   title: "列出專案",
-  description: "列出你可以看到的專案（與網頁左側專案清單相同），附上兩種完成度：taskCompletionRate（網頁上的「進度」，已完成任務數 ÷ 總任務數）與 weightedProgress（網頁上的「整體完成度」，各任務完成度的平均）。status 可篩選 active（進行中）或 completed（所有任務都已完成）。",
+  description: "列出你可以看到的專案（與網頁左側專案清單相同），附上兩種完成度：taskCompletionRate（網頁上的「進度」，已完成任務數 ÷ 總任務數）與 weightedProgress（網頁上的「整體完成度」，各任務完成度的平均）。status 可篩選 active（進行中）或 completed（所有任務都已完成）。預設不列出已封存的專案；includeArchived=true 時一併列出，每筆以 archived 標示。",
   inputSchema: z.object({
     status: z.enum(["active", "completed"]).optional().describe("active：尚有未完成任務或尚無任務；completed：所有任務都在「已完成」欄"),
+    includeArchived: z.boolean().optional().describe("是否包含已封存的專案（預設 false）"),
     ...pageShape,
   }),
   scope: "pm:read",
   annotations: READ_ANNOTATIONS,
-  handler: async (tc, { status, limit, cursor }) => {
+  handler: async (tc, { status, includeArchived, limit, cursor }) => {
     const ctx = serviceCtx(tc);
-    const projects = await listProjects(ctx);
+    const projects = (await listProjects(ctx)).filter((p) => includeArchived || !p.archivedAt);
     const rows = [];
     for (const p of projects) {
       const progress = await reports.getProjectProgress(ctx, p.id);
@@ -24,6 +25,7 @@ export const listProjectsTool = defineTool({
       if (status && status !== projectStatus) continue;
       rows.push({
         id: p.id, name: p.name, description: p.description, myRole: p.userRole, memberCount: p.members.length,
+        archived: !!p.archivedAt,
         status: projectStatus, totalTasks: progress.totalTasks, doneTasks: progress.doneTasks,
         taskCompletionRate: { value: progress.taskCompletionRate, uiLabel: UI_LABELS.taskCompletionRate },
         weightedProgress: { value: progress.weightedProgress, uiLabel: UI_LABELS.weightedProgress },

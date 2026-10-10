@@ -4,6 +4,7 @@ import type { Priority, TimeLog, Group, Task, SubTask } from "../types";
 import { PRIORITY_CONFIG, getCompletion, getEffectiveStartDate, getEffectiveEndDate, getTotalHours, hasPermission, normalizeUrl, safeHref } from "../helpers";
 import { getComments, addComment, deleteComment, getAttachments, addAttachment, deleteAttachment } from "../api";
 import { Skeleton } from "./LoadingEmpty";
+import { useConfirm } from "./ConfirmDialog";
 
 export function TimeLogEditor({ logs, onChange }: {
   logs: TimeLog[];
@@ -71,15 +72,19 @@ const snapshotOf = (f: Task) => JSON.stringify({
 
 // ── Task Modal ────────────────────────────────────────────────────────
 
-export default function TaskModal({ task, groups, assigneeGroups, onSave, onClose, currentProjectRole, currentUser }: {
+export default function TaskModal({ task, groups, assigneeGroups, onSave, onDelete, onClose, currentProjectRole, currentUser, readOnly = false }: {
   task: Task;
   groups: Group[];
   /** 系統組別（含全部使用者），用來判斷負責人所屬組別；與後端組長人力調整規則相同 */
   assigneeGroups: Group[];
   onSave: (updated: Task) => void;
+  /** 刪除任務；成功回傳 true。沒有 delete_task 權限（含已封存）時不顯示刪除按鈕 */
+  onDelete?: (taskId: string) => Promise<boolean>;
   onClose: () => void;
   currentProjectRole: string;
   currentUser: any;
+  /** 專案已封存：所有編輯、留言、附件操作都隱藏 */
+  readOnly?: boolean;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [comments, setComments] = useState<any[]>([]);
@@ -89,6 +94,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   const [newAttachName, setNewAttachName] = useState("");
   const [newAttachUrl, setNewAttachUrl] = useState("");
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
+  const [confirmDialog, confirm] = useConfirm();
 
   // snapshot taken after mount effects (assignee/groupId auto-fix) settle
   const initialSnapshot = useRef("");
@@ -122,6 +128,15 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   const myGroupId = currentUser?.group?.id;
   const myGroupMembers = assigneeGroups.find((g) => g.id === myGroupId)?.members || [];
   const canAssign = hasPermission(currentProjectRole, "assign_task");
+  const canDelete = !!onDelete && !readOnly && hasPermission(currentProjectRole, "delete_task");
+  const handleDeleteTask = async () => {
+    const ok = await confirm({
+      title: `刪除任務「${task.title}」？`,
+      warning: task.subtasks.length > 0 ? `此任務的 ${task.subtasks.length} 個子任務也會一併刪除。` : undefined,
+      message: "評論、附件與工時紀錄會一起刪除，刪除後無法復原。",
+    });
+    if (ok && await onDelete!(task.id)) onClose();
+  };
   const canReassign = (originalAssignee: string) =>
     canAssign && (!isLeader || !originalAssignee || myGroupMembers.some((m) => m.id === originalAssignee));
   const canChangeGroup = (originalGroupId: string) => !isLeader || !originalGroupId || originalGroupId === myGroupId;
@@ -140,7 +155,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   // 變更組別會清空負責人，所以組別與負責人一起鎖定
   const mainAssigneeLocked = !canReassign(task.assignee) || !canChangeGroup(task.groupId);
   const lockedHint = canAssign ? "別組的任務，組長不可改派" : "僅 Owner、PM 與組長可變更負責人";
-  const canDeleteAttachment = (a: { uploaderId: string }) => a.uploaderId === currentUser?.id || hasPermission(currentProjectRole, "delete_attachments");
+  const canDeleteAttachment = (a: { uploaderId: string }) => !readOnly && (a.uploaderId === currentUser?.id || hasPermission(currentProjectRole, "delete_attachments"));
 
   useEffect(() => {
     loadComments();
@@ -201,6 +216,8 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   };
 
   const handleDeleteAttachment = async (id: string) => {
+    const name = attachments.find((a) => a.id === id)?.name ?? "";
+    if (!(await confirm({ title: `刪除附件「${name}」？` }))) return;
     try {
       await deleteAttachment(id);
       setAttachments(prev => prev.filter(a => a.id !== id));
@@ -233,6 +250,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
   };
 
   const handleDeleteComment = async (id: string) => {
+    if (!(await confirm({ title: "刪除這則評論？" }))) return;
     try {
       await deleteComment(id);
       setComments(prev => prev.filter(c => c.id !== id));
@@ -245,7 +263,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
 
   const canEditBanner = !canEdit ? (
     <div style={{ background: "#f59e0b18", border: "1px solid #f59e0b33", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#f59e0b" }}>
-      你只有檢視權限，無法編輯此任務
+      {readOnly ? "專案已封存，僅供檢視" : "你只有檢視權限，無法編輯此任務"}
     </div>
   ) : null;
 
@@ -472,7 +490,7 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
                 )}
                 <span style={{ fontSize: 10, color: "#475569" }}>{new Date(c.createdAt).toLocaleString("zh-TW")}</span>
               </div>
-              {(c.userId === currentUser?.id || currentUser?.role === "admin") && (
+              {!readOnly && (c.userId === currentUser?.id || currentUser?.role === "admin") && (
                 <button onClick={() => handleDeleteComment(c.id)}
                   style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
                   <X size={11} />
@@ -681,12 +699,18 @@ export default function TaskModal({ task, groups, assigneeGroups, onSave, onClos
         )}
 
         <div className="modal-footer">
+          {/* 刪除與儲存分開放（左側、紅字），避免誤觸 */}
+          {canDelete && (
+            <button className="btn-delete-text" onClick={handleDeleteTask}>刪除任務</button>
+          )}
           <button className="btn-cancel" onClick={handleClose}>關閉</button>
           {canEdit && (
             <button className="btn-save" onClick={() => { onSave(form); onClose(); }}>儲存變更</button>
           )}
         </div>
       </div>
+
+      {confirmDialog}
 
       {showConfirmLeave && (
         <div style={{

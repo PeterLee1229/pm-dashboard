@@ -32,6 +32,7 @@ type CommitResult = {
   skipped: number;
   conflicts: { key: string; rowNumber: number; title: string; reason: string }[];
   notImported: { key: string; rowNumber: number; title: string; reason: string }[];
+  statusAutoChanged?: { taskId: string; from: string; to: "review" | "inprogress" }[];
 };
 
 const DEFAULT_DECISION: Record<RowStatus, Decision> = { new: "import", modified: "update", error: "skip" };
@@ -264,6 +265,18 @@ export default function ImportModal({ projectId, onClose, onSuccess }: {
                   {result.conflicts.length > 0 && <span style={{ color: "#f59e0b" }}>、衝突 {result.conflicts.length} 筆</span>}
                 </p>
                 {result.skipped > 0 && <p style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>依您的選擇略過 {result.skipped} 筆</p>}
+                {(() => {
+                  const moved = result.statusAutoChanged ?? [];
+                  const toReview = moved.filter((m) => m.to === "review").length;
+                  const back = moved.length - toReview;
+                  return moved.length > 0 && (
+                    <p style={{ fontSize: 12, color: "#a78bfa", marginTop: 4 }}>
+                      {toReview > 0 && `${toReview} 個工項完成度達 100%，已移至審查中`}
+                      {toReview > 0 && back > 0 && "；"}
+                      {back > 0 && `${back} 個工項完成度低於 100%，已移回進行中`}
+                    </p>
+                  );
+                })()}
               </div>
               {result.conflicts.length > 0 && (
                 <ResultList title="衝突（未寫入，請重新匯出後再處理）" color="#f59e0b" items={result.conflicts} />

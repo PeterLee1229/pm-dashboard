@@ -14,7 +14,7 @@ import {
   ImportPlan, ImportFormatError, parseTaskCsv, collectIds, loadImportContext,
   buildImportPlan, toPreviewResponse, commitImportPlan,
 } from "./services/import/taskImport";
-import { Ctx, PROJECT_ROLES, assertCan, assertCanRead, can, isAdmin, loadLeaderGroupId } from "./services/permissions";
+import { Ctx, PROJECT_ROLES, assertCan, assertCanRead, assertProjectWritable, can, isAdmin, loadLeaderGroupId } from "./services/permissions";
 import { createNotification, listActivities, logActivity } from "./services/activity";
 import * as projects from "./services/projects";
 import * as tasks from "./services/tasks";
@@ -211,6 +211,14 @@ app.put("/api/projects/:id", authMiddleware, async (req: any, res) => {
   res.json(await projects.updateProject(req.ctx, req.params.id, req.body));
 });
 
+app.post("/api/projects/:id/archive", authMiddleware, async (req: any, res) => {
+  res.json(await projects.archiveProject(req.ctx, req.params.id));
+});
+
+app.post("/api/projects/:id/unarchive", authMiddleware, async (req: any, res) => {
+  res.json(await projects.unarchiveProject(req.ctx, req.params.id));
+});
+
 app.delete("/api/projects/:id", authMiddleware, async (req: any, res) => {
   await projects.deleteProject(req.ctx, req.params.id);
   res.json({ success: true });
@@ -248,6 +256,7 @@ app.post("/api/projects/:projectId/members", authMiddleware, async (req: any, re
   }), req.body);
 
   const role = await assertCanRead(req.ctx, projectId);
+  await assertProjectWritable(projectId);
   if (role !== "admin") {
     if (role === "pm" && ["owner", "pm"].includes(targetRole)) {
       return res.status(403).json({ error: "PM 不能指定 Owner 或 PM 角色" });
@@ -285,6 +294,7 @@ app.delete("/api/projects/:projectId/members/:userId", authMiddleware, async (re
   const { projectId, userId } = req.params;
 
   const role = await assertCanRead(req.ctx, projectId);
+  await assertProjectWritable(projectId);
   if (role !== "admin") {
     const target = await prisma.projectMember.findUnique({
       where: { projectId_userId: { projectId, userId } }
@@ -310,6 +320,7 @@ app.put("/api/projects/:projectId/members/:userId", authMiddleware, async (req: 
   const { role: newRole } = parseInput(z.object({ role: projectRoleSchema }), req.body);
 
   const role = await assertCanRead(req.ctx, projectId);
+  await assertProjectWritable(projectId);
   if (role !== "admin" && role !== "owner") return res.status(403).json({ error: "只有專案擁有者可以變更角色" });
 
   await prisma.projectMember.updateMany({
@@ -324,6 +335,7 @@ app.post("/api/projects/:projectId/transfer-owner", authMiddleware, async (req: 
   const { newOwnerId } = parseInput(z.object({ newOwnerId: z.string().min(1) }), req.body);
 
   const role = await assertCanRead(req.ctx, projectId);
+  await assertProjectWritable(projectId);
   if (role !== "admin" && role !== "owner") return res.status(403).json({ error: "只有專案擁有者可以轉移權限" });
 
   const newOwnerMembership = await prisma.projectMember.findUnique({

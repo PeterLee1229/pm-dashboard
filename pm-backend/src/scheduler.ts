@@ -15,13 +15,16 @@ async function createNotification(
   });
 }
 
+/** 已封存的專案不發送到期與逾期通知 */
+const ACTIVE_PROJECT = { project: { archivedAt: null } } as const;
+
 export async function checkDueTasks() {
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
 
   // 明天到期
   const dueTomorrow = await prisma.task.findMany({
-    where: { endDate: tomorrow, completion: { lt: 100 } },
+    where: { endDate: tomorrow, completion: { lt: 100 }, ...ACTIVE_PROJECT },
     include: { project: true },
   });
   for (const task of dueTomorrow) {
@@ -39,7 +42,7 @@ export async function checkDueTasks() {
 
   // 今天到期
   const dueToday = await prisma.task.findMany({
-    where: { endDate: today, completion: { lt: 100 } },
+    where: { endDate: today, completion: { lt: 100 }, ...ACTIVE_PROJECT },
     include: { project: true },
   });
   for (const task of dueToday) {
@@ -57,7 +60,7 @@ export async function checkDueTasks() {
 
   // 已逾期
   const overdue = await prisma.task.findMany({
-    where: { endDate: { lt: today, not: "" }, completion: { lt: 100 } },
+    where: { endDate: { lt: today, not: "" }, completion: { lt: 100 }, ...ACTIVE_PROJECT },
     include: { project: true },
   });
   for (const task of overdue) {
