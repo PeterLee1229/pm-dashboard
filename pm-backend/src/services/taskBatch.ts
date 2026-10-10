@@ -11,6 +11,7 @@ import {
 } from "./permissions";
 import { createNotification, currentOrigin } from "./activity";
 import { getEffectiveEndDate, getEffectiveStartDate, toReportTask } from "./reports";
+import { loadEffectiveCompletions, syncStatusWithCompletion } from "./completionSync";
 
 export const MAX_BATCH_TASKS = 20;
 /** 疑似重複的標題相似度門檻（正規化 Levenshtein 相似度，1 = 完全相同） */
@@ -277,6 +278,9 @@ async function commitBatch(
       const idByRef = new Map<string, string>();
       const log = (action: string, detail: string, targetId: string) =>
         tx.activityLog.create({ data: { userId: ctx.userId, action, target: "task", detail, targetId, projectId, ...origin } });
+      // 為既有任務新增 0% 的子任務會拉低完成度：100% 的審查中任務要移回進行中
+      const existingParentIds = [...new Set(items.map((x) => x.parentTaskId).filter((x): x is string => !!x))];
+      const completionBefore = await loadEffectiveCompletions(existingParentIds, tx);
 
       // 先建主任務，子任務才能以 parentRef 對應
       for (const it of items.filter((x) => !x.parentRef && !x.parentTaskId)) {
@@ -304,6 +308,7 @@ async function commitBatch(
         const parentTitle = existingById.get(parentId)?.title ?? items.find((x) => x.clientRef === it.parentRef)?.title ?? "";
         await log("update", `${parentTitle}（新增子任務「${it.title}」）`, parentId);
       }
+      for (const id of existingParentIds) await syncStatusWithCompletion(tx, ctx.userId, id, completionBefore.get(id) ?? 0);
 
       const result = buildResult(projectId, projectName, mapping, previews);
       if (batchKey) {

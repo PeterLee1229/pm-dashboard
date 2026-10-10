@@ -616,8 +616,9 @@ export default function App() {
         assignee: "",
         groupId: "",
       });
+      // 欄位以後端回傳的為準（完成度連動狀態由後端決定）
       setColumns((cols) => cols.map((col) =>
-        col.id === colId ? {
+        col.id === newTask.columnId ? {
           ...col,
           tasks: [...col.tasks, { ...newTask, subtasks: [], timeLogs: [] }]
         } : col
@@ -642,7 +643,7 @@ export default function App() {
 
   const handleSaveTask = async (updated: Task) => {
     try {
-      await apiUpdateTask(updated.id, {
+      const saved = await apiUpdateTask(updated.id, {
         title: updated.title,
         description: updated.description,
         priority: updated.priority,
@@ -654,10 +655,21 @@ export default function App() {
         timeLogs: updated.timeLogs,
         subtasks: updated.subtasks,
       });
-      setColumns((cols) => cols.map((col) => ({
-        ...col,
-        tasks: col.tasks.map((t) => t.id === updated.id ? updated : t),
-      })));
+      // 完成度達 100% 時後端會把任務移到審查中（降到 100 以下時移回進行中）：狀態以 API 回傳的為準，不在前端自行計算
+      const next: Task = { ...updated, columnId: saved.columnId };
+      setColumns((cols) => {
+        const fromCol = cols.find((c) => c.tasks.some((t) => t.id === updated.id));
+        if (!fromCol || fromCol.id === next.columnId) {
+          return cols.map((col) => ({ ...col, tasks: col.tasks.map((t) => t.id === updated.id ? next : t) }));
+        }
+        return cols.map((col) => {
+          if (col.id === fromCol.id) return { ...col, tasks: col.tasks.filter((t) => t.id !== updated.id) };
+          if (col.id === next.columnId) return { ...col, tasks: [...col.tasks, next] };
+          return col;
+        });
+      });
+      if (saved.statusAutoChanged?.to === "review") setToast("已完成 100%，已移至審查中");
+      else if (saved.statusAutoChanged?.to === "inprogress") setToast("完成度低於 100%，已移回進行中");
     } catch (err) {
       console.error("更新任務失敗:", err);
       showError("更新任務失敗", err);

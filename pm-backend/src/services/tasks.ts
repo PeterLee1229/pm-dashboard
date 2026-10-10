@@ -3,6 +3,8 @@ import { prisma } from "../db";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, parseInput } from "../errors";
 import { Change, Ctx, assertCan, assertCanAssign, assertCanChangeGroup, assertCanRead, assertProjectWritable, can, canEditTask } from "./permissions";
 import { logActivity, notifyAssignee } from "./activity";
+import { syncStatusWithCompletion } from "./completionSync";
+import { getCompletion } from "./reports";
 
 // ── 輸入白名單 ────────────────────────────────────────────────────────
 // 只允許以下欄位寫入；projectId、id、createdAt、completedAt 等欄位一律丟棄
@@ -154,7 +156,11 @@ export async function createTask(ctx: Ctx, projectId: string, input: unknown) {
       `你被指派了新任務「${task.title}」在專案「${project?.name || ""}」中`, projectId, task.id);
   }
   await logActivity(ctx.userId, "create", "task", task.title, projectId, task.id);
-  return task;
+  // 建立時就填 100% 的任務同樣移到審查中（建立前視為 0%）
+  const statusAutoChanged = await syncStatusWithCompletion(prisma, ctx.userId, task.id, 0);
+  if (!statusAutoChanged) return { ...task, statusAutoChanged };
+  const latest = await prisma.task.findUniqueOrThrow({ where: { id: task.id }, include: { subtasks: true } });
+  return { ...latest, statusAutoChanged };
 }
 
 /**
@@ -258,7 +264,12 @@ export async function updateTask(ctx: Ctx, taskId: string, input: unknown, opts:
     await logActivity(ctx.userId, "update", "task", task.title, task.projectId, task.id);
   }
 
-  return prisma.task.findUnique({ where: { id: taskId }, include: { subtasks: true } });
+  // 完成度連動狀態；同一次請求明確改了狀態時以指定的為準
+  const statusAutoChanged = columnChanged ? null
+    : await syncStatusWithCompletion(prisma, ctx.userId, task.id, getCompletion(task));
+
+  const latest = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, include: { subtasks: true } });
+  return { ...latest, statusAutoChanged };
 }
 
 export async function deleteTask(ctx: Ctx, taskId: string) {
