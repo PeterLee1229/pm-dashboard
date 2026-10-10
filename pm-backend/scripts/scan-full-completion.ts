@@ -20,8 +20,13 @@ async function main() {
   await client.connect();
   try {
     await client.query("BEGIN TRANSACTION READ ONLY");
+    // 封存欄位在 migration 套用前不存在；部署前後都能執行
+    const hasArchived = (await client.query(`
+      SELECT 1 FROM information_schema.columns WHERE table_name = 'Project' AND column_name = 'archivedAt'
+    `)).rowCount! > 0;
     const rows = (await client.query(`
-      SELECT t.id, t.title, t."columnId", t.completion, p.name AS project, p."archivedAt",
+      SELECT t.id, t.title, t."columnId", t.completion, p.name AS project,
+             ${hasArchived ? `p."archivedAt"` : `NULL AS "archivedAt"`},
              COUNT(s.id)::int AS "subCount", ROUND(AVG(s.completion))::int AS "subAvg"
       FROM "Task" t
       JOIN "Project" p ON p.id = t."projectId"
