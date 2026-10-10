@@ -2,12 +2,16 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { getOKRs, createObjective, updateObjective, deleteObjective, createKeyResult, updateKeyResult, deleteKeyResult } from "../api";
 import { CardListSkeleton, EmptyState, Skeleton, useDelayedLoading } from "./LoadingEmpty";
+import { useConfirm } from "./ConfirmDialog";
 
-export function OKRModal({ objective, onSave, onClose }: {
+export function OKRModal({ objective, onSave, onDelete, onClose }: {
   objective: any;
   onSave: (data: any) => void;
+  /** 編輯既有目標時傳入；刪除按鈕放在視窗左下角，與儲存分開 */
+  onDelete?: () => void;
   onClose: () => void;
 }) {
+  const [confirmDialog, confirm] = useConfirm();
   const [title, setTitle] = useState(objective?.title || "");
   const [description, setDescription] = useState(objective?.description || "");
   const [startDate, setStartDate] = useState(objective?.startDate || "");
@@ -48,12 +52,22 @@ export function OKRModal({ objective, onSave, onClose }: {
           </div>
         </div>
         <div className="modal-footer">
+          {objective && onDelete && (
+            <button className="btn-delete-text" onClick={async () => {
+              const krCount = objective.keyResults?.length || 0;
+              if (await confirm({
+                title: `刪除目標「${objective.title}」？`,
+                warning: krCount > 0 ? `此目標的 ${krCount} 個關鍵結果也會一併刪除。` : undefined,
+              })) onDelete();
+            }}>刪除目標</button>
+          )}
           <button className="btn-cancel" onClick={onClose}>取消</button>
           <button className="btn-save" onClick={() => {
             if (title.trim()) onSave({ title, description, startDate, endDate });
           }}>{objective ? "儲存變更" : "建立目標"}</button>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }
@@ -112,6 +126,7 @@ export default function OKRView({ projectId, canManage }: {
   const [showAddObj, setShowAddObj] = useState(false);
   const [editingObj, setEditingObj] = useState<any>(null);
   const [addingKRId, setAddingKRId] = useState<string | null>(null);
+  const [confirmDialog, confirm] = useConfirm();
 
   useEffect(() => { loadOKRs(); }, [projectId]);
 
@@ -147,6 +162,7 @@ export default function OKRView({ projectId, canManage }: {
     try {
       await deleteObjective(id);
       setObjectives(prev => prev.filter(o => o.id !== id));
+      setEditingObj(null);
     } catch (err) { console.error("刪除目標失敗:", err); }
   };
 
@@ -170,6 +186,8 @@ export default function OKRView({ projectId, canManage }: {
   };
 
   const handleDeleteKR = async (krId: string, objectiveId: string) => {
+    const kr = objectives.find((o) => o.id === objectiveId)?.keyResults?.find((k: { id: string; title: string }) => k.id === krId);
+    if (!(await confirm({ title: `刪除關鍵結果「${kr?.title ?? ""}」？` }))) return;
     try {
       await deleteKeyResult(krId);
       setObjectives(prev => prev.map(o =>
@@ -273,10 +291,6 @@ export default function OKRView({ projectId, canManage }: {
                         background: "#ffffff10", border: "none", borderRadius: 4,
                         color: "#94a3b8", fontSize: 10, padding: "3px 8px", cursor: "pointer"
                       }}>編輯</button>
-                      <button onClick={() => handleDeleteObjective(obj.id)} style={{
-                        background: "none", border: "none", color: "#ef4444",
-                        cursor: "pointer", padding: 2, display: "flex"
-                      }}><X size={14} /></button>
                     </>
                   )}
                 </div>
@@ -327,9 +341,9 @@ export default function OKRView({ projectId, canManage }: {
                             borderRadius: 6, color: "#e2e8f0", fontSize: 11, padding: "4px 6px",
                             outline: "none", textAlign: "center"
                           }} />
-                        <button onClick={() => handleDeleteKR(kr.id, obj.id)} style={{
-                          background: "none", border: "none", color: "#ef4444",
-                          cursor: "pointer", padding: 2, display: "flex"
+                        <button aria-label="刪除關鍵結果" onClick={() => handleDeleteKR(kr.id, obj.id)} style={{
+                          background: "none", border: "none", color: "#ef4444", marginLeft: 6,
+                          cursor: "pointer", padding: 6, display: "flex"
                         }}><X size={12} /></button>
                       </div>
                     )}
@@ -360,9 +374,11 @@ export default function OKRView({ projectId, canManage }: {
         <OKRModal
           objective={editingObj}
           onSave={(data) => editingObj ? handleUpdateObjective(editingObj.id, data) : handleCreateObjective(data)}
+          onDelete={editingObj ? () => handleDeleteObjective(editingObj.id) : undefined}
           onClose={() => { setShowAddObj(false); setEditingObj(null); }}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

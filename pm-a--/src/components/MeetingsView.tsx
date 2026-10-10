@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X, Flag } from "lucide-react";
 import type { MeetingRecord, MeetingSeries } from "../types";
 import { normalizeUrl, safeHref } from "../helpers";
+import { useConfirm } from "./ConfirmDialog";
 
 export const MEETING_TYPE_LEGEND: { type: "regular" | "adhoc"; label: string; color: string; description: string }[] = [
   { type: "regular", label: "定期", color: "#6366f1", description: "固定週期召開的會議，如每週站會、月會" },
@@ -272,8 +273,8 @@ export function MeetingRecordCard({ record, projectMembers, seriesId, onDelete, 
             </button>
           )}
           {onDelete && (
-            <button onClick={() => onDelete(seriesId, record.id)}
-              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 2, display: "flex" }}>
+            <button aria-label="刪除會議紀錄" onClick={() => onDelete(seriesId, record.id)}
+              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 6, marginLeft: 8, display: "flex" }}>
               <X size={12} />
             </button>
           )}
@@ -376,8 +377,18 @@ export default function MeetingsView({ meetings, projectMembers, canManage, onCr
   const toggleExpand = (id: string) =>
     setExpandedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
-  const handleDeleteSeries = (id: string) => onDeleteSeries(id);
-  const handleDeleteRecord = (seriesId: string, recordId: string) => onDeleteRecord(seriesId, recordId);
+  const [confirmDialog, confirm] = useConfirm();
+  const handleDeleteSeries = async (id: string) => {
+    const s = meetings.find((m) => m.id === id);
+    if (await confirm({
+      title: `刪除會議「${s?.name ?? ""}」？`,
+      warning: s && s.records.length > 0 ? `此會議的 ${s.records.length} 筆會議紀錄也會一併刪除。` : undefined,
+    })) onDeleteSeries(id);
+  };
+  const handleDeleteRecord = async (seriesId: string, recordId: string) => {
+    const r = meetings.find((m) => m.id === seriesId)?.records.find((x) => x.id === recordId);
+    if (await confirm({ title: `刪除 ${r?.date ?? ""} 的會議紀錄？` })) onDeleteRecord(seriesId, recordId);
+  };
 
   const query = searchQuery.trim().toLowerCase();
   const recordMatches = (r: MeetingRecord) => !query || r.summary?.toLowerCase().includes(query);
@@ -416,8 +427,8 @@ export default function MeetingsView({ meetings, projectMembers, canManage, onCr
             }} style={{ background: "#10b98122", border: "1px solid #10b98144", borderRadius: 6, color: "#10b981", fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>
               + 新增紀錄
             </button>}
-            {canManage && <button onClick={(e) => { e.stopPropagation(); handleDeleteSeries(series.id); }}
-              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 4, display: "flex" }}>
+            {canManage && <button aria-label="刪除會議" onClick={(e) => { e.stopPropagation(); handleDeleteSeries(series.id); }}
+              style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", padding: 6, marginLeft: 8, display: "flex" }}>
               <X size={14} />
             </button>}
             <span style={{ color: "#475569", fontSize: 14, transition: "transform .2s", display: "inline-block", transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
@@ -537,6 +548,7 @@ export default function MeetingsView({ meetings, projectMembers, canManage, onCr
           onClose={() => setShowSeriesModal(false)}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

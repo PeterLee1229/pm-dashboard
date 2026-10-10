@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { t } from "../i18n";
-import { Plus, X, GripVertical, Circle, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, GripVertical, Circle, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -58,7 +58,7 @@ export function TaskCard({ task, isDragging = false, onClick, groups = [], canDr
           {p.label}優先
         </span>
         {canDrag && (
-          <button className="drag-handle" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
+          <button className="drag-handle" aria-label="拖曳移動任務" {...attributes} {...listeners} onClick={(e) => e.stopPropagation()}>
             <GripVertical size={14} />
           </button>
         )}
@@ -89,12 +89,11 @@ export function TaskCard({ task, isDragging = false, onClick, groups = [], canDr
 
 // ── Column ───────────────────────────────────────────────────────────
 
-export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, onDeleteTask, onEditTask, groups, forceOpenSignal }: {
+export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, onEditTask, groups, forceOpenSignal }: {
   column: Column;
   canAdd: boolean;
   canDrag: boolean;
   onAddTask: (colId: string, title: string) => void;
-  onDeleteTask: (colId: string, taskId: string) => void;
   onEditTask: (task: Task) => void;
   groups: Group[];
   forceOpenSignal?: number;
@@ -129,15 +128,9 @@ export default function ColumnComponent({ column, canAdd, canDrag, onAddTask, on
 
       <SortableContext items={column.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div className="task-list" ref={setDropRef}>
+          {/* 刪除任務在任務視窗內（避免與拖曳把手相鄰誤觸） */}
           {column.tasks.map((task) => (
-            <div key={task.id} style={{ position: "relative" }}>
-              <TaskCard task={task} onClick={() => onEditTask(task)} groups={groups} canDrag={canDrag} />
-              {canAdd && (
-                <button className="delete-task" onClick={(e) => { e.stopPropagation(); onDeleteTask(column.id, task.id); }}>
-                  <X size={11} />
-                </button>
-              )}
-            </div>
+            <TaskCard key={task.id} task={task} onClick={() => onEditTask(task)} groups={groups} canDrag={canDrag} />
           ))}
         </div>
       </SortableContext>

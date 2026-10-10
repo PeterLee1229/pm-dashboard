@@ -3,6 +3,7 @@ import { t, type Language } from "../i18n";
 import { Plus, X, Circle, Clock, CheckCircle2, AlertCircle, User, AlignLeft, Calendar, BarChart2 } from "lucide-react";
 import type { Project } from "../types";
 import { hasPermission } from "../helpers";
+import { useConfirm } from "./ConfirmDialog";
 
 export default function Sidebar({ view, setView, projects, archivedProjects, activeProjectId, setActiveProjectId, onAddProject, onDeleteProject, onManageGroups, onLogout, currentUser, currentProjectRole, language, onLanguageChange, sidebarOpen, onClose }: {
   view: "kanban" | "gantt" | "dashboard" | "meetings" | "risks" | "weekly" | "admin" | "project_members" | "activities" | "calendar" | "okr" | "ai_connections";
@@ -25,6 +26,14 @@ export default function Sidebar({ view, setView, projects, archivedProjects, act
 }) {
   // 目前在已封存的專案時預設展開，讓使用者看得到自己在哪個專案
   const [showArchived, setShowArchived] = useState(() => archivedProjects.some((p) => p.id === activeProjectId));
+  const [confirmDialog, confirm] = useConfirm();
+  const deleteProject = async (p: Project) => {
+    if (await confirm({
+      title: `刪除專案「${p.name}」？`,
+      warning: "專案內所有任務、會議紀錄、風險、OKR 與週報都會一併刪除。",
+      message: "刪除後無法復原；只是不再使用的專案可以改用「封存」。",
+    })) onDeleteProject(p.id);
+  };
 
   const nav = (id: typeof view, label: string, icon: React.ReactNode) => {
     const active = view === id;
@@ -86,8 +95,8 @@ export default function Sidebar({ view, setView, projects, archivedProjects, act
                   <div style={{ width: 8, height: 8, borderRadius: 99, background: p.color, flexShrink: 0 }} />
                   {p.name}
                 </button>
-                {projects.length > 1 && (
-                  <button onClick={() => onDeleteProject(p.id)} style={{
+                {projects.length > 1 && hasPermission(p.userRole ?? "viewer", "delete_project") && (
+                  <button aria-label="刪除專案" onClick={() => deleteProject(p)} style={{
                     position: "absolute", right: 6,
                     background: "none", border: "none", color: "#ef4444",
                     cursor: "pointer", padding: 2, display: "none", borderRadius: 4
@@ -229,6 +238,7 @@ export default function Sidebar({ view, setView, projects, archivedProjects, act
           <X size={14} /> {t("app.logout")}
         </button>
       </div>
+      {confirmDialog}
     </div>
   );
 }

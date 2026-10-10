@@ -629,15 +629,17 @@ export default function App() {
     }
   };
 
-  const handleDeleteTask = async (colId: string, taskId: string) => {
+  /** 由任務視窗呼叫；成功回傳 true（視窗隨後關閉） */
+  const handleDeleteTask = async (taskId: string) => {
     try {
       await apiDeleteTask(taskId);
-      setColumns((cols) => cols.map((col) =>
-        col.id === colId ? { ...col, tasks: col.tasks.filter((t) => t.id !== taskId) } : col
-      ));
+      setColumns((cols) => cols.map((col) => ({ ...col, tasks: col.tasks.filter((t) => t.id !== taskId) })));
+      setToast("任務已刪除");
+      return true;
     } catch (err) {
       console.error("刪除任務失敗:", err);
       showError("刪除任務失敗", err);
+      return false;
     }
   };
 
@@ -858,7 +860,8 @@ export default function App() {
 
         .task-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .priority-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
-        .drag-handle { background: none; border: none; cursor: grab; color: #475569; padding: 2px; display: flex; align-items: center; }
+        /* 觸控與滑鼠的可點範圍至少 32×32；負邊距讓卡片版面維持原本大小 */
+        .drag-handle { background: none; border: none; cursor: grab; color: #475569; padding: 0; display: flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; margin: -8px -10px -8px 0; border-radius: 6px; touch-action: none; }
         .drag-handle:active { cursor: grabbing; }
         .task-title { font-size: 13px; font-weight: 600; color: #e2e8f0; margin-bottom: 5px; line-height: 1.4; }
         .task-desc  { font-size: 11px; color: #64748b; line-height: 1.5; margin-bottom: 10px; }
@@ -897,8 +900,6 @@ export default function App() {
         .timer-btn { background: none; border: none; cursor: pointer; color: #475569; padding: 2px; display: flex; align-items: center; border-radius: 4px; transition: color .15s, background .15s; }
         .timer-btn:hover { color: #e2e8f0; background: #ffffff10; }
 
-        .delete-task { position: absolute; top: 8px; right: 8px; background: #ef444422; border: none; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 3px; display: none; align-items: center; }
-        div:hover > .delete-task { display: flex; }
         div:hover > .delete-project { display: flex !important; }
 
         .add-form { padding: 0 10px 10px; }
@@ -938,6 +939,9 @@ export default function App() {
         .dropdown-item:hover { background: #ffffff08 !important; filter: none; transform: none; }
 
         .modal-footer { display: flex; gap: 10px; padding: 14px 20px 18px; border-top: 1px solid #ffffff08; }
+        .btn-delete-text { background: none; border: none; color: #ef4444; font-size: 13px; padding: 10px 4px; margin-right: auto; cursor: pointer; white-space: nowrap; }
+        .btn-delete-text:hover { color: #f87171; text-decoration: underline; filter: none; transform: none; }
+        .modal-footer .btn-delete-text + .btn-cancel { margin-left: 24px; }
         .btn-cancel { flex: 1; background: #ffffff10; border: none; border-radius: 8px; color: #94a3b8; font-size: 13px; padding: 10px; cursor: pointer; }
         .btn-cancel:hover { background: #ffffff18; filter: none; }
         .btn-save { flex: 2; background: #6366f1; border: none; border-radius: 8px; color: #fff; font-size: 13px; font-weight: 600; padding: 10px; cursor: pointer; }
@@ -1487,7 +1491,7 @@ export default function App() {
               <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
                 <div className="board">
                   {filteredColumns.map((col) => (
-                    <ColumnComponent key={col.id} column={col} canAdd={hasPermission(writeRole, "create_task")} canDrag={hasPermission(writeRole, "drag_task")} onAddTask={handleAddTask} onDeleteTask={handleDeleteTask} onEditTask={setEditingTask} groups={projectMemberGroups} forceOpenSignal={col.id === "todo" ? addTaskSignal : undefined} />
+                    <ColumnComponent key={col.id} column={col} canAdd={hasPermission(writeRole, "create_task")} canDrag={hasPermission(writeRole, "drag_task")} onAddTask={handleAddTask} onEditTask={setEditingTask} groups={projectMemberGroups} forceOpenSignal={col.id === "todo" ? addTaskSignal : undefined} />
                   ))}
                 </div>
                 <DragOverlay>{activeTask && <TaskCard task={activeTask} isDragging groups={projectMemberGroups} />}</DragOverlay>
@@ -1536,7 +1540,7 @@ export default function App() {
       </div>
 
       {editingTask && (
-        <TaskModal task={editingTask} groups={projectMemberGroups} assigneeGroups={formattedGroups} onSave={handleSaveTask} onClose={() => setEditingTask(null)} currentProjectRole={writeRole} readOnly={isArchived} currentUser={currentUser} />
+        <TaskModal task={editingTask} groups={projectMemberGroups} assigneeGroups={formattedGroups} onSave={handleSaveTask} onDelete={handleDeleteTask} onClose={() => setEditingTask(null)} currentProjectRole={writeRole} readOnly={isArchived} currentUser={currentUser} />
       )}
 
       {<Suspense fallback={null}>{showImportModal && (
